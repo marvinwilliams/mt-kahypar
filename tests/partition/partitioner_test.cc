@@ -60,8 +60,8 @@ static size_t num_threads;
     context.initial_partitioning.context_file = "test_instances/fast_initial_partitioning.ini";
 
     // Label Propagation
-    context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::label_propagation_km1;
-    context.refinement.label_propagation.execution_policy = ExecutionType::exponential;
+    context.refinement.algorithm = RefinementAlgorithm::label_propagation_km1;
+    context.refinement.execution_policy = ExecutionType::exponential;
 
     // Shared Memory
     context.shared_memory.num_threads = num_threads;

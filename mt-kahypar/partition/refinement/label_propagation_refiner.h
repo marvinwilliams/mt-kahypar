@@ -65,7 +65,7 @@ class LabelPropagationRefinerT final : public IRefiner {
     _numa_nodes_indices(),
     _nodes(),
     _current_level(0),
-    _execution_policy(context.refinement.label_propagation.execution_policy_alpha),
+    _execution_policy(context.refinement.execution_policy_alpha),
     _gain(_hg, _context),
     _active(hypergraph.initialNumNodes(), false) {
     initialize();
@@ -125,7 +125,7 @@ class LabelPropagationRefinerT final : public IRefiner {
       return true;
     }(), "LP Refiner does not contain all vertices hypergraph");
 
-    if ( _context.refinement.label_propagation.numa_aware ) {
+    if ( _context.refinement.numa_aware ) {
       // Execute label propagation on all numa nodes
       TBB::instance().execute_on_all_numa_nodes([&](const int node) {
         labelPropagation(node);
@@ -206,7 +206,7 @@ class LabelPropagationRefinerT final : public IRefiner {
     };
 
     bool converged = false;
-    for ( size_t i = 0; i < _context.refinement.label_propagation.maximum_iterations && !converged; ++i ) {
+    for ( size_t i = 0; i < _context.refinement.maximum_iterations && !converged; ++i ) {
       DBG << "Starting Label Propagation Round" << i << "on NUMA Node" << node;
 
       HighResClockTimepoint start_time = std::chrono::high_resolution_clock::now();
@@ -232,7 +232,7 @@ class LabelPropagationRefinerT final : public IRefiner {
             // We perform a move if it either improves the solution quality or, in case of a
             // zero gain move, the balance of the solution.
             bool perform_move =   best_move.gain < 0 ||
-                                ( _context.refinement.label_propagation.rebalancing &&
+                                ( _context.refinement.rebalancing &&
                                   best_move.gain == 0 &&
                                   _hg.localPartWeight(best_move.from) - 1 >
                                   _hg.localPartWeight(best_move.to) + 1 );
@@ -275,7 +275,7 @@ class LabelPropagationRefinerT final : public IRefiner {
           }
 
           ++local_iteration_cnt;
-          if ( local_iteration_cnt % _context.refinement.label_propagation.part_weight_update_frequency == 0 ) {
+          if ( local_iteration_cnt % _context.refinement.part_weight_update_frequency == 0 ) {
             // We frequently update the local block weights of the current threads
             _hg.updateLocalPartInfos();
           }

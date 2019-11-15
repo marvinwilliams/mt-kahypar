@@ -261,9 +261,9 @@ inline void Partitioner::partition(Hypergraph& hypergraph, Context& context) {
   io::printLocalSearchBanner(context);
   start = std::chrono::high_resolution_clock::now();
   std::unique_ptr<IRefiner> label_propagation =
-    LabelPropagationFactory::getInstance().createObject(
-      context.refinement.label_propagation.algorithm, hypergraph, context);
-
+    RefinementFactory::getInstance().createObject(
+      context.refinement.algorithm, hypergraph, context);
+      
   coarsener->uncoarsen(label_propagation);
   end = std::chrono::high_resolution_clock::now();
   mt_kahypar::utils::Timer::instance().add_timing("refinement", "Refinement",

@@ -193,33 +193,33 @@ po::options_description createRefinementOptionsDescription(Context& context, con
     ("r-lp-type",
     po::value<std::string>()->value_name("<string>")->notifier(
       [&](const std::string& type) {
-        context.refinement.label_propagation.algorithm =
-          labelPropagationAlgorithmFromString(type);
+        context.refinement.algorithm =
+          refinementAlgorithmFromString(type);
     }),
     "Algorithm used for label propagation:\n"
     "- label_propagation_km1\n"
     "- label_propagation_cut\n"
     "- do_nothing")
     ("r-lp-maximum-iterations",
-    po::value<size_t>(&context.refinement.label_propagation.maximum_iterations)->value_name("<size_t>"),
+    po::value<size_t>(&context.refinement.maximum_iterations)->value_name("<size_t>"),
     "Maximum number of iterations over all nodes during label propagation\n"
     "(default 1)")
     ("r-lp-part-weight-update-frequency",
-    po::value<size_t>(&context.refinement.label_propagation.part_weight_update_frequency)->value_name("<size_t>"),
+    po::value<size_t>(&context.refinement.part_weight_update_frequency)->value_name("<size_t>"),
     "Determines after how many iterations the local part weights are updated\n"
     "(default 100)")
     ("r-lp-numa-aware",
-    po::value<bool>(&context.refinement.label_propagation.numa_aware)->value_name("<bool>"),
+    po::value<bool>(&context.refinement.numa_aware)->value_name("<bool>"),
     "If true, label propagation is executed numa friendly (which means that nodes are processed on its numa nodes)\n"
     "(default true)")
     ("r-lp-rebalancing",
-    po::value<bool>(&context.refinement.label_propagation.rebalancing)->value_name("<bool>"),
+    po::value<bool>(&context.refinement.rebalancing)->value_name("<bool>"),
     "If true, zero gain moves are used to rebalance solution\n"
     "(default true)")
     ("r-lp-execution-policy",
     po::value<std::string>()->value_name("<string>")->notifier(
       [&](const std::string& type) {
-        context.refinement.label_propagation.execution_policy =
+        context.refinement.execution_policy =
           executionTypeFromString(type);
     }),
     "Execution policy used for label propagation:\n"
@@ -227,7 +227,7 @@ po::options_description createRefinementOptionsDescription(Context& context, con
     "- multilevel\n"
     "- constant")
     ("r-lp-execution-policy-alpha",
-    po::value<double>(&context.refinement.label_propagation.execution_policy_alpha)->value_name("<double>"),
+    po::value<double>(&context.refinement.execution_policy_alpha)->value_name("<double>"),
     "In case of execution policy 'exponential', LP is executed in each level which is a power of alpha\n"
     "In case of execution policy 'multilevel', LP is executed on each level INITIAL_NUM_NODES / alpha ^ i\n"
     "In case of execution policy 'constant', LP is executed on each level which is a multiple of alpha");

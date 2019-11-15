@@ -123,8 +123,8 @@ inline std::ostream& operator<< (std::ostream& str, const InitialPartitioningPar
   return str;
 }
 
-struct LabelPropagationParameters {
-  LabelPropagationAlgorithm algorithm = LabelPropagationAlgorithm::do_nothing;
+struct RefinementParameters {
+  RefinementAlgorithm algorithm = RefinementAlgorithm::do_nothing;
   size_t maximum_iterations = 1;
   size_t part_weight_update_frequency = 100;
   bool numa_aware = false;
@@ -133,8 +133,13 @@ struct LabelPropagationParameters {
   double execution_policy_alpha = 2.0;
 };
 
-inline std::ostream& operator<< (std::ostream& str, const LabelPropagationParameters& params) {
-  str << "  Label Propagation Parameters:" << std::endl;
+inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& params) {
+  str << "Refinement Parameters:" << std::endl;
+  if(params.algorithm == RefinementAlgorithm::flow){
+    str << "  Flow Parameters:" << std::endl;
+  }else{
+    str << "  Label Propagation Parameters:" << std::endl;
+  }
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Maximum Iterations:               " << params.maximum_iterations << std::endl;
   str << "    Part Weight Update Frequency:     " << params.part_weight_update_frequency << std::endl;
@@ -145,15 +150,6 @@ inline std::ostream& operator<< (std::ostream& str, const LabelPropagationParame
   return str;
 }
 
-struct RefinementParameters {
-  LabelPropagationParameters label_propagation;
-};
-
-inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& params) {
-  str << "Refinement Parameters:" << std::endl;
-  str << params.label_propagation;
-  return str;
-}
 
 struct SharedMemoryParameters {
   size_t num_threads = 1;

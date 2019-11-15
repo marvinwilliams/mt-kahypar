@@ -86,10 +86,11 @@ enum class AcceptancePolicy : uint8_t {
   UNDEFINED
 };
 
-enum class LabelPropagationAlgorithm : uint8_t {
+enum class RefinementAlgorithm : uint8_t {
   label_propagation_km1,
   label_propagation_cut,
-  do_nothing
+  do_nothing,
+  flow
 };
 
 enum class ExecutionType : uint8_t {
@@ -179,11 +180,12 @@ std::ostream& operator<< (std::ostream& os, const RatingFunction& func) {
   return os << static_cast<uint8_t>(func);
 }
 
-std::ostream& operator<< (std::ostream& os, const LabelPropagationAlgorithm& algo) {
+std::ostream& operator<< (std::ostream& os, const RefinementAlgorithm& algo) {
   switch (algo) {
-    case LabelPropagationAlgorithm::label_propagation_km1: return os << "label_propagation_km1";
-    case LabelPropagationAlgorithm::label_propagation_cut: return os << "label_propagation_cut";
-    case LabelPropagationAlgorithm::do_nothing: return os << "do_nothing";
+    case RefinementAlgorithm::label_propagation_km1: return os << "label_propagation_km1";
+    case RefinementAlgorithm::label_propagation_cut: return os << "label_propagation_cut";
+    case RefinementAlgorithm::do_nothing: return os << "do_nothing";
+    case RefinementAlgorithm::flow: return os << "flow";
       // omit default case to trigger compiler warning for missing cases
   }
   return os << static_cast<uint8_t>(algo);
@@ -275,17 +277,19 @@ static RatingFunction ratingFunctionFromString(const std::string& function) {
   return RatingFunction::UNDEFINED;
 }
 
-static LabelPropagationAlgorithm labelPropagationAlgorithmFromString(const std::string& type) {
+static RefinementAlgorithm refinementAlgorithmFromString(const std::string& type) {
   if (type == "label_propagation_km1") {
-    return LabelPropagationAlgorithm::label_propagation_km1;
+    return RefinementAlgorithm::label_propagation_km1;
   } else if (type == "label_propagation_cut") {
-    return LabelPropagationAlgorithm::label_propagation_cut;
+    return RefinementAlgorithm::label_propagation_cut;
   } else if (type == "do_nothing") {
-    return LabelPropagationAlgorithm::do_nothing;
+    return RefinementAlgorithm::do_nothing;
+  } else if(type == "flow"){
+    return RefinementAlgorithm::flow;
   }
   LOG << "Illegal option:" << type;
   exit(0);
-  return LabelPropagationAlgorithm::do_nothing;
+  return RefinementAlgorithm::do_nothing;
 }
 
 static ExecutionType executionTypeFromString(const std::string& type) {

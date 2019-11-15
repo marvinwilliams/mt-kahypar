@@ -44,7 +44,7 @@ struct TestConfig<k, kahypar::Objective::km1> {
   using Refiner = LabelPropagationRefinerT<TypeTraits, ExponentialExecutionPolicy, Km1Policy>;
   static constexpr PartitionID K = k;
   static constexpr kahypar::Objective OBJECTIVE = kahypar::Objective::km1;
-  static constexpr LabelPropagationAlgorithm LP_ALGO = LabelPropagationAlgorithm::label_propagation_km1;
+  static constexpr RefinementAlgorithm LP_ALGO = RefinementAlgorithm::label_propagation_km1;
 };
 
 template< PartitionID k >
@@ -53,7 +53,7 @@ struct TestConfig<k, kahypar::Objective::cut> {
   using Refiner = LabelPropagationRefinerT<TypeTraits, ExponentialExecutionPolicy, CutPolicy>;
   static constexpr PartitionID K = k;
   static constexpr kahypar::Objective OBJECTIVE = kahypar::Objective::cut;
-  static constexpr LabelPropagationAlgorithm LP_ALGO = LabelPropagationAlgorithm::label_propagation_cut;
+  static constexpr RefinementAlgorithm LP_ALGO = RefinementAlgorithm::label_propagation_cut;
 };
 
 template< typename Config >
