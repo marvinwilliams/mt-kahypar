@@ -35,6 +35,7 @@
 #include "mt-kahypar/partition/coarsening/policies/rating_acceptance_policy.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
+#include "mt-kahypar/partition/refinement/flow_refiner.h"
 #include "mt-kahypar/partition/refinement/policies/execution_policy.h"
 
 namespace mt_kahypar {
@@ -67,7 +68,7 @@ using LabelPropagationCutDispatcher = kahypar::meta::StaticMultiDispatchFactory<
                                                                                 IRefiner,
                                                                                 kahypar::meta::Typelist<ExecutionPolicyClasses>>;
 
-using FlowDispatcher = kahypar::meta::StaticMultiDispatchFactory<LabelPropagationCutRefiner,
+using FlowDispatcher = kahypar::meta::StaticMultiDispatchFactory<flowKm1Refiner,
                                                                                 IRefiner,
                                                                                 kahypar::meta::Typelist<ExecutionPolicyClasses>>;
 
