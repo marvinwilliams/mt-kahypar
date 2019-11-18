@@ -124,6 +124,10 @@ inline std::ostream& operator<< (std::ostream& str, const InitialPartitioningPar
 }
 
 struct RefinementParameters {
+  struct FlowParameter{
+    double alpha = 16.0;
+    bool use_improvement_history = true;
+  };
   RefinementAlgorithm algorithm = RefinementAlgorithm::do_nothing;
   size_t maximum_iterations = 1;
   size_t part_weight_update_frequency = 100;
@@ -131,12 +135,17 @@ struct RefinementParameters {
   bool rebalancing = true;
   ExecutionType execution_policy = ExecutionType::UNDEFINED;
   double execution_policy_alpha = 2.0;
+  FlowParameter flow{};
 };
 
 inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& params) {
   str << "Refinement Parameters:" << std::endl;
   if(params.algorithm == RefinementAlgorithm::flow){
     str << "  Flow Parameters:" << std::endl;
+    str << "    alpha:                            " << params.flow.alpha << std::endl;
+    str << "    use improvement history:          "
+        << std::boolalpha << params.flow.use_improvement_history << std::endl;
+
   }else{
     str << "  Label Propagation Parameters:" << std::endl;
   }
