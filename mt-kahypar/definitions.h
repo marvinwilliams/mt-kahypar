@@ -59,6 +59,14 @@ using Gain = HyperedgeWeight;
 // Note(gottesbueren) : why not keep it 32 bits until we are actually ready for those types of instances. Especially for the comparison against sequential KaHyPar?
 using NodeID = uint32_t;
 
+// #########Graph-Definitions#############
+using EdgeID = uint32_t;
+using EdgeWeight = long double;
+using ClusterID = PartitionID;
+using Flow = int32_t;
+using Capacity = int32_t;
+
+
 struct Move {
   PartitionID from;
   PartitionID to;

@@ -127,6 +127,7 @@ struct RefinementParameters {
   struct FlowParameter{
     double alpha = 16.0;
     bool use_improvement_history = true;
+    bool use_most_balanced_minimum_cut = true;
   };
   RefinementAlgorithm algorithm = RefinementAlgorithm::do_nothing;
   size_t maximum_iterations = 1;
@@ -145,6 +146,8 @@ inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& 
     str << "    alpha:                            " << params.flow.alpha << std::endl;
     str << "    use improvement history:          "
         << std::boolalpha << params.flow.use_improvement_history << std::endl;
+        str << "    use most balanced minimum cut:"
+        << std::boolalpha << params.flow.use_most_balanced_minimum_cut << std::endl;
 
   }else{
     str << "  Label Propagation Parameters:" << std::endl;

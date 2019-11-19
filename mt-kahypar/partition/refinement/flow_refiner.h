@@ -3,8 +3,14 @@
 
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/flow/quotient_graph_block_scheduler.h"
+#include "mt-kahypar/partition/refinement/flow/flow_region_build_policy.h"
+#include "mt-kahypar/partition/refinement/flow/maximum_flow.h"
+
 
 #include "external_tools/kahypar/kahypar/datastructure/flow_network.h"
+#include "external_tools/kahypar/kahypar/datastructure/fast_reset_array.h"
+
+#include "mt-kahypar/datastructures/flow_network.h"
 
 namespace mt_kahypar {
 
@@ -18,15 +24,18 @@ class FlowRefiner final : public IRefiner{
         using TBB = typename TypeTraits::TBB;
         using HwTopology = typename TypeTraits::HwTopology;
         using GainCalculator = GainPolicy<HyperGraph>;
+        using Network = ds::FlowNetwork<TypeTraits>;
     
     public:
         explicit FlowRefiner(Hypergraph& hypergraph, const Context& context):
             _hg(hypergraph),
             _context(context),
-            //_flow_network(_hg, _context),
+            _flow_network(_hg, _context, static_cast<size_t>(hypergraph.initialNumNodes()) + 2 * hypergraph.initialNumEdges()),
             _current_level(0),
             _execution_policy(context.refinement.execution_policy_alpha),
-            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)){
+            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+            _maximum_flow(IBFS(hypergraph, context, _flow_network)),
+            _visited(static_cast<size_t>(hypergraph.initialNumNodes() + hypergraph.initialNumEdges())) {
                 initialize();
         }
 
@@ -44,6 +53,7 @@ class FlowRefiner final : public IRefiner{
             }
             _execution_policy.initialize(_hg, current_num_nodes);
         }
+
         bool refineImpl(const std::vector<HypernodeID>& refinement_nodes, kahypar::Metrics& best_metrics) override final {
             // flow refinement is not executed on all levels of the n-level hierarchy.
             // If flow should be executed on the current level is determined by the execution policy.
@@ -87,7 +97,7 @@ class FlowRefiner final : public IRefiner{
                                                                             max_allowed_part_weights,
                                                                             changes,
                                                                             best_metrics);*/
-                        const bool improved = executeAdaptiveFlow(block_0, block_1, best_metrics);
+                        const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler, best_metrics);
                         if (improved) {
                             /*DBG << "Improvement found beetween blocks " << block_0 << " and "
                                 << block_1 << " in round #"
@@ -111,22 +121,23 @@ class FlowRefiner final : public IRefiner{
         }
 
         
-        bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1, kahypar::Metrics& best_metrics){
-            return false;
-            /*bool improvement = false;
+        bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1,
+         QuotientGraphBlockScheduler & quotientGraph, kahypar::Metrics& best_metrics){
+            
+            bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
             
             do {
             alpha /= 2.0;
-            _flow_network.reset(_block0, _block1);
+            _flow_network.reset(block_0, block_1);
 
-            DBG << "";
-            DBG << V(alpha);
-
-            // Initialize set of cut hyperedges for blocks '_block0' and '_block1'
+            //DBG << "";
+            //DBG << V(alpha);
+            
+            // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
             std::vector<HyperedgeID> cut_hes;
             HyperedgeWeight cut_weight = 0;
-            for (const HyperedgeID& he : _quotient_graph->blockPairCutHyperedges(_block0, _block1)) {
+            for (const HyperedgeID& he : quotientGraph.blockPairCutHyperedges(block_0, block_1)) {
                 cut_weight += _hg.edgeWeight(he);
                 cut_hes.push_back(he);
             }
@@ -141,30 +152,32 @@ class FlowRefiner final : public IRefiner{
 
             // If cut is 0 no improvement is possible
             if (cut_hes.size() == 0) {
-                DBG << "Cut is zero";
+                //DBG << "Cut is zero";
                 break;
             }
-
-            utils::Randomize::instance().shuffleVector(cut_hes, cut_hes.size());
+            
+            
+            utils::Randomize::instance().shuffleVector(cut_hes, cut_hes.size(), 1);
             //std::shuffle(cut_hes.begin(), cut_hes.end(),Randomize::instance().getGenerator());
 
             // Build Flow Problem
             CutBuildPolicy::buildFlowNetwork(_hg, _context, _flow_network,
-                                            cut_hes, alpha, _block0, _block1,
+                                            cut_hes, alpha, block_0, block_1,
                                             _visited);
-            const HyperedgeWeight cut_flow_network_before = _flow_network.build(_block0, _block1);
-            DBG << V(_flow_network.numNodes()) << V(_flow_network.numEdges());
+            const HyperedgeWeight cut_flow_network_before = _flow_network.build(block_0, block_1);
+            
+            //DBG << V(_flow_network.numNodes()) << V(_flow_network.numEdges());
 
-            printMetric();
+            //printMetric();
 
             // Find minimum (S,T)-bipartition
-            const HyperedgeWeight cut_flow_network_after = _maximum_flow->minimumSTCut(_block0, _block1);
+            const HyperedgeWeight cut_flow_network_after = _maximum_flow->minimumSTCut(block_0, block_1);
 
             // Maximum Flow algorithm returns infinity, if all
             // hypernodes contained in the flow problem are either
             // sources or sinks
             if (cut_flow_network_after == Network::kInfty) {
-                DBG << "Trivial Cut";
+                //DBG << "Trivial Cut";
                 break;
             }
 
@@ -184,13 +197,13 @@ class FlowRefiner final : public IRefiner{
             const HyperedgeWeight old_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
             const HyperedgeWeight current_metric = old_metric - delta;
 
-            DBG << V(cut_flow_network_before)
+            /*DBG << V(cut_flow_network_before)
                 << V(cut_flow_network_after)
                 << V(delta)
                 << V(old_metric)
                 << V(current_metric);
 
-            printMetric();
+            printMetric();*/
 
             const bool equal_metric = current_metric == best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
             const bool improved_metric = current_metric < best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
@@ -204,8 +217,8 @@ class FlowRefiner final : public IRefiner{
                 best_metrics.imbalance = current_imbalance;
                 improvement = true;
                 current_improvement = true;
-
-                alpha *= (alpha == _context.local_search.flow.alpha ? 2.0 : 4.0);
+                
+                alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
             }
 
             _maximum_flow->rollback(current_improvement);
@@ -217,7 +230,7 @@ class FlowRefiner final : public IRefiner{
                 const PartitionID from = _hg.partID(hn);
                 const PartitionID to = _maximum_flow->getOriginalPartition(hn);
                 if (from != to) {
-                    _quotient_graph->changeNodePart(hn, from, to);
+                    quotientGraph.changeNodePart(hn, from, to);
                 }
                 }
             }
@@ -225,32 +238,49 @@ class FlowRefiner final : public IRefiner{
             // Heuristic 2: If no improvement was found, but the cut before and
             //              after is equal, we assume that the partition is close
             //              to the optimum and break the adaptive flow iterations.
-            if (_context.local_search.flow.use_adaptive_alpha_stopping_rule &&
-                !improvement && cut_flow_network_before == cut_flow_network_after) {
+            //
+            // always use 
+            if (!improvement && cut_flow_network_before == cut_flow_network_after) {
                 break;
             }
             } while (alpha > 1.0);
 
-            printMetric(true, true);
+            //printMetric(true, true);
 
             // Delete quotient graph
-            if (delete_quotientgraph_after_flow) {
+            /*if (delete_quotientgraph_after_flow) {
             delete _quotient_graph;
             _quotient_graph = nullptr;
-            }
+            }*/
 
-            return improvement;*/
+            return improvement;
         }
+
         bool isRefinementOnLastLevel() {
             return _hg.currentNumNodes() == _hg.initialNumNodes();
         }
 
+        /*
+        void printMetric(bool newline = false, bool endline = false) {
+            if (newline) {
+            DBG << "";
+            }
+            DBG << V(metrics::imbalance(_hg, _context))
+                << V(_context.partition.objective)
+                << V(metrics::objective(_hg, _context.partition.objective));
+            if (endline) {
+            DBG << "-------------------------------------------------------------";
+            }
+        }*/
+
     HyperGraph& _hg;
     const Context& _context;
+    Network _flow_network;
     size_t _current_level;
     ExecutionPolicy _execution_policy;
-    //kahypar::ds::HybridNetwork _flow_network;
     std::vector<std::vector<size_t> > _num_improvements;
+    std::unique_ptr<MaximumFlow<Network> > _maximum_flow;
+    kahypar::ds::FastResetFlagArray<> _visited;
 };
 
 
