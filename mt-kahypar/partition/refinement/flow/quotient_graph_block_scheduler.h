@@ -28,7 +28,6 @@
 #include <utility>
 #include <vector>
 
-//use in kahypar or import integrate into mt-kahypar?
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 #include "external_tools/kahypar/kahypar/datastructure/sparse_set.h"
 
@@ -133,7 +132,7 @@ class QuotientGraphBlockScheduler {
 
   void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to) {
     if (from != to) {
-      _hg.changeNodePart(hn, from, to);
+      while(_hg.changeNodePart(hn, from, to) == false);
       for (const HyperedgeID& he : _hg.incidentEdges(hn)) {
         if (_hg.pinCountInPart(he, to) == 1) {
           for (const PartitionID& part : _hg.connectivitySet(he)) {

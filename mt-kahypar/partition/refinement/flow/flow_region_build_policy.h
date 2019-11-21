@@ -94,7 +94,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     using HyperGraph = typename TypeTraits::HyperGraph;
  public:
   template <class Network = Mandatory>
-  inline static void buildFlowNetwork(const HyperGraph& hg,
+  inline static void buildFlowNetwork(HyperGraph& hg,
                                       const Context& context,
                                       Network& flow_network,
                                       std::vector<HyperedgeID>& cut_hes,
@@ -123,11 +123,11 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     const HypernodeWeight max_part_weight_0 =
       std::max(((1.0 + std::min(alpha * context.partition.epsilon, 0.5))
                 * context.partition.perfect_balance_part_weights[1]
-                - hg.partWeight(block_1)), 0.0);
+                - hg.localPartWeight(block_1)), 0.0);
     const HypernodeWeight max_part_weight_1 =
       std::max(((1.0 + std::min(alpha * context.partition.epsilon, 0.5))
                 * context.partition.perfect_balance_part_weights[0]
-                - hg.partWeight(block_0)), 0.0);
+                - hg.localPartWeight(block_0)), 0.0);
 
     const HypernodeID num_nodes_block_0 = FlowRegionBuildPolicy<TypeTraits>::bfs(hg, flow_network,
                                                                      start_nodes_block_0,

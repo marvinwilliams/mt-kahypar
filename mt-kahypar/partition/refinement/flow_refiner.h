@@ -86,11 +86,6 @@ class FlowRefinerT final : public IRefiner{
                     }
 
                     if (active_blocks[block_0] || active_blocks[block_1]) {
-                        /*_twoway_flow_refiner.updateConfiguration(block_0, block_1, &scheduler, true);
-                        const bool improved = _twoway_flow_refiner.refine(refinement_nodes,
-                                                                            max_allowed_part_weights,
-                                                                            changes,
-                                                                            best_metrics);*/
                         const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler, best_metrics);
                         if (improved) {
                             /*DBG << "Improvement found beetween blocks " << block_0 << " and "
@@ -151,7 +146,7 @@ class FlowRefinerT final : public IRefiner{
             }
             
             
-            utils::Randomize::instance().shuffleVector(cut_hes, cut_hes.size(), 1);
+            utils::Randomize::instance().shuffleVector(cut_hes);
             //std::shuffle(cut_hes.begin(), cut_hes.end(),Randomize::instance().getGenerator());
 
             // Build Flow Problem
@@ -187,7 +182,7 @@ class FlowRefinerT final : public IRefiner{
                     << V(delta)
                     << V(metrics::objective(_hg, _context.partition.objective)));
 
-            const double current_imbalance = metrics::imbalance(_hg, _context);
+            const double current_imbalance = metrics::localImbalance(_hg, _context);
             const HyperedgeWeight old_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
             const HyperedgeWeight current_metric = old_metric - delta;
 

@@ -204,7 +204,7 @@ using HyperGraph = typename TypeTraits::HyperGraph;
     ASSERT(_hg.partID(hn) != -1, "Hypernode " << hn << " should be assigned to a part");
     const PartitionID from = _hg.partID(hn);
     if (from != to ) { //&& !_hg.isFixedVertex(hn)
-      _hg.changeNodePart(hn, from, to);
+      while(_hg.changeNodePart(hn, from, to) == false);
     }
   }
 

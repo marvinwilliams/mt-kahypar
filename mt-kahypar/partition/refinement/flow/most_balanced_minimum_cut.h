@@ -120,10 +120,10 @@ class MostBalancedMinimumCut {
     // Find most balanced minimum cut
     std::vector<NodeID> topological_order(dag.numNodes(), 0);
     std::vector<PartitionID> best_partition_id(dag.numNodes(), block_0);
-    double best_imbalance = metrics::imbalance(_hg, _context);
+    double best_imbalance = metrics::localImbalance(_hg, _context);;
 
     DBG << "Start Most Balanced Minimum Cut (Bipartition = {" << block_0 << "," << block_1 << "}";
-    DBG << "Initial imbalance: " << V(metrics::imbalance(_hg, _context));
+    DBG << "Initial imbalance: " << V(metrics::localImbalance(_hg, _context));
 
     for (size_t i = 0; i < 20; ++i) {
       // Compute random topological order
@@ -131,11 +131,11 @@ class MostBalancedMinimumCut {
 
       // Sweep through topological order and find best imbalance
       std::vector<PartitionID> tmp_partition_id(dag.numNodes(), block_0);
-      double tmp_best_imbalance = metrics::imbalance(_hg, _context);
+      double tmp_best_imbalance = metrics::localImbalance(_hg, _context);
 
       std::vector<HypernodeWeight> part_weight(_context.partition.k, 0);
       for (PartitionID part = 0; part < _context.partition.k; ++part) {
-        part_weight[part] = _hg.partWeight(part);
+        part_weight[part] = _hg.localPartWeight(part);
       }
       for (size_t idx = 0; idx < topological_order.size(); ++idx) {
         const NodeID u = topological_order[idx];
@@ -164,7 +164,7 @@ class MostBalancedMinimumCut {
 
     ASSERT([&]() {
         const HyperedgeWeight metric_before = metrics::objective(_hg, _context.partition.objective);
-        const double imbalance_before = metrics::imbalance(_hg, _context);
+        const double imbalance_before = metrics::localImbalance(_hg, _context);
         std::vector<NodeID> topological_order(dag.numNodes(), 0);
         std::vector<NodeID> part_before(dag.numNodes(), block_0);
         topologicalSort(dag, in_degree, topological_order);
@@ -173,7 +173,7 @@ class MostBalancedMinimumCut {
             const PartitionID from = _hg.partID(v);
             const PartitionID to = best_partition_id[u];
             if (from != to) {
-              _hg.changeNodePart(v, from, to);
+              while(_hg.changeNodePart(v, from, to) == false);
               part_before[u] = from;
             }
           }
@@ -193,17 +193,17 @@ class MostBalancedMinimumCut {
             const PartitionID from = _hg.partID(v);
             const PartitionID to = part_before[u];
             if (from != to) {
-              _hg.changeNodePart(v, from, to);
+              while(_hg.changeNodePart(v, from, to) == false);
             }
           }
         }
 
         const HyperedgeWeight metric = metrics::objective(_hg, _context.partition.objective);
         if (metric != metric_before ||
-            metrics::imbalance(_hg, _context) != imbalance_before) {
+            metrics::localImbalance(_hg, _context) != imbalance_before) {
           LOG << "Restoring original partition failed!";
           LOG << V(metric_before) << V(metric);
-          LOG << V(imbalance_before) << V(metrics::imbalance(_hg, _context));
+          LOG << V(imbalance_before) << V(metrics::localImbalance(_hg, _context));
           return false;
         }
 
@@ -216,14 +216,14 @@ class MostBalancedMinimumCut {
         const PartitionID from = _hg.partID(v);
         const PartitionID to = best_partition_id[u];
         if (from != to) {
-          _hg.changeNodePart(v, from, to);
+          while(_hg.changeNodePart(v, from, to) == false);
         }
       }
     }
 
-    ASSERT(best_imbalance == metrics::imbalance(_hg, _context),
+    ASSERT(best_imbalance == metrics::localImbalance(_hg, _context),
            "Best imbalance didn't match with current imbalance"
-           << V(best_imbalance) << V(metrics::imbalance(_hg, _context)));
+           << V(best_imbalance) << V(metrics::localImbalance(_hg, _context)));
   }
 
  private:
@@ -261,7 +261,7 @@ class MostBalancedMinimumCut {
         if (!sourceSet) {
           const PartitionID from = _hg.partID(u);
           if (from == block_0) {
-            _hg.changeNodePart(u, block_0, block_1);
+            while(_hg.changeNodePart(u, block_0, block_1) == false);
           }
         }
       } else if (_flow_network.interpreteHyperedge(u, sourceSet)) {
@@ -271,7 +271,7 @@ class MostBalancedMinimumCut {
             if (!sourceSet) {
               PartitionID from = _hg.partID(pin);
               if (from == block_0) {
-                _hg.changeNodePart(pin, block_0, block_1);
+                while(_hg.changeNodePart(pin, block_0, block_1) == false);
               }
             }
             if (_flow_network.isRemovedHypernode(pin)) {
