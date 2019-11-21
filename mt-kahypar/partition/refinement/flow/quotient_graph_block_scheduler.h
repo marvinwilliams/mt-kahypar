@@ -39,13 +39,17 @@
 
 namespace mt_kahypar {
 
+template<typename TypeTraits>
 class QuotientGraphBlockScheduler {
   typedef std::pair<PartitionID, PartitionID> edge;
   using ConstIncidenceIterator = std::vector<edge>::const_iterator;
   using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
 
+ private:
+  using HyperGraph = typename TypeTraits::HyperGraph;
+
  public:
-  QuotientGraphBlockScheduler(Hypergraph& hypergraph, const Context& context) :
+  QuotientGraphBlockScheduler(HyperGraph& hypergraph, const Context& context) :
     _hg(hypergraph),
     _context(context),
     _quotient_graph(),
@@ -79,7 +83,7 @@ class QuotientGraphBlockScheduler {
   }
 
   void randomShuffleQoutientEdges() {
-    utils::Randomize::instance().shuffleVector(_quotient_graph, _quotient_graph.size(), 1);
+    utils::Randomize::instance().shuffleVector(_quotient_graph);
     //std::shuffle(_quotient_graph.begin(), _quotient_graph.end(),Randomize::instance().getGenerator());
   }
 
@@ -165,7 +169,7 @@ class QuotientGraphBlockScheduler {
     }
   }
 
-  Hypergraph& _hg;
+  HyperGraph& _hg;
   const Context& _context;
   std::vector<edge> _quotient_graph;
 

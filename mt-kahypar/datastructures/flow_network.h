@@ -60,13 +60,13 @@ class FlowNetwork {
   using IncidenceIterator = std::vector<FlowEdge>::iterator;
   using NodeIterator = std::pair<const NodeID*, const NodeID*>;
   using HypernodeIterator = std::pair<const HypernodeID*, const HypernodeID*>;
-  using Hypergraph = typename TypeTraits::HyperGraph;
+  using HyperGraph = typename TypeTraits::HyperGraph;
 
  public:
   static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
   static constexpr NodeID kInvalidNode = std::numeric_limits<NodeID>::max() / 2;
 
-  FlowNetwork(Hypergraph& hypergraph, const Context& context, const size_t size) :
+  FlowNetwork(HyperGraph& hypergraph, const Context& context, const size_t size) :
     _hg(hypergraph),
     _context(context),
     _initial_size(size),
@@ -191,6 +191,7 @@ class FlowNetwork {
         } (), "Hypernodes not correctly added or removed from flow network!");
 
     // Add fixed vertices to source and sink
+    /*
     for (const HypernodeID& hn : hypernodes()) {
       if (_hg.isFixedVertex(hn)) {
         if (containsNode(hn)) {
@@ -211,7 +212,7 @@ class FlowNetwork {
           }
         }
       }
-    }
+    }*/
 
     const HyperedgeWeight cut = buildSourcesAndSinks(block_0, block_1);
     return cut;
@@ -617,7 +618,7 @@ class FlowNetwork {
     }
   }
 
-  Hypergraph& _hg;
+  HyperGraph& _hg;
   const Context& _context;
 
   size_t _initial_size;
@@ -630,7 +631,7 @@ class FlowNetwork {
   kahypar::ds::SparseSet<NodeID> _nodes;
   kahypar::ds::SparseSet<NodeID> _sources;
   kahypar::ds::SparseSet<NodeID> _sinks;
-  kahypar::ds::SparseSet<NodeID> _hypernodes;
+  kahypar::ds::SparseSet<HypernodeID> _hypernodes;
   kahypar::ds::SparseSet<HypernodeID> _removed_hypernodes;
   kahypar::ds::FastResetArray<size_t> _pins_block0;
   kahypar::ds::FastResetArray<size_t> _pins_block1;

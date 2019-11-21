@@ -47,10 +47,13 @@ namespace mt_kahypar {
 using kahypar::ds::Graph;
 using kahypar::ds::Edge;
 
-template <class Network = Mandatory>
+template <typename TypeTraits, class Network = Mandatory>
 class MostBalancedMinimumCut {
+ private:
+  using HyperGraph = typename TypeTraits::HyperGraph;
+
  public:
-  MostBalancedMinimumCut(Hypergraph& hypergraph,
+  MostBalancedMinimumCut(HyperGraph& hypergraph,
                          const Context& context,
                          Network& flowNetwork) :
     _hg(hypergraph),
@@ -422,7 +425,7 @@ class MostBalancedMinimumCut {
   }
 
 
-  Hypergraph& _hg;
+  HyperGraph& _hg;
   const Context& _context;
   Network& _flow_network;
 

@@ -44,10 +44,12 @@
 #include "mt-kahypar/partition/refinement/flow/most_balanced_minimum_cut.h"
 
 namespace mt_kahypar {
-template <class Network = Mandatory>
+template <typename TypeTraits, class Network = Mandatory>
 class MaximumFlow {
+using HyperGraph = typename TypeTraits::HyperGraph;
+
  public:
-  MaximumFlow(Hypergraph& hypergraph, const Context& context, Network& flow_network) :
+  MaximumFlow(HyperGraph& hypergraph, const Context& context, Network& flow_network) :
     _hg(hypergraph),
     _context(context),
     _flow_network(flow_network),
@@ -143,7 +145,7 @@ class MaximumFlow {
         continue;
       }
 
-      for (FlowEdge& e : _flow_network.incidentEdges(u)) {
+      for (ds::FlowEdge& e : _flow_network.incidentEdges(u)) {
         const NodeID v = e.target;
         if (!_visited[v] && _flow_network.residualCapacity(e)) {
           _parent.set(v, &e);
@@ -165,7 +167,7 @@ class MaximumFlow {
     if (_flow_network.isSource(cur) || min_flow == 0) {
       return min_flow;
     } else {
-      FlowEdge* e = _parent.get(cur);
+      ds::FlowEdge* e = _parent.get(cur);
       const Flow f = augment(e->source, std::min(min_flow, _flow_network.residualCapacity(*e)));
 
       ASSERT([&]() {
@@ -206,27 +208,29 @@ class MaximumFlow {
     }
   }
 
-  Hypergraph& _hg;
+  HyperGraph& _hg;
   const Context& _context;
   Network& _flow_network;
 
   // Datastructure for BFS
-  kahypar::ds::FastResetArray<FlowEdge*> _parent;
+  kahypar::ds::FastResetArray<mt_kahypar::ds::FlowEdge*> _parent;
   kahypar::ds::FastResetFlagArray<> _visited;
   std::queue<NodeID> _Q;
 
-  MostBalancedMinimumCut<Network> _mbmc;
+  MostBalancedMinimumCut<TypeTraits, Network> _mbmc;
 
   std::vector<PartitionID> _original_part_id;
 };
 
-template <class Network = Mandatory>
-class BoykovKolmogorov : public MaximumFlow<Network>{
-  using Base = MaximumFlow<Network>;
+template <typename TypeTraits, class Network = Mandatory>
+class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
+  using Base = MaximumFlow<TypeTraits,Network>;
   using FlowGraph = maxflow::Graph<int, int, int>;
+  private:
+  using HyperGraph = typename TypeTraits::HyperGraph;
 
  public:
-  BoykovKolmogorov(Hypergraph& hypergraph, const Context& context, Network& flow_network) :
+  BoykovKolmogorov(HyperGraph& hypergraph, const Context& context, Network& flow_network) :
     Base(hypergraph, context, flow_network),
     _flow_graph(static_cast<size_t>(hypergraph.initialNumNodes()) + 2 * hypergraph.initialNumEdges(),
                 static_cast<size_t>(hypergraph.initialNumNodes()) + 2 * hypergraph.initialNumEdges()),
@@ -282,10 +286,10 @@ class BoykovKolmogorov : public MaximumFlow<Network>{
 
     for (const NodeID node : _flow_network.nodes()) {
       const NodeID u = _flow_network_mapping[node];
-      for (FlowEdge& edge : _flow_network.incidentEdges(node)) {
+      for (ds::FlowEdge& edge : _flow_network.incidentEdges(node)) {
         const NodeID v = _flow_network_mapping[edge.target];
         const Capacity c = edge.capacity;
-        FlowEdge& rev_edge = _flow_network.reverseEdge(edge);
+        ds::FlowEdge& rev_edge = _flow_network.reverseEdge(edge);
         const Capacity rev_c = rev_edge.capacity;
         if (!_visited[edge.target]) {
           FlowGraph::arc* a = _flow_graph.add_edge(u, v, c, rev_c);
@@ -308,13 +312,14 @@ class BoykovKolmogorov : public MaximumFlow<Network>{
 };
 
 
-template <class Network = Mandatory>
-class IBFS : public MaximumFlow<Network>{
-  using Base = MaximumFlow<Network>;
+template <typename TypeTraits, class Network = Mandatory>
+class IBFS : public MaximumFlow<TypeTraits, Network>{
+  using Base = MaximumFlow<TypeTraits, Network>;
   using FlowGraph = maxflow::IBFSGraph;
-
+ private:
+  using HyperGraph = typename TypeTraits::HyperGraph;
  public:
-  IBFS(Hypergraph& hypergraph, const Context& context, Network& flow_network) :
+  IBFS(HyperGraph& hypergraph, const Context& context, Network& flow_network) :
     Base(hypergraph, context, flow_network),
     _flow_graph(FlowGraph::IB_INIT_COMPACT),
     _flow_network_mapping(static_cast<size_t>(hypergraph.initialNumNodes()) +
@@ -369,10 +374,10 @@ class IBFS : public MaximumFlow<Network>{
 
     for (const NodeID node : _flow_network.nodes()) {
       const NodeID u = _flow_network_mapping[node];
-      for (FlowEdge& edge : _flow_network.incidentEdges(node)) {
+      for (ds::FlowEdge& edge : _flow_network.incidentEdges(node)) {
         const NodeID v = _flow_network_mapping[edge.target];
         const Capacity c = edge.capacity;
-        FlowEdge& rev_edge = _flow_network.reverseEdge(edge);
+        ds::FlowEdge& rev_edge = _flow_network.reverseEdge(edge);
         const Capacity rev_c = rev_edge.capacity;
         if (!_visited[edge.target]) {
           _flow_graph.addEdge(u, v, c, rev_c, &edge, &rev_edge);

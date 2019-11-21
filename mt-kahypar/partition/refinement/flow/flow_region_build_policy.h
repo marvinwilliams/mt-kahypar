@@ -33,12 +33,16 @@
 #include "mt-kahypar/utils/randomize.h"
 
 namespace mt_kahypar {
+template< typename TypeTraits>
 class FlowRegionBuildPolicy : public meta::PolicyBase {
-    
+
+  private:
+    using HyperGraph = typename TypeTraits::HyperGraph;
+
 
  public:
   template <class Network = Mandatory>
-  static inline HypernodeID bfs(const Hypergraph& hg,
+  static inline HypernodeID bfs(const HyperGraph& hg,
                                 Network& flow_network,
                                 std::vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
@@ -84,11 +88,13 @@ class FlowRegionBuildPolicy : public meta::PolicyBase {
   }
 };
 
-
-class CutBuildPolicy : public FlowRegionBuildPolicy {
+template< typename TypeTraits>
+class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
+  private:
+    using HyperGraph = typename TypeTraits::HyperGraph;
  public:
   template <class Network = Mandatory>
-  inline static void buildFlowNetwork(const Hypergraph& hg,
+  inline static void buildFlowNetwork(const HyperGraph& hg,
                                       const Context& context,
                                       Network& flow_network,
                                       std::vector<HyperedgeID>& cut_hes,
@@ -123,7 +129,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy {
                 * context.partition.perfect_balance_part_weights[0]
                 - hg.partWeight(block_0)), 0.0);
 
-    const HypernodeID num_nodes_block_0 = FlowRegionBuildPolicy::bfs(hg, flow_network,
+    const HypernodeID num_nodes_block_0 = FlowRegionBuildPolicy<TypeTraits>::bfs(hg, flow_network,
                                                                      start_nodes_block_0,
                                                                      block_0,
                                                                      max_part_weight_0,
@@ -134,7 +140,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy {
       flow_network.removeHypernode(last_hn_block_0);
     }
 
-    const HypernodeID num_nodes_block_1 = FlowRegionBuildPolicy::bfs(hg,
+    const HypernodeID num_nodes_block_1 = FlowRegionBuildPolicy<TypeTraits>::bfs(hg,
                                                                      flow_network,
                                                                      start_nodes_block_1,
                                                                      block_1,
