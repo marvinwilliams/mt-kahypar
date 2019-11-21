@@ -6,8 +6,6 @@
 #include "mt-kahypar/partition/refinement/flow/flow_region_build_policy.h"
 #include "mt-kahypar/partition/refinement/flow/maximum_flow.h"
 
-
-#include "external_tools/kahypar/kahypar/datastructure/flow_network.h"
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_array.h"
 
 #include "mt-kahypar/datastructures/flow_network.h"
@@ -17,7 +15,7 @@ namespace mt_kahypar {
 template< typename TypeTraits,
           typename ExecutionPolicy,
           template<typename> class GainPolicy >
-class FlowRefiner final : public IRefiner{
+class FlowRefinerT final : public IRefiner{
     private:
         using HyperGraph = typename TypeTraits::HyperGraph;
         using StreamingHyperGraph = typename TypeTraits::StreamingHyperGraph;
@@ -27,34 +25,30 @@ class FlowRefiner final : public IRefiner{
         using Network = ds::FlowNetwork<TypeTraits>;
     
     public:
-        explicit FlowRefiner(Hypergraph& hypergraph, const Context& context):
+        explicit FlowRefinerT(HyperGraph& hypergraph, const Context& context):
             _hg(hypergraph),
             _context(context),
             _flow_network(_hg, _context, static_cast<size_t>(hypergraph.initialNumNodes()) + 2 * hypergraph.initialNumEdges()),
             _current_level(0),
             _execution_policy(context.refinement.execution_policy_alpha),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
-            _maximum_flow(IBFS(hypergraph, context, _flow_network)),
+            _maximum_flow(hypergraph, context, _flow_network),
             _visited(static_cast<size_t>(hypergraph.initialNumNodes() + hypergraph.initialNumEdges())) {
                 initialize();
         }
 
-        FlowRefiner(const FlowRefiner&) = delete;
-        FlowRefiner(FlowRefiner&&) = delete;
+        FlowRefinerT(const FlowRefinerT&) = delete;
+        FlowRefinerT(FlowRefinerT&&) = delete;
 
-        FlowRefiner& operator= (const FlowRefiner&) = delete;
-        FlowRefiner& operator= (FlowRefiner&&) = delete;
+        FlowRefinerT& operator= (const FlowRefinerT&) = delete;
+        FlowRefinerT& operator= (FlowRefinerT&&) = delete;
 
     private:
         void initialize() {
-            HypernodeID current_num_nodes = 0;
-            for ( const HypernodeID& hn : _hg.nodes() ) {
-            ++current_num_nodes;
-            }
-            _execution_policy.initialize(_hg, current_num_nodes);
+            _execution_policy.initialize(_hg, _hg.currentNumNodes());
         }
 
-        bool refineImpl(const std::vector<HypernodeID>& refinement_nodes, kahypar::Metrics& best_metrics) override final {
+        bool refineImpl(const std::vector<HypernodeID>&, kahypar::Metrics& best_metrics) override final {
             // flow refinement is not executed on all levels of the n-level hierarchy.
             // If flow should be executed on the current level is determined by the execution policy.
             ++_current_level;
@@ -67,7 +61,7 @@ class FlowRefiner final : public IRefiner{
             //     corresponding bipartition
             // NOTE(heuer): If anything goes wrong in integration experiments,
             //              this should be moved inside while loop.
-            QuotientGraphBlockScheduler scheduler(_hg, _context);
+            QuotientGraphBlockScheduler<TypeTraits> scheduler(_hg, _context);
             scheduler.buildQuotientGraph();
 
             // Active Block Scheduling
@@ -122,7 +116,7 @@ class FlowRefiner final : public IRefiner{
 
         
         bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1,
-         QuotientGraphBlockScheduler & quotientGraph, kahypar::Metrics& best_metrics){
+         QuotientGraphBlockScheduler<TypeTraits> & quotientGraph, kahypar::Metrics& best_metrics){
             
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
@@ -161,7 +155,7 @@ class FlowRefiner final : public IRefiner{
             //std::shuffle(cut_hes.begin(), cut_hes.end(),Randomize::instance().getGenerator());
 
             // Build Flow Problem
-            CutBuildPolicy::buildFlowNetwork(_hg, _context, _flow_network,
+            CutBuildPolicy<TypeTraits>::buildFlowNetwork(_hg, _context, _flow_network,
                                             cut_hes, alpha, block_0, block_1,
                                             _visited);
             const HyperedgeWeight cut_flow_network_before = _flow_network.build(block_0, block_1);
@@ -171,7 +165,7 @@ class FlowRefiner final : public IRefiner{
             //printMetric();
 
             // Find minimum (S,T)-bipartition
-            const HyperedgeWeight cut_flow_network_after = _maximum_flow->minimumSTCut(block_0, block_1);
+            const HyperedgeWeight cut_flow_network_after = _maximum_flow.minimumSTCut(block_0, block_1);
 
             // Maximum Flow algorithm returns infinity, if all
             // hypernodes contained in the flow problem are either
@@ -221,14 +215,14 @@ class FlowRefiner final : public IRefiner{
                 alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
             }
 
-            _maximum_flow->rollback(current_improvement);
+            _maximum_flow.rollback(current_improvement);
 
             // Perform moves in quotient graph in order to update
             // cut hyperedges between adjacent blocks.
             if (current_improvement) {
                 for (const HypernodeID& hn : _flow_network.hypernodes()) {
                 const PartitionID from = _hg.partID(hn);
-                const PartitionID to = _maximum_flow->getOriginalPartition(hn);
+                const PartitionID to = _maximum_flow.getOriginalPartition(hn);
                 if (from != to) {
                     quotientGraph.changeNodePart(hn, from, to);
                 }
@@ -279,13 +273,13 @@ class FlowRefiner final : public IRefiner{
     size_t _current_level;
     ExecutionPolicy _execution_policy;
     std::vector<std::vector<size_t> > _num_improvements;
-    std::unique_ptr<MaximumFlow<Network> > _maximum_flow;
+    IBFS<TypeTraits,Network> _maximum_flow;
     kahypar::ds::FastResetFlagArray<> _visited;
 };
 
 
 
 template< typename ExecutionPolicy = Mandatory >
-using flowKm1Refiner = FlowRefiner<GlobalTypeTraits, ExecutionPolicy, Km1Policy>;
+using FlowRefiner = FlowRefinerT<GlobalTypeTraits, ExecutionPolicy, Km1Policy>;
 
 } //namespace mt_kahypar

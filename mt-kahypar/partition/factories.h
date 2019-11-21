@@ -68,7 +68,7 @@ using LabelPropagationCutDispatcher = kahypar::meta::StaticMultiDispatchFactory<
                                                                                 IRefiner,
                                                                                 kahypar::meta::Typelist<ExecutionPolicyClasses>>;
 
-using FlowDispatcher = kahypar::meta::StaticMultiDispatchFactory<flowKm1Refiner,
+using FlowDispatcher = kahypar::meta::StaticMultiDispatchFactory<FlowRefiner,
                                                                                 IRefiner,
                                                                                 kahypar::meta::Typelist<ExecutionPolicyClasses>>;
 
