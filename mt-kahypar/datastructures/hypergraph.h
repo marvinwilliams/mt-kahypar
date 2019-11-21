@@ -1401,6 +1401,15 @@ class Hypergraph {
     });
   }
 
+  //Returns number of active Hypernodes
+  HypernodeID currentNumNodes() const{
+    HypernodeID current_num_nodes = 0;
+    for ( const HypernodeID& hn:nodes() ) {
+      ++current_num_nodes;
+    }
+    return current_num_nodes;
+  }
+
  private:
 
   // ####################### Uncontraction Functions #######################
