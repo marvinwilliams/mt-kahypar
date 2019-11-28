@@ -73,35 +73,37 @@ class FlowRefinerT final : public IRefiner{
                 scheduler.randomShuffleQoutientEdges();
                 std::vector<bool> tmp_active_blocks(_context.partition.k, false);
                 active_block_exist = false;
-                for (const auto& e : scheduler.qoutientGraphEdges()) {
-                    const PartitionID block_0 = e.first;
-                    const PartitionID block_1 = e.second;
+                for (const auto& blockEdges : scheduler.qoutientGraphEdges()) {
+                    for(auto& e:blockEdges){
+                        const PartitionID block_0 = e.first;
+                        const PartitionID block_1 = e.second;
 
-                    // Heuristic: If a flow refinement never improved a bipartition,
-                    //            we ignore the refinement for these block in the
-                    //            second iteration of active block scheduling
-                    if (_context.refinement.flow.use_improvement_history &&
-                        current_round > 1 && _num_improvements[block_0][block_1] == 0) {
-                    continue;
-                    }
+                        // Heuristic: If a flow refinement never improved a bipartition,
+                        //            we ignore the refinement for these block in the
+                        //            second iteration of active block scheduling
+                        if (_context.refinement.flow.use_improvement_history &&
+                            current_round > 1 && _num_improvements[block_0][block_1] == 0) {
+                        continue;
+                        }
 
-                    if (active_blocks[block_0] || active_blocks[block_1]) {
-                        const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler, best_metrics);
-                        if (improved) {
-                            /*DBG << "Improvement found beetween blocks " << block_0 << " and "
-                                << block_1 << " in round #"
-                                << current_round;
-                            printMetric();*/
-                            improvement = true;
-                            active_block_exist = true;
-                            tmp_active_blocks[block_0] = true;
-                            tmp_active_blocks[block_1] = true;
-                            _num_improvements[block_0][block_1]++;
+                        if (active_blocks[block_0] || active_blocks[block_1]) {
+                            const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler, best_metrics);
+                            if (improved) {
+                                /*DBG << "Improvement found beetween blocks " << block_0 << " and "
+                                    << block_1 << " in round #"
+                                    << current_round;
+                                printMetric();*/
+                                improvement = true;
+                                active_block_exist = true;
+                                tmp_active_blocks[block_0] = true;
+                                tmp_active_blocks[block_1] = true;
+                                _num_improvements[block_0][block_1]++;
+                            }
                         }
                     }
                 }
                 current_round++;
-                std::swap(active_blocks, tmp_active_blocks);
+                std::swap(active_blocks, tmp_active_blocks);  
             }
 
             //printMetric(true, true);
@@ -147,7 +149,6 @@ class FlowRefinerT final : public IRefiner{
             
             
             utils::Randomize::instance().shuffleVector(cut_hes);
-            //std::shuffle(cut_hes.begin(), cut_hes.end(),Randomize::instance().getGenerator());
 
             // Build Flow Problem
             CutBuildPolicy<TypeTraits>::buildFlowNetwork(_hg, _context, _flow_network,

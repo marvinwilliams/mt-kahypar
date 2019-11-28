@@ -41,7 +41,8 @@ namespace mt_kahypar {
 template<typename TypeTraits>
 class QuotientGraphBlockScheduler {
   typedef std::pair<PartitionID, PartitionID> edge;
-  using ConstIncidenceIterator = std::vector<edge>::const_iterator;
+  using ConstIncidenceIterator = std::vector<std::vector<edge>>::const_iterator;
+  using ConstIncidenceBlockIterator = std::vector<edge>::const_iterator;
   using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
 
  private:
@@ -73,16 +74,24 @@ class QuotientGraphBlockScheduler {
               _block_pair_cut_he[block0][block1].push_back(he);
             }
           }
-        }
+        } 
       }
     }
-    for (const edge& e : edge_list) {
-      _quotient_graph.push_back(e);
+    for(PartitionID k = 0; k < _context.partition.k; k++){
+      std::vector<edge> temp_block_edges;
+      for (const edge& e : edge_list) {
+        if(e.first == k)
+          temp_block_edges.push_back(e);
+        }
+        _quotient_graph.push_back(temp_block_edges);
     }
   }
 
   void randomShuffleQoutientEdges() {
     utils::Randomize::instance().shuffleVector(_quotient_graph);
+    for(auto &blockVec:_quotient_graph){
+      utils::Randomize::instance().shuffleVector(blockVec);
+    }
     //std::shuffle(_quotient_graph.begin(), _quotient_graph.end(),Randomize::instance().getGenerator());
   }
 
@@ -170,7 +179,7 @@ class QuotientGraphBlockScheduler {
 
   HyperGraph& _hg;
   const Context& _context;
-  std::vector<edge> _quotient_graph;
+  std::vector<std::vector<edge>> _quotient_graph;
 
   // Contains the cut hyperedges for each pair of blocks.
   std::vector<std::vector<std::vector<HyperedgeID> > > _block_pair_cut_he;

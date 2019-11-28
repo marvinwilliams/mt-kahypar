@@ -35,7 +35,7 @@
 #include "mt-kahypar/partition/coarsening/policies/rating_acceptance_policy.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
-#include "mt-kahypar/partition/refinement/flow_refiner.h"
+#include "mt-kahypar/partition/refinement/flow/flow_refiner.h"
 #include "mt-kahypar/partition/refinement/policies/execution_policy.h"
 
 namespace mt_kahypar {
