@@ -74,13 +74,6 @@ class MostBalancedMinimumCut {
   void mostBalancedMinimumCut(const PartitionID block_0, const PartitionID block_1) {
     reset();
 
-    // Mark all fixed vertices as visited => prevents them to move
-    /*for (const HypernodeID& hn : _flow_network.hypernodes()) {
-      if (_hg.isFixedVertex(hn)) {
-        _visited.set(hn, true);
-      }
-    }*/
-
     // Mark all reachable nodes from source and sink set as invalid
     markAllReachableNodesAsVisited<true>(block_0, block_1);
     markAllReachableNodesAsVisited<false>(block_0, block_1);
@@ -163,7 +156,7 @@ class MostBalancedMinimumCut {
     DBG << "Best imbalance: " << best_imbalance;
 
     ASSERT([&]() {
-        const HyperedgeWeight metric_before = metrics::objective(_hg, _context.partition.objective);
+        //const HyperedgeWeight metric_before = metrics::objective(_hg, _context.partition.objective);
         const double imbalance_before = metrics::localImbalance(_hg, _context);
         std::vector<NodeID> topological_order(dag.numNodes(), 0);
         std::vector<NodeID> part_before(dag.numNodes(), block_0);
@@ -179,12 +172,13 @@ class MostBalancedMinimumCut {
           }
           // Check cut after assignment of an SCC
           // Should be the same as the starting cut
-          const HyperedgeWeight metric_after = metrics::objective(_hg, _context.partition.objective);
+          // !does not hold in parallel environment
+          /*const HyperedgeWeight metric_after = metrics::objective(_hg, _context.partition.objective);
           if (metric_after != metric_before) {
             LOG << "Assignment of SCC leads to inconsistent hyperedge cut!";
             LOG << V(metric_before) << V(metric_after);
             return false;
-          }
+          }*/
         }
 
         // Rollback hypernode assignment
@@ -198,11 +192,11 @@ class MostBalancedMinimumCut {
           }
         }
 
-        const HyperedgeWeight metric = metrics::objective(_hg, _context.partition.objective);
-        if (metric != metric_before ||
-            metrics::localImbalance(_hg, _context) != imbalance_before) {
+        //const HyperedgeWeight metric = metrics::objective(_hg, _context.partition.objective);
+        //metric != metric_before ||
+        if (metrics::localImbalance(_hg, _context) != imbalance_before) {
           LOG << "Restoring original partition failed!";
-          LOG << V(metric_before) << V(metric);
+          //LOG << V(metric_before) << V(metric);
           LOG << V(imbalance_before) << V(metrics::localImbalance(_hg, _context));
           return false;
         }

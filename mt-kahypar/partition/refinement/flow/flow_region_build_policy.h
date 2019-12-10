@@ -49,8 +49,7 @@ class FlowRegionBuildPolicy : public meta::PolicyBase {
                                 const HypernodeWeight max_part_weight,
                                 kahypar::ds::FastResetFlagArray<>& visited) {
     visited.reset();
-    utils::Randomize::instance().shuffleVector(start_nodes, start_nodes.size(), 1);
-    //std::shuffle(start_nodes.begin(), start_nodes.end(),Randomize::instance().getGenerator());
+    utils::Randomize::instance().shuffleVector(start_nodes);
     std::queue<HypernodeID> Q;
     HypernodeWeight queue_weight = 0;
     for (const HypernodeID& hn : start_nodes) {
@@ -134,7 +133,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      block_0,
                                                                      max_part_weight_0,
                                                                      visited);
-    if (num_nodes_block_0 == hg.partSize(block_0)) {
+    if (num_nodes_block_0 == hg.localPartSize(block_0)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_0 = *(flow_network.hypernodes().second - 1);
       flow_network.removeHypernode(last_hn_block_0);
@@ -146,7 +145,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      block_1,
                                                                      max_part_weight_1,
                                                                      visited);
-    if (num_nodes_block_1 == hg.partSize(block_1)) {
+    if (num_nodes_block_1 == hg.localPartSize(block_1)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_1 = *(flow_network.hypernodes().second - 1);
       flow_network.removeHypernode(last_hn_block_1);

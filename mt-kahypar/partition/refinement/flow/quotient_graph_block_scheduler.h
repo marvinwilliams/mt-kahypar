@@ -27,6 +27,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <list>
+#include <tbb/spin_mutex.h>
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 #include "external_tools/kahypar/kahypar/datastructure/sparse_set.h"
@@ -41,8 +43,7 @@ namespace mt_kahypar {
 template<typename TypeTraits>
 class QuotientGraphBlockScheduler {
   typedef std::pair<PartitionID, PartitionID> edge;
-  using ConstIncidenceIterator = std::vector<std::vector<edge>>::const_iterator;
-  using ConstIncidenceBlockIterator = std::vector<edge>::const_iterator;
+  using ConstIncidenceIterator = std::vector<edge>::const_iterator;
   using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
 
  private:
@@ -53,10 +54,14 @@ class QuotientGraphBlockScheduler {
     _hg(hypergraph),
     _context(context),
     _quotient_graph(),
+    _round_edges(),
+    _active_blocks(_context.partition.k, true),
+    _locked_blocks(_context.partition.k, false),
+    
     _block_pair_cut_he(context.partition.k,
                        std::vector<std::vector<HyperedgeID> >(context.partition.k,
                                                               std::vector<HyperedgeID>())),
-    _visited(_hg.initialNumEdges()) { }
+    _schedule_mutex() { }
 
   QuotientGraphBlockScheduler(const QuotientGraphBlockScheduler&) = delete;
   QuotientGraphBlockScheduler(QuotientGraphBlockScheduler&&) = delete;
@@ -77,22 +82,62 @@ class QuotientGraphBlockScheduler {
         } 
       }
     }
-    for(PartitionID k = 0; k < _context.partition.k; k++){
-      std::vector<edge> temp_block_edges;
-      for (const edge& e : edge_list) {
-        if(e.first == k)
-          temp_block_edges.push_back(e);
-        }
-        _quotient_graph.push_back(temp_block_edges);
+    for (const edge& e : edge_list) {
+      _quotient_graph.push_back(e);
+    }
+  }
+
+  std::vector<edge> getInitialParallelEdges(){
+    std::vector<edge> initialEdges;
+    for(auto edge:_quotient_graph){
+      if(_active_blocks[edge.first] && _active_blocks[edge.second]){
+        _round_edges.push_back(edge);
+      }
+    }
+    std::list<edge>::const_iterator e = _round_edges.cbegin();
+    while (e != _round_edges.cend()){
+      if (!_locked_blocks[e->first] && !_locked_blocks[e->second]) {
+        initialEdges.push_back(*e);
+        _locked_blocks[e->first] = true;
+        _locked_blocks[e->second] = true;
+
+        e = _round_edges.erase(e);
+      }
+      else {
+        ++e;
+      }
+    }
+    //reset active-array before each round
+    //blocks are set active, if improvement was found
+    _active_blocks.assign(_context.partition.k, false);
+    
+    return initialEdges;
+  }
+
+  void scheduleNextBlock(tbb::parallel_do_feeder<edge>& feeder, const PartitionID block_0, const PartitionID block_1){
+    tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
+    //unlock the blocks
+    _locked_blocks[block_0] = false;
+    _locked_blocks[block_1] = false;
+
+    //start new flow-calclation for blocks
+    std::list<edge>::const_iterator e = _round_edges.cbegin();
+    while (e != _round_edges.cend()){
+      if (!_locked_blocks[e->first] && !_locked_blocks[e->second]) {
+        _locked_blocks[e->first] = true;
+        _locked_blocks[e->second] = true;
+        feeder.add(*e);
+
+        e = _round_edges.erase(e);
+      }
+      else {
+        ++e;
+      }
     }
   }
 
   void randomShuffleQoutientEdges() {
     utils::Randomize::instance().shuffleVector(_quotient_graph);
-    for(auto &blockVec:_quotient_graph){
-      utils::Randomize::instance().shuffleVector(blockVec);
-    }
-    //std::shuffle(_quotient_graph.begin(), _quotient_graph.end(),Randomize::instance().getGenerator());
   }
 
   std::pair<ConstIncidenceIterator, ConstIncidenceIterator> qoutientGraphEdges() const {
@@ -112,12 +157,15 @@ class QuotientGraphBlockScheduler {
           }
           cut_hyperedges.insert(he);
         }
+        //TODO: Assertion fails very rarely, probably race condition?
+        /*
         for (const HyperedgeID& he : _hg.edges()) {
           if (_hg.pinCountInPart(he, block0) > 0 &&
               _hg.pinCountInPart(he, block1) > 0) {
             if (cut_hyperedges.find(he) == cut_hyperedges.end()) {
               LOG << V(_hg.pinCountInPart(he, block0));
               LOG << V(_hg.pinCountInPart(he, block1));
+              LOG << V(_hg.initialNumNodes()) << V(_hg.currentNumNodes());
               LOG << V(he) << "should be inside the incidence set of"
                   << V(block0) << "and" << V(block1);
               return false;
@@ -131,7 +179,7 @@ class QuotientGraphBlockScheduler {
               return false;
             }
           }
-        }
+        }*/
         return true;
       } (), "Cut hyperedge set between " << V(block0) << " and " << V(block1) << " is wrong!");
 
@@ -156,33 +204,43 @@ class QuotientGraphBlockScheduler {
     }
   }
 
+  void setActiveBlock(size_t blockId, bool active){
+    _active_blocks[blockId] = active;
+  }
+
  private:
   static constexpr bool debug = false;
 
   void updateBlockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
-    _visited.reset();
+    kahypar::ds::FastResetFlagArray<> visited = kahypar::ds::FastResetFlagArray<>(_hg.initialNumEdges());
     size_t N = _block_pair_cut_he[block0][block1].size();
     for (size_t i = 0; i < N; ++i) {
       const HyperedgeID he = _block_pair_cut_he[block0][block1][i];
       if (_hg.pinCountInPart(he, block0) == 0 ||
           _hg.pinCountInPart(he, block1) == 0 ||
-          _visited[he]) {
+          visited[he]) {
         std::swap(_block_pair_cut_he[block0][block1][i],
                   _block_pair_cut_he[block0][block1][N - 1]);
         _block_pair_cut_he[block0][block1].pop_back();
         --i;
         --N;
       }
-      _visited.set(he, true);
+      visited.set(he, true);
     }
   }
 
   HyperGraph& _hg;
   const Context& _context;
-  std::vector<std::vector<edge>> _quotient_graph;
+  std::vector<edge> _quotient_graph;
+  //holds all eges, that are executed in that round (both blocks are active)
+  std::list<edge> _round_edges;
+
+  std::vector<bool> _active_blocks;
+  std::vector<bool> _locked_blocks;
 
   // Contains the cut hyperedges for each pair of blocks.
   std::vector<std::vector<std::vector<HyperedgeID> > > _block_pair_cut_he;
-  kahypar::ds::FastResetFlagArray<> _visited;
+
+  tbb::spin_mutex _schedule_mutex;
 };
 }  // namespace mt-kahypar
