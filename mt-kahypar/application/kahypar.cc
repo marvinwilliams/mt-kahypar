@@ -20,35 +20,38 @@
 
 #include <iostream>
 
-#include "mt-kahypar/definitions.h"
-#include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/application/command_line_options.h"
+#include "mt-kahypar/definitions.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/io/sql_plottools_serializer.h"
+#include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/partitioner.h"
 
-#include "mt-kahypar/utils/timer.h"
 #include "mt-kahypar/utils/randomize.h"
+#include "mt-kahypar/utils/timer.h"
 
 int main(int argc, char* argv[]) {
-
   mt_kahypar::Context context;
   mt_kahypar::processCommandLineInput(context, argc, argv);
   mt_kahypar::io::printBanner(context);
 
   mt_kahypar::utils::Randomize::instance().setSeed(context.partition.seed);
 
+  size_t num_available_cpus = mt_kahypar::HardwareTopology::instance().num_cpus();
+  if ( num_available_cpus < context.shared_memory.num_threads ) {
+    WARNING("There are currently only" << num_available_cpus << "cpus available."
+      << "Setting number of threads from" << context.shared_memory.num_threads
+      << "to" << num_available_cpus);
+    context.shared_memory.num_threads = num_available_cpus;
+  }
+
   // Initialize TBB task arenas on numa nodes
   mt_kahypar::TBBNumaArena::instance(context.shared_memory.num_threads);
 
-
-  mt_kahypar::HighResClockTimepoint start_io = std::chrono::high_resolution_clock::now();
   // Read Hypergraph
   mt_kahypar::Hypergraph hypergraph = mt_kahypar::io::readHypergraphFile(
     context.partition.graph_filename, context.partition.k,
     context.shared_memory.initial_distribution);
-  mt_kahypar::HighResClockTimepoint end_io = std::chrono::high_resolution_clock::now();
-  std::cout << "IO time: " << static_cast<std::chrono::duration<double>>(end_io - start_io).count() << " s" << std::endl;
 
   // Partition Hypergraph
   mt_kahypar::HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
@@ -59,7 +62,7 @@ int main(int argc, char* argv[]) {
   std::chrono::duration<double> elapsed_seconds(end - start);
   mt_kahypar::io::printPartitioningResults(hypergraph, context, elapsed_seconds);
   mt_kahypar::io::serializer::serialize(hypergraph, context, elapsed_seconds);
-  if ( context.partition.write_partition_file ) {
+  if (context.partition.write_partition_file) {
     mt_kahypar::io::writePartitionFile(hypergraph, context.partition.graph_partition_filename);
   }
 

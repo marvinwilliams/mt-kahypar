@@ -21,45 +21,49 @@
 
 #pragma once
 
-#include "tbb/parallel_for.h"
 #include "tbb/blocked_range.h"
+#include "tbb/parallel_for.h"
 
 #include "kahypar/meta/policy_registry.h"
 
+#include "mt-kahypar/datastructures/graph.h"
+#include "mt-kahypar/definitions.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/io/partitioning_output.h"
 #include "mt-kahypar/partition/context.h"
-#include "mt-kahypar/definitions.h"
-#include "mt-kahypar/datastructures/graph.h"
 #include "mt-kahypar/partition/factories.h"
+#include "mt-kahypar/partition/initial_partitioning/direct_initial_partitioner.h"
 #include "mt-kahypar/partition/metrics.h"
-#include "mt-kahypar/partition/preprocessing/community_reassignment/single_node_hyperedge_remover.h"
-#include "mt-kahypar/partition/preprocessing/community_reassignment/community_redistributor.h"
+#include "mt-kahypar/partition/multilevel.h"
 #include "mt-kahypar/partition/preprocessing/community_detection/parallel_louvain.h"
-#include "mt-kahypar/partition/initial_partitioning/initial_partitioner.h"
+#include "mt-kahypar/partition/preprocessing/community_reassignment/community_redistributor.h"
+#include "mt-kahypar/partition/preprocessing/community_reassignment/single_node_hyperedge_remover.h"
 #include "mt-kahypar/utils/stats.h"
 
 namespace mt_kahypar {
 namespace partition {
-
 class Partitioner {
  private:
   static constexpr bool debug = false;
+
+  static constexpr double MIN_DEGREE_RANK = 0.0001;
+  static constexpr double MAX_DEGREE_RANK = 0.01;
+  static constexpr HypernodeID STDEV_MAX_DEGREE_THRESHOLD_FACTOR = 25;
+  static constexpr HypernodeID HIGH_DEGREE_VERTEX_THRESHOLD = 100;
 
  public:
   Partitioner() :
     _single_node_he_remover() { }
 
   Partitioner(const Partitioner&) = delete;
-  Partitioner& operator= (const Partitioner&) = delete;
+  Partitioner & operator= (const Partitioner &) = delete;
 
   Partitioner(Partitioner&&) = delete;
-  Partitioner& operator= (Partitioner&&) = delete;
+  Partitioner & operator= (Partitioner &&) = delete;
 
   inline void partition(Hypergraph& hypergraph, Context& context);
 
  private:
-
   static inline void setupContext(const Hypergraph& hypergraph, Context& context);
 
   static inline void configurePreprocessing(const Hypergraph& hypergraph, Context& context);
@@ -76,8 +80,14 @@ class Partitioner {
 };
 
 inline void Partitioner::setupContext(const Hypergraph& hypergraph, Context& context) {
-  context.coarsening.contraction_limit =
-    context.coarsening.contraction_limit_multiplier * context.partition.k;
+  if (context.initial_partitioning.mode == InitialPartitioningMode::direct) {
+    context.coarsening.contraction_limit =
+      context.coarsening.contraction_limit_multiplier * context.partition.k;
+  } else {
+    context.coarsening.contraction_limit =
+      2 * std::max(context.shared_memory.num_threads, (size_t)context.partition.k) *
+      context.coarsening.contraction_limit_multiplier;
+  }
 
   context.coarsening.hypernode_weight_fraction =
     context.coarsening.max_allowed_weight_multiplier
@@ -88,34 +98,71 @@ inline void Partitioner::setupContext(const Hypergraph& hypergraph, Context& con
 
   context.setupPartWeights(hypergraph.totalWeight());
 
-  if ( context.coarsening.use_hypernode_degree_threshold ) {
-    // TODO(heuer): replace this with a smarter statistical detection of power law distribution
-    double avg_hypernode_degree = metrics::avgHypernodeDegree(hypergraph);
-    double stdev_hn_degree = 0.0;
-    for (const auto& hn : hypergraph.nodes()) {
-      stdev_hn_degree += (hypergraph.nodeDegree(hn) - avg_hypernode_degree) *
-                        (hypergraph.nodeDegree(hn) - avg_hypernode_degree);
+  if (context.coarsening.use_high_degree_vertex_threshold) {
+    std::vector<HypernodeID> hn_degrees;
+    for ( const HypernodeID& hn : hypergraph.nodes() ) {
+      hn_degrees.push_back(hypergraph.nodeDegree(hn));
     }
-    stdev_hn_degree = std::sqrt(stdev_hn_degree / (hypergraph.initialNumNodes() - 1));
-    HyperedgeID rank_hypernode_degree = metrics::hypernodeDegreeRank(hypergraph,
-      hypergraph.initialNumNodes() - std::ceil(0.00166 * hypergraph.initialNumNodes()));
-    if ( avg_hypernode_degree + 5 * stdev_hn_degree < rank_hypernode_degree && rank_hypernode_degree > 250 ) {
-      context.coarsening.hypernode_degree_threshold = rank_hypernode_degree;
+    std::sort(hn_degrees.begin(), hn_degrees.end(),
+      [&](const HypernodeID& lhs, const HypernodeID& rhs) {
+        return lhs > rhs;
+      });
+    double last_stdev = 0.0;
+    double stdev_at_threshold = 0.0;
+    double stdev_threshold = hn_degrees[0] / STDEV_MAX_DEGREE_THRESHOLD_FACTOR;
+    HypernodeID prefix_sum = 0;
+    HypernodeID prefix_square_sum = 0;
+    for ( size_t i = 0; i < MAX_DEGREE_RANK * hn_degrees.size(); ++i ) {
+      prefix_sum += hn_degrees[i];
+      prefix_square_sum += (hn_degrees[i] * hn_degrees[i]);
+      double prefix_avg = static_cast<double>(prefix_sum) / (i + 1);
+      // VAR(X) = E(X^2) - avg^2
+      double stdev_degree = std::sqrt(static_cast<double>(prefix_square_sum) / (i + 1) - prefix_avg * prefix_avg);
+
+      // We accept the current index i as high degree vertex threshold, if
+      //  1.) It is a local maximum of the function stdev(hn_degrees[0:i])
+      //  2.) stdev(hn_degrees[0:i]) is greater than a threshold
+      //  3.) i is greater than some threshold
+      if ( last_stdev > stdev_degree &&
+           stdev_degree > stdev_threshold &&
+           i > MIN_DEGREE_RANK * hypergraph.initialNumNodes() ) {
+        context.coarsening.high_degree_vertex_threshold =
+          std::max(hn_degrees[i], HIGH_DEGREE_VERTEX_THRESHOLD);
+        break;
+      }
+      if ( i == MIN_DEGREE_RANK * hypergraph.initialNumNodes() ) {
+        stdev_at_threshold = stdev_degree;
+      }
+      last_stdev = stdev_degree;
+    }
+
+    // Fallback, if no high degree vertex threshold was detected,
+    // but stdev is still above the threshold
+    if ( stdev_at_threshold > stdev_threshold &&
+         context.coarsening.high_degree_vertex_threshold == std::numeric_limits<HypernodeID>::max() ) {
+        context.coarsening.high_degree_vertex_threshold =
+          std::max(hn_degrees[MIN_DEGREE_RANK * hypergraph.initialNumNodes()],
+            HIGH_DEGREE_VERTEX_THRESHOLD);
     }
   }
+
+  context.sanityCheck();
 }
 
 inline void Partitioner::configurePreprocessing(const Hypergraph& hypergraph, Context& context) {
-  const double density = static_cast<double>(hypergraph.initialNumEdges()) / static_cast<double>(hypergraph.initialNumNodes());
-  if (density < 0.75) {
-    context.preprocessing.edge_weight_modification = CommunityDetectionStarExpansionWeightModification::degree;
-  } else {
-    context.preprocessing.edge_weight_modification = CommunityDetectionStarExpansionWeightModification::uniform;
+  const double density = static_cast<double>(hypergraph.initialNumEdges()) /
+                         static_cast<double>(hypergraph.initialNumNodes());
+  if (context.preprocessing.community_detection.edge_weight_function == LouvainEdgeWeight::hybrid) {
+    if (density < 0.75) {
+      context.preprocessing.community_detection.edge_weight_function = LouvainEdgeWeight::degree;
+    } else {
+      context.preprocessing.community_detection.edge_weight_function = LouvainEdgeWeight::uniform;
+    }
   }
 }
 
 inline void Partitioner::sanitize(Hypergraph& hypergraph, const Context& context) {
-  HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
+  utils::Timer::instance().start_timer("single_node_hyperedge_removal", "Single Node Hyperedge Removal");
   const auto result = _single_node_he_remover.removeSingleNodeHyperedges(hypergraph);
   if (context.partition.verbose_output && result.num_removed_single_node_hes > 0) {
     LOG << "Performing single-node HE removal:";
@@ -126,84 +173,84 @@ inline void Partitioner::sanitize(Hypergraph& hypergraph, const Context& context
         << "unconnected HNs could have been removed" << "\033[0m";
     io::printStripe();
   }
-  HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("single_node_hyperedge_removal", "Single Node Hyperedge Removal",
-    "preprocessing", mt_kahypar::utils::Timer::Type::PREPROCESSING, 0, std::chrono::duration<double>(end - start).count());
+  utils::Timer::instance().stop_timer("single_node_hyperedge_removal");
 }
 
 inline void Partitioner::preprocess(Hypergraph& hypergraph, const Context& context) {
   io::printTopLevelPreprocessingBanner(context);
 
-  HighResClockTimepoint global_start = std::chrono::high_resolution_clock::now();
-  HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
-  ds::AdjListStarExpansion starExpansion(hypergraph, context);
-  ds::Clustering communities = ParallelModularityLouvain::run(starExpansion.G, context.shared_memory.num_threads);   //TODO(lars): give switch for PLM/SLM
-  starExpansion.restrictClusteringToHypernodes(communities);
-  HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("perform_community_detection", "Perform Community Detection",
-    "community_detection", mt_kahypar::utils::Timer::Type::PREPROCESSING, 0, std::chrono::duration<double>(end - start).count());
+  utils::Timer::instance().start_timer("community_detection", "Community Detection");
+  utils::Timer::instance().start_timer("perform_community_detection", "Perform Community Detection");
+  ds::Clustering communities(0);
+  if (!context.preprocessing.use_community_structure_from_file) {
+    ds::AdjListGraph graph = ds::AdjListStarExpansion::contructGraph(hypergraph, context);
+    communities = ParallelModularityLouvain::run(graph, context);   // TODO(lars): give switch for PLM/SLM
+    ds::AdjListStarExpansion::restrictClusteringToHypernodes(hypergraph, communities);
+  } else {
+    io::readPartitionFile(context.partition.graph_community_filename, communities);
+  }
+  utils::Timer::instance().stop_timer("perform_community_detection");
 
   // Stream community ids into hypergraph
-  start = std::chrono::high_resolution_clock::now();
+  utils::Timer::instance().start_timer("stream_community_ids", "Stream Community IDs");
   tbb::parallel_for(tbb::blocked_range<HypernodeID>(0UL, hypergraph.initialNumNodes()),
-    [&](const tbb::blocked_range<HypernodeID>& range) {
-    for ( HypernodeID hn = range.begin(); hn < range.end(); ++hn ) {
-      hypergraph.setCommunityID(hypergraph.globalNodeID(hn), communities[hn]);
-    }
-  });
-  end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("stream_community_ids", "Stream Community IDs",
-    "community_detection", mt_kahypar::utils::Timer::Type::PREPROCESSING, 1, std::chrono::duration<double>(end - start).count());
+                    [&](const tbb::blocked_range<HypernodeID>& range) {
+        for (HypernodeID hn = range.begin(); hn < range.end(); ++hn) {
+          hypergraph.setCommunityID(hypergraph.globalNodeID(hn), communities[hn]);
+        }
+      });
+  utils::Timer::instance().stop_timer("stream_community_ids");
 
   // Initialize Communities
-  start = std::chrono::high_resolution_clock::now();
+  utils::Timer::instance().start_timer("initialize_communities", "Initialize Communities");
   hypergraph.initializeCommunities();
-  end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("initialize_communities", "Initialize Communities",
-    "community_detection", mt_kahypar::utils::Timer::Type::PREPROCESSING, 2, std::chrono::duration<double>(end - start).count());
+  utils::Timer::instance().stop_timer("initialize_communities");
+
   utils::Stats::instance().add_stat("num_communities", hypergraph.numCommunities());
-  HighResClockTimepoint global_end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("community_detection", "Community Detection",
-    "preprocessing", mt_kahypar::utils::Timer::Type::PREPROCESSING, 1, std::chrono::duration<double>(global_end - global_start).count());
+  utils::Timer::instance().stop_timer("community_detection");
+
+  if (context.partition.verbose_output) {
+    io::printCommunityInformation(hypergraph);
+    io::printStripe();
+  }
 
   // Redistribute Hypergraph based on communities
-  start = std::chrono::high_resolution_clock::now();
+  utils::Timer::instance().start_timer("redistribution", "Redistribution");
   redistribution(hypergraph, context);
-  end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("redistribution", "Redistribution",
-    "preprocessing", mt_kahypar::utils::Timer::Type::PREPROCESSING, 2, std::chrono::duration<double>(end - start).count());
+  utils::Timer::instance().stop_timer("redistribution");
 }
 
 inline void Partitioner::redistribution(Hypergraph& hypergraph, const Context& context) {
   std::unique_ptr<preprocessing::ICommunityAssignment> community_assignment =
     RedistributionFactory::getInstance().createObject(
-      context.shared_memory.assignment_strategy, hypergraph, context);
+      context.preprocessing.community_redistribution.assignment_strategy, hypergraph, context);
 
-  for ( int node = 0; node < TBBNumaArena::instance().num_used_numa_nodes(); ++node) {
+  for (int node = 0; node < TBBNumaArena::instance().num_used_numa_nodes(); ++node) {
     utils::Stats::instance().add_stat("initial_hns_on_numa_node_" + std::to_string(node),
-      (int64_t) hypergraph.initialNumNodes(node));
+                                      (int64_t)hypergraph.initialNumNodes(node));
     utils::Stats::instance().add_stat("initial_hes_on_numa_node_" + std::to_string(node),
-      (int64_t) hypergraph.initialNumEdges(node));
+                                      (int64_t)hypergraph.initialNumEdges(node));
     utils::Stats::instance().add_stat("initial_pins_on_numa_node_" + std::to_string(node),
-      (int64_t) hypergraph.initialNumPins(node));
+                                      (int64_t)hypergraph.initialNumPins(node));
   }
 
   std::vector<PartitionID> community_node_mapping = community_assignment->computeAssignment();
-  if ( context.shared_memory.use_community_redistribution && TBBNumaArena::instance().num_used_numa_nodes() > 1 ) {
+  if (context.preprocessing.community_redistribution.use_community_redistribution &&
+      TBBNumaArena::instance().num_used_numa_nodes() > 1) {
     HyperedgeWeight remote_pin_count_before = metrics::remotePinCount(hypergraph);
     hypergraph = preprocessing::CommunityRedistributor::redistribute(hypergraph, context.partition.k, community_node_mapping);
     HyperedgeWeight remote_pin_count_after = metrics::remotePinCount(hypergraph);
     utils::Stats::instance().add_stat("remote_pin_count_before", remote_pin_count_before);
     utils::Stats::instance().add_stat("remote_pin_count_after", remote_pin_count_after);
-    for ( int node = 0; node < TBBNumaArena::instance().num_used_numa_nodes(); ++node) {
+    for (int node = 0; node < TBBNumaArena::instance().num_used_numa_nodes(); ++node) {
       utils::Stats::instance().add_stat("hns_on_numa_node_" + std::to_string(node) + "_after_redistribution",
-        (int64_t) hypergraph.initialNumNodes(node));
+                                        (int64_t)hypergraph.initialNumNodes(node));
       utils::Stats::instance().add_stat("hes_on_numa_node_" + std::to_string(node) + "_after_redistribution",
-        (int64_t) hypergraph.initialNumEdges(node));
+                                        (int64_t)hypergraph.initialNumEdges(node));
       utils::Stats::instance().add_stat("pins_on_numa_node_" + std::to_string(node) + "_after_redistribution",
-        (int64_t) hypergraph.initialNumPins(node));
+                                        (int64_t)hypergraph.initialNumPins(node));
     }
-    if ( context.partition.verbose_output ) {
+    if (context.partition.verbose_output) {
       LOG << "Hypergraph Redistribution Results:";
       LOG << " Remote Pin Count Before Redistribution   =" << remote_pin_count_before;
       LOG << " Remote Pin Count After Redistribution    =" << remote_pin_count_after;
@@ -224,60 +271,20 @@ inline void Partitioner::partition(Hypergraph& hypergraph, Context& context) {
   io::printInputInformation(context, hypergraph);
 
   // ################## PREPROCESSING ##################
-  HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
+  utils::Timer::instance().start_timer("preprocessing", "Preprocessing");
   preprocess(hypergraph, context);
   sanitize(hypergraph, context);
-  HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("preprocessing", "Preprocessing",
-    "", mt_kahypar::utils::Timer::Type::PREPROCESSING, 1, std::chrono::duration<double>(end - start).count());
+  utils::Timer::instance().stop_timer("preprocessing");
 
-  // ################## COARSENING ##################
-  io::printCoarseningBanner(context);
-  start = std::chrono::high_resolution_clock::now();
-  std::unique_ptr<ICoarsener> coarsener =
-    CoarsenerFactory::getInstance().createObject(
-      context.coarsening.algorithm, hypergraph, context);
-  coarsener->coarsen();
-  end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("coarsening", "Coarsening",
-    "", mt_kahypar::utils::Timer::Type::COARSENING, 2, std::chrono::duration<double>(end - start).count());
-
-  if ( context.partition.verbose_output ) {
-    io::printHypergraphInfo(hypergraph, "Coarsened Hypergraph");
-  }
-
-  // ################## INITIAL PARTITIONING ##################
-  io::printInitialPartitioningBanner(context);
-  start = std::chrono::high_resolution_clock::now();
-  InitialPartitioner initial_partitioner(hypergraph, context);
-  initial_partitioner.initialPartition();
-  end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("initial_partitioning", "Initial Partitioning",
-    "", mt_kahypar::utils::Timer::Type::INITIAL_PARTITIONING, 3, std::chrono::duration<double>(end - start).count());
-
-  io::printPartitioningResults(hypergraph, context, "Initial Partitioning Results:");
-
-  // ################## LOCAL SEARCH ##################
-  io::printLocalSearchBanner(context);
-  start = std::chrono::high_resolution_clock::now();
-  std::unique_ptr<IRefiner> label_propagation =
-    RefinementFactory::getInstance().createObject(
-      context.refinement.algorithm, hypergraph, context);
-      
-  coarsener->uncoarsen(label_propagation);
-  end = std::chrono::high_resolution_clock::now();
-  mt_kahypar::utils::Timer::instance().add_timing("refinement", "Refinement",
-    "", mt_kahypar::utils::Timer::Type::REFINEMENT, 4, std::chrono::duration<double>(end - start).count());
+  // ################## MULTILEVEL ##################
+  multilevel::partition(hypergraph, context, true);
 
   postprocess(hypergraph);
 
-  if ( context.partition.verbose_output ) {
+  if (context.partition.verbose_output) {
     io::printHypergraphInfo(hypergraph, "Uncoarsened Hypergraph");
     io::printStripe();
-    io::printPartitioningResults(hypergraph, context, "Local Search Results:");
   }
 }
-
-
-} // namespace partition
-} // namespace mt_kahypar
+}  // namespace partition
+}  // namespace mt_kahypar

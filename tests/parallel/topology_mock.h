@@ -20,18 +20,18 @@
 
 #pragma once
 
-#include <vector>
 #include <algorithm>
+#include <hwloc.h>
 #include <numeric>
 #include <thread>
-#include <hwloc.h>
+#include <vector>
 
+#include "mt-kahypar/parallel/hardware_topology.h"
 #include "mt-kahypar/macros.h"
 
 namespace mt_kahypar {
 namespace parallel {
-
-using numa_to_cpu_t = std::vector<std::vector<int>>;
+using numa_to_cpu_t = std::vector<std::vector<int> >;
 
 struct Cpu {
   int cpu_id;
@@ -39,7 +39,6 @@ struct Cpu {
 };
 
 struct Node {
-
   explicit Node(const int node) :
     os_index(node),
     cpuset(),
@@ -54,28 +53,23 @@ struct Node {
     next_cousin(other.next_cousin),
     cpus(other.cpus) { }
 
-  Node& operator= (const Node& other) {
+  Node & operator= (const Node& other) {
     os_index = other.os_index;
     cpuset = hwloc_bitmap_dup(other.cpuset);
     next_cousin = other.next_cousin;
     cpus = other.cpus;
     return *this;
-  };
+  }
 
   ~Node() {
     hwloc_bitmap_free(cpuset);
   }
 
-  void init_cpuset(const std::vector<int>& cores,
-                   const std::vector<int>& hyperthreads) {
-    for ( const int cpu : cores ) {
-      hwloc_bitmap_set(cpuset, cpu);
-      cpus.emplace_back(Cpu { cpu, false });
-    }
-
-    for ( const int cpu : hyperthreads ) {
-      hwloc_bitmap_set(cpuset, cpu);
-      cpus.emplace_back(Cpu { cpu, true });
+  void init_cpuset(const std::vector<int>& cpu_ids) {
+    for (const int cpu_id : cpu_ids) {
+      hwloc_bitmap_set(cpuset, cpu_id);
+      cpus.emplace_back(Cpu { cpu_id,
+        HardwareTopology<>::instance().is_hyperthread(cpu_id) });
     }
   }
 
@@ -93,19 +87,18 @@ class Topology {
   }
 
   Node* get_node(const int node) {
-    ASSERT(node < (int) _nodes.size());
+    ASSERT(node < (int)_nodes.size());
     return &_nodes[node];
   }
 
  private:
   void init(const numa_to_cpu_t& numa_to_cpu) {
-    ASSERT(numa_to_cpu.size() % 2 == 0);
-    int numa_nodes = numa_to_cpu.size() / 2;
-    for ( int node = 0; node < numa_nodes; ++node ) {
+    int numa_nodes = numa_to_cpu.size();
+    for (int node = 0; node < numa_nodes; ++node) {
       _nodes.emplace_back(node);
-      _nodes.back().init_cpuset(numa_to_cpu[node], numa_to_cpu[node + numa_nodes]);
+      _nodes.back().init_cpuset(numa_to_cpu[node]);
     }
-    for ( int node = 0; node < numa_nodes - 1; ++node ) {
+    for (int node = 0; node < numa_nodes - 1; ++node) {
       _nodes[node].next_cousin = &_nodes[node + 1];
     }
   }
@@ -114,36 +107,39 @@ class Topology {
 };
 
 static numa_to_cpu_t split_physical_cpus_into_numa_nodes(const int num_numa_nodes) {
-  numa_to_cpu_t numa_to_cpu;
+  ASSERT(num_numa_nodes > 0);
+  numa_to_cpu_t numa_to_cpu(num_numa_nodes);
 
-  std::vector<int> cpus(std::thread::hardware_concurrency());
-  std::iota(cpus.begin(), cpus.end(), 0);
-  ASSERT(num_numa_nodes <= (int) cpus.size());
-  int cpus_per_node = cpus.size() / num_numa_nodes + (cpus.size() % num_numa_nodes > 0);
-  std::reverse(cpus.begin(), cpus.end());
-  for ( int node = 0; node < num_numa_nodes; ++node ) {
-    int current_cpus = 0;
-    numa_to_cpu.emplace_back();
-    while ( current_cpus < cpus_per_node && !cpus.empty() ) {
-      numa_to_cpu.back().push_back(cpus.back());
-      cpus.pop_back();
-      current_cpus++;
-    }
+  std::vector<int> cpus;
+  for ( const int cpu_id : HardwareTopology<>::instance().get_all_cpus() ) {
+    cpus.push_back(cpu_id);
+  }
+  std::sort(cpus.begin(), cpus.end(),
+    [&](const int lhs, const int rhs) {
+      const bool is_hyperthread_lhs = HardwareTopology<>::instance().is_hyperthread(lhs);
+      const bool is_hyperthread_rhs = HardwareTopology<>::instance().is_hyperthread(rhs);
+      return is_hyperthread_lhs < is_hyperthread_rhs ||
+             ( is_hyperthread_lhs == is_hyperthread_rhs && lhs < rhs );
+    });
+
+  ASSERT(num_numa_nodes <= (int)cpus.size());
+  int current_numa_node = 0;
+  for ( const int cpu_id : cpus ) {
+    numa_to_cpu[current_numa_node].push_back(cpu_id);
+    current_numa_node = (current_numa_node + 1) % num_numa_nodes;
   }
 
   return numa_to_cpu;
 }
 
-using node_t = Node*;
-using topology_t = Topology*;
+using node_t = Node *;
+using topology_t = Topology *;
 
-template< int NUM_NUMA_NODES >
+template <int NUM_NUMA_NODES>
 class TopologyMock {
-
  public:
   static void initialize(topology_t& topology) {
-    // We split into 2 * NUM_NUMA_NODES in order to simulate hyperthreading
-    topology = new Topology(split_physical_cpus_into_numa_nodes(2 * NUM_NUMA_NODES));
+    topology = new Topology(split_physical_cpus_into_numa_nodes(NUM_NUMA_NODES));
   }
 
   static node_t get_first_numa_node(topology_t topology) {
@@ -152,8 +148,8 @@ class TopologyMock {
 
   static std::vector<int> get_cpus_of_numa_node_without_hyperthreads(node_t node) {
     std::vector<int> cpus;
-    for ( const Cpu& cpu : node->cpus ) {
-      if ( !cpu.is_hyperthread ) {
+    for (const Cpu& cpu : node->cpus) {
+      if (!cpu.is_hyperthread) {
         cpus.push_back(cpu.cpu_id);
       }
     }
@@ -162,8 +158,8 @@ class TopologyMock {
 
   static std::vector<int> get_cpus_of_numa_node_only_hyperthreads(node_t node) {
     std::vector<int> cpus;
-    for ( const Cpu& cpu : node->cpus ) {
-      if ( cpu.is_hyperthread ) {
+    for (const Cpu& cpu : node->cpus) {
+      if (cpu.is_hyperthread) {
         cpus.push_back(cpu.cpu_id);
       }
     }
@@ -175,6 +171,5 @@ class TopologyMock {
  private:
   TopologyMock() { }
 };
-
-} // namespace parallel
-} // namespace mt_kahypar
+}  // namespace parallel
+}  // namespace mt_kahypar

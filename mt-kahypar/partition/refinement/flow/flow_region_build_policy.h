@@ -34,7 +34,7 @@
 
 namespace mt_kahypar {
 template< typename TypeTraits>
-class FlowRegionBuildPolicy : public meta::PolicyBase {
+class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
 
   private:
     using HyperGraph = typename TypeTraits::HyperGraph;

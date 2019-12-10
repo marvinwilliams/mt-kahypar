@@ -426,7 +426,7 @@ class FlowNetwork {
           const size_t pins_not_u_block1 = _hg.pinCountInPart(he, block_1) - pins_u_block1;
           const size_t connectivity = (pins_u_block0 + pins_not_u_block0 > 0) + (pins_u_block1 + pins_not_u_block1 > 0);
 
-          if (_context.partition.objective == Objective::cut &&
+          if (_context.partition.objective == kahypar::Objective::cut &&
               !isRemovableFromCut(he, block_0, block_1)) {
             // Case 1: Hyperedge he cannot be removed from cut
             //         of k-way partition.
@@ -457,8 +457,8 @@ class FlowNetwork {
           }
 
           // Sum up the weight of all cut edges of the bipartition (block0,block1)
-          if ((_context.partition.objective == Objective::km1 && connectivity > 1) ||
-              (_context.partition.objective == Objective::cut && _hg.connectivity(he) > 1)) {
+          if ((_context.partition.objective == kahypar::Objective::km1 && connectivity > 1) ||
+              (_context.partition.objective == kahypar::Objective::cut && _hg.connectivity(he) > 1)) {
             cut += _hg.edgeWeight(he);
           }
 
@@ -534,7 +534,7 @@ class FlowNetwork {
 
       if ((pinsNotInFlowProblem(he, _cur_block0) > 0 &&
            pinsNotInFlowProblem(he, _cur_block1) > 0) ||
-          (_context.partition.objective == Objective::cut &&
+          (_context.partition.objective == kahypar::Objective::cut &&
            !isRemovableFromCut(he, _cur_block0, _cur_block1))) {
         addEdge(u, v, _hg.edgeWeight(he));
       } else {

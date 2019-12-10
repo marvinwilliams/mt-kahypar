@@ -21,16 +21,15 @@
 
 #pragma once
 
-
 #include "kahypar/meta/registrar.h"
 
-#include "mt-kahypar/partition/factories.h"
 #include "mt-kahypar/partition/context.h"
+#include "mt-kahypar/partition/factories.h"
 #include "mt-kahypar/partition/refinement/do_nothing_refiner.h"
 #include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
 
 #define REGISTER_DISPATCHED_LP_REFINER(id, dispatcher, t, ...)                      \
-  static meta::Registrar<RefinementFactory> JOIN(register_ ## dispatcher, t)( \
+  static kahypar::meta::Registrar<RefinementFactory> JOIN(register_ ## dispatcher, t)( \
     id,                                                                             \
     [](Hypergraph& hypergraph, const Context& context) {                            \
     return dispatcher::create(                                                      \
@@ -40,7 +39,7 @@
   })
 
 #define REGISTER_LP_REFINER(id, refiner, t)                                      \
-  static meta::Registrar<RefinementFactory> JOIN(register_ ## refiner, t)( \
+  static kahypar::meta::Registrar<RefinementFactory> JOIN(register_ ## refiner, t)( \
     id,                                                                          \
     [](Hypergraph& hypergraph, const Context& context) -> IRefiner* {            \
     return new refiner(hypergraph, context);                                     \
@@ -50,17 +49,17 @@ namespace mt_kahypar {
 
 REGISTER_DISPATCHED_LP_REFINER(RefinementAlgorithm::label_propagation_cut,
                                LabelPropagationCutDispatcher, Cut,
-                               meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
+                               kahypar::meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
                                  context.refinement.execution_policy));
 
 REGISTER_DISPATCHED_LP_REFINER(RefinementAlgorithm::label_propagation_km1,
                                LabelPropagationKm1Dispatcher, Km1,
-                               meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
+                               kahypar::meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
                                  context.refinement.execution_policy));
 
 REGISTER_DISPATCHED_LP_REFINER(RefinementAlgorithm::flow,
                                FlowDispatcher, Km1,
-                               meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
+                               kahypar::meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
                                  context.refinement.execution_policy));
 
 
