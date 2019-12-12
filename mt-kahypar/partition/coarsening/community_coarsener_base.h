@@ -22,6 +22,7 @@
 
 #include <queue>
 #include <string>
+#include <sstream>
 
 #include "tbb/parallel_for.h"
 #include "tbb/parallel_invoke.h"
@@ -34,6 +35,7 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
+#include "mt-kahypar/utils/progress_bar.h"
 #include "mt-kahypar/utils/stats.h"
 
 namespace mt_kahypar {
@@ -48,6 +50,7 @@ class CommunityCoarsenerBase {
   using HypergraphPruner = HypergraphPrunerT<TypeTraits>;
 
   static constexpr bool debug = false;
+  static constexpr bool update_progess_bar_after_each_uncontraction = false;
   static HypernodeID kInvalidHyperedge;
 
  public:
@@ -153,6 +156,10 @@ class CommunityCoarsenerBase {
     std::vector<HypernodeID> refinement_nodes;
     size_t max_batch_size = _context.refinement.use_batch_uncontractions &&
                             _context.shared_memory.num_threads > 1 ? _context.refinement.batch_size : 1;
+    utils::ProgressBar uncontraction_progress(_hg.initialNumNodes(),
+      _context.partition.objective == kahypar::Objective::km1 ? current_metrics.km1 : current_metrics.cut,
+      _context.partition.verbose_output && _context.partition.enable_progress_bar);
+
     while (!_history.empty()) {
       // utils::Timer::instance().start_timer("uncontraction", "Uncontraction");
       batchUncontraction(max_batch_size, refinement_nodes);
@@ -166,8 +173,13 @@ class CommunityCoarsenerBase {
         label_propagation->refine(refinement_nodes, current_metrics);
       }
 
+      uncontraction_progress.setObjective(
+        _context.partition.objective == kahypar::Objective::km1 ?
+        current_metrics.km1 : current_metrics.cut);
+      uncontraction_progress += max_batch_size;
       refinement_nodes.clear();
     }
+
 
     ASSERT(metrics::objective(_hg, _context.partition.objective) ==
            current_metrics.getMetric(kahypar::Mode::direct_kway, _context.partition.objective),
