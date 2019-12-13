@@ -34,7 +34,8 @@ class FlowRefinerT final : public IRefiner{
             _context(context),
             _current_level(0),
             _execution_policy(context.refinement.flow.execution_policy_alpha),
-            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)) {
+            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+            _iteration(0) {
                 initialize();
         }
 
@@ -57,20 +58,28 @@ class FlowRefinerT final : public IRefiner{
                 return false;
             }
 
+
+            utils::Timer::instance().start_timer("flow", "Flow");
+
             // Initialize Quotient Graph
             // 1.) Contains edges between each adjacent block of the partition
             // 2.) Contains for each edge all hyperedges, which are cut in the
             //     corresponding bipartition
             // NOTE(heuer): If anything goes wrong in integration experiments,
             //              this should be moved inside while loop.
+            utils::Timer::instance().start_timer("build_quotient_graph", "Build Quotient Graph");
             QuotientGraphBlockScheduler<TypeTraits> scheduler(_hg, _context);
             scheduler.buildQuotientGraph();
+            utils::Timer::instance().stop_timer("build_quotient_graph");
 
             // Active Block Scheduling
+            ++_iteration;
             bool improvement = false;
             bool active_block_exist = true;
             size_t current_round = 1;
 
+            utils::Timer::instance().start_timer("flow_refinement_" + std::to_string(_iteration),
+                                                 "Flow Refinement " + std::to_string(_iteration));
             while (active_block_exist) {
                 scheduler.randomShuffleQoutientEdges();
                 auto edges = scheduler.getInitialParallelEdges();
@@ -119,7 +128,10 @@ class FlowRefinerT final : public IRefiner{
 
                 current_round++;
             }
+            utils::Timer::instance().stop_timer("flow_refinement_" + std::to_string(_iteration));
             //LOG << "REFINEMENT done_______________________________________________________";
+
+            utils::Timer::instance().stop_timer("flow");
             return improvement;
         }
 
@@ -264,6 +276,7 @@ class FlowRefinerT final : public IRefiner{
     size_t _current_level;
     ExecutionPolicy _execution_policy;
     std::vector<std::vector<size_t> > _num_improvements;
+    size_t _iteration;
 };
 
 
