@@ -95,11 +95,15 @@ enum class InitialPartitioningMode : uint8_t {
   UNDEFINED
 };
 
-enum class RefinementAlgorithm : uint8_t {
+enum class LabelPropagationAlgorithm : uint8_t {
   label_propagation_km1,
   label_propagation_cut,
   do_nothing,
-  flow
+};
+
+enum class FlowAlgorithm : uint8_t {
+  flow,
+  do_nothing
 };
 
 enum class ExecutionType : uint8_t {
@@ -220,16 +224,25 @@ std::ostream & operator<< (std::ostream& os, const InitialPartitioningMode& mode
   return os << static_cast<uint8_t>(mode);
 }
 
-std::ostream & operator<< (std::ostream& os, const RefinementAlgorithm& algo) {
+std::ostream & operator<< (std::ostream& os, const LabelPropagationAlgorithm& algo) {
   switch (algo) {
-    case RefinementAlgorithm::label_propagation_km1: return os << "label_propagation_km1";
-    case RefinementAlgorithm::label_propagation_cut: return os << "label_propagation_cut";
-    case RefinementAlgorithm::do_nothing: return os << "do_nothing";
-    case RefinementAlgorithm::flow: return os << "flow";
+    case LabelPropagationAlgorithm::label_propagation_km1: return os << "label_propagation_km1";
+    case LabelPropagationAlgorithm::label_propagation_cut: return os << "label_propagation_cut";
+    case LabelPropagationAlgorithm::do_nothing: return os << "do_nothing";
       // omit default case to trigger compiler warning for missing cases
   }
   return os << static_cast<uint8_t>(algo);
 }
+
+std::ostream & operator<< (std::ostream& os, const FlowAlgorithm& algo) {
+  switch (algo) {
+    case FlowAlgorithm::flow: return os << "flow";
+    case FlowAlgorithm::do_nothing: return os << "do_nothing";
+      // omit default case to trigger compiler warning for missing cases
+  }
+  return os << static_cast<uint8_t>(algo);
+}
+
 
 std::ostream & operator<< (std::ostream& os, const ExecutionType& type) {
   switch (type) {
@@ -346,18 +359,26 @@ static InitialPartitioningMode initialPartitioningModeFromString(const std::stri
   return InitialPartitioningMode::UNDEFINED;
 }
 
-static RefinementAlgorithm refinementAlgorithmFromString(const std::string& type) {
+static LabelPropagationAlgorithm labelPropagationAlgorithmFromString(const std::string& type) {
   if (type == "label_propagation_km1") {
-    return RefinementAlgorithm::label_propagation_km1;
+    return LabelPropagationAlgorithm::label_propagation_km1;
   } else if (type == "label_propagation_cut") {
-    return RefinementAlgorithm::label_propagation_cut;
+    return LabelPropagationAlgorithm::label_propagation_cut;
   } else if (type == "do_nothing") {
-    return RefinementAlgorithm::do_nothing;
-  } else if(type == "flow"){
-    return RefinementAlgorithm::flow;
+    return LabelPropagationAlgorithm::do_nothing;
   }
   ERROR("Illegal option: " + type);
-  return RefinementAlgorithm::do_nothing;
+  return LabelPropagationAlgorithm::do_nothing;
+}
+
+static FlowAlgorithm flowAlgorithmFromString(const std::string& type) {
+  if( type == "flow"){
+    return FlowAlgorithm::flow;
+  } else if (type == "do_nothing") {
+    return FlowAlgorithm::do_nothing;
+  }
+  ERROR("Illegal option: " + type);
+  return FlowAlgorithm::do_nothing;
 }
 
 static ExecutionType executionTypeFromString(const std::string& type) {

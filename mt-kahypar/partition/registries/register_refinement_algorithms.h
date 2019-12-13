@@ -28,41 +28,59 @@
 #include "mt-kahypar/partition/refinement/do_nothing_refiner.h"
 #include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
 
-#define REGISTER_DISPATCHED_LP_REFINER(id, dispatcher, t, ...)                      \
-  static kahypar::meta::Registrar<RefinementFactory> JOIN(register_ ## dispatcher, t)( \
-    id,                                                                             \
-    [](Hypergraph& hypergraph, const Context& context) {                            \
-    return dispatcher::create(                                                      \
-      std::forward_as_tuple(hypergraph, context),                                   \
-      __VA_ARGS__                                                                   \
-      );                                                                            \
+#define REGISTER_DISPATCHED_LP_REFINER(id, dispatcher, t, ...)                               \
+  static kahypar::meta::Registrar<LabelPropagationFactory> JOIN(register_ ## dispatcher, t)( \
+    id,                                                                                      \
+    [](Hypergraph& hypergraph, const Context& context) {                                     \
+    return dispatcher::create(                                                               \
+      std::forward_as_tuple(hypergraph, context),                                            \
+      __VA_ARGS__                                                                            \
+      );                                                                                     \
   })
 
-#define REGISTER_LP_REFINER(id, refiner, t)                                      \
-  static kahypar::meta::Registrar<RefinementFactory> JOIN(register_ ## refiner, t)( \
+#define REGISTER_LP_REFINER(id, refiner, t)                                               \
+  static kahypar::meta::Registrar<LabelPropagationFactory> JOIN(register_ ## refiner, t)( \
+    id,                                                                                   \
+    [](Hypergraph& hypergraph, const Context& context) -> IRefiner* {                     \
+    return new refiner(hypergraph, context);                                              \
+  })
+
+#define REGISTER_DISPATCHED_FLOW_REFINER(id, dispatcher, t, ...)                 \
+  static kahypar::meta::Registrar<FlowFactory> JOIN(register_ ## dispatcher, t)( \
     id,                                                                          \
-    [](Hypergraph& hypergraph, const Context& context) -> IRefiner* {            \
-    return new refiner(hypergraph, context);                                     \
+    [](Hypergraph& hypergraph, const Context& context) {                         \
+    return dispatcher::create(                                                   \
+      std::forward_as_tuple(hypergraph, context),                                \
+      __VA_ARGS__                                                                \
+      );                                                                         \
+  })
+
+#define REGISTER_FLOW_REFINER(id, refiner, t)                                 \
+  static kahypar::meta::Registrar<FlowFactory> JOIN(register_ ## refiner, t)( \
+    id,                                                                       \
+    [](Hypergraph& hypergraph, const Context& context) -> IRefiner* {         \
+    return new refiner(hypergraph, context);                                  \
   })
 
 namespace mt_kahypar {
 
-REGISTER_DISPATCHED_LP_REFINER(RefinementAlgorithm::label_propagation_cut,
+REGISTER_DISPATCHED_LP_REFINER(LabelPropagationAlgorithm::label_propagation_cut,
                                LabelPropagationCutDispatcher, Cut,
                                kahypar::meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
-                                 context.refinement.execution_policy));
+                                 context.refinement.label_propagation.execution_policy));
 
-REGISTER_DISPATCHED_LP_REFINER(RefinementAlgorithm::label_propagation_km1,
+REGISTER_DISPATCHED_LP_REFINER(LabelPropagationAlgorithm::label_propagation_km1,
                                LabelPropagationKm1Dispatcher, Km1,
                                kahypar::meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
-                                 context.refinement.execution_policy));
+                                 context.refinement.label_propagation.execution_policy));
 
-REGISTER_DISPATCHED_LP_REFINER(RefinementAlgorithm::flow,
-                               FlowDispatcher, Km1,
-                               kahypar::meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
-                                 context.refinement.execution_policy));
+REGISTER_DISPATCHED_FLOW_REFINER(FlowAlgorithm::flow,
+                                 FlowDispatcher, Km1,
+                                 kahypar::meta::PolicyRegistry<ExecutionType>::getInstance().getPolicy(
+                                   context.refinement.flow.execution_policy));
 
 
-REGISTER_LP_REFINER(RefinementAlgorithm::do_nothing, DoNothingRefiner, 1);
+REGISTER_LP_REFINER(LabelPropagationAlgorithm::do_nothing, DoNothingRefiner, 1);
+REGISTER_FLOW_REFINER(FlowAlgorithm::do_nothing, DoNothingRefiner, 2);
 
 } // namespace mt_kahypar

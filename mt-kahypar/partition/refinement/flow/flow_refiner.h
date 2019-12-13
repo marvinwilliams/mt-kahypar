@@ -27,13 +27,13 @@ class FlowRefinerT final : public IRefiner{
         using Network = ds::FlowNetwork<TypeTraits>;
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
-    
+
     public:
         explicit FlowRefinerT(HyperGraph& hypergraph, const Context& context):
             _hg(hypergraph),
             _context(context),
             _current_level(0),
-            _execution_policy(context.refinement.execution_policy_alpha),
+            _execution_policy(context.refinement.flow.execution_policy_alpha),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)) {
                 initialize();
         }
@@ -56,6 +56,7 @@ class FlowRefinerT final : public IRefiner{
             if ( !_execution_policy.execute(_current_level) ) {
                 return false;
             }
+
             // Initialize Quotient Graph
             // 1.) Contains edges between each adjacent block of the partition
             // 2.) Contains for each edge all hyperedges, which are cut in the
@@ -91,19 +92,19 @@ class FlowRefinerT final : public IRefiner{
                             scheduler.scheduleNextBlock(feeder, block_0, block_1);
                             return;
                         }
-                        
+
                         const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler);
                         if (improved) {
-                          
+
                             improvement = true;
                             active_block_exist = true;
                             scheduler.setActiveBlock(block_0, true);
                             scheduler.setActiveBlock(block_1, true);
                             _num_improvements[block_0][block_1]++;
                         }
-                        
+
                         scheduler.scheduleNextBlock(feeder, block_0, block_1);
-                        
+
                     }
                 );
                 //LOG << "ROUND done_______________________________________________________";
@@ -122,7 +123,7 @@ class FlowRefinerT final : public IRefiner{
             return improvement;
         }
 
-        
+
         bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1,
          QuotientGraphBlockScheduler<TypeTraits> & quotientGraph){
 
@@ -132,7 +133,7 @@ class FlowRefinerT final : public IRefiner{
             IBFS<TypeTraits,Network> maximum_flow = IBFS<TypeTraits,Network>(_hg, _context, flow_network);
             kahypar::ds::FastResetFlagArray<> visited = kahypar::ds::FastResetFlagArray<>(static_cast<size_t>(_hg.initialNumNodes() + _hg.initialNumEdges()));
 
-            
+
             do {
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
@@ -149,7 +150,7 @@ class FlowRefinerT final : public IRefiner{
                 // Heurist 1: Don't execute 2way flow refinement for adjacent blocks
                 //            in the quotient graph with a small cut
                 //
-                // always use heuristic 
+                // always use heuristic
                 if (cut_weight <= 10 && !isRefinementOnLastLevel()) {
                     return improvement;
                 }
@@ -158,7 +159,7 @@ class FlowRefinerT final : public IRefiner{
                 if (cut_hes.size() == 0) {
                     break;
                 }
-                
+
                 utils::Randomize::instance().shuffleVector(cut_hes);
 
                 // Build Flow Problem
@@ -210,7 +211,7 @@ class FlowRefinerT final : public IRefiner{
                     //best_metrics.imbalance = current_imbalance;
                     improvement = true;
                     current_improvement = true;
-                    
+
                     alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
@@ -232,7 +233,7 @@ class FlowRefinerT final : public IRefiner{
                 //              after is equal, we assume that the partition is close
                 //              to the optimum and break the adaptive flow iterations.
                 //
-                // always use 
+                // always use
                 if (!improvement && cut_flow_network_before == cut_flow_network_after) {
                     break;
                 }

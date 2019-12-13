@@ -77,13 +77,18 @@ static inline void serialize(const Hypergraph& hypergraph,
         << " initial_partitioning_runs=" << context.initial_partitioning.runs
         << " use_batch_uncontractions=" << std::boolalpha << context.refinement.use_batch_uncontractions
         << " batch_size=" << context.refinement.batch_size
-        << " lp_algorithm=" << context.refinement.algorithm
-        << " lp_maximum_iterations=" << context.refinement.maximum_iterations
-        << " lp_part_weight_update_frequency=" << context.refinement.part_weight_update_frequency
-        << " lp_numa_aware=" << std::boolalpha << context.refinement.numa_aware
-        << " lp_rebalancing=" << std::boolalpha << context.refinement.rebalancing
-        << " lp_execution_policy=" << context.refinement.execution_policy
-        << " lp_execution_policy_alpha=" << context.refinement.execution_policy_alpha
+        << " lp_algorithm=" << context.refinement.label_propagation.algorithm
+        << " lp_maximum_iterations=" << context.refinement.label_propagation.maximum_iterations
+        << " lp_part_weight_update_frequency=" << context.refinement.label_propagation.part_weight_update_frequency
+        << " lp_numa_aware=" << std::boolalpha << context.refinement.label_propagation.numa_aware
+        << " lp_rebalancing=" << std::boolalpha << context.refinement.label_propagation.rebalancing
+        << " lp_execution_policy=" << context.refinement.label_propagation.execution_policy
+        << " lp_execution_policy_alpha=" << context.refinement.label_propagation.execution_policy_alpha
+        << " flow_algorithm=" << context.refinement.flow.algorithm
+        << " flow_execution_policy=" << context.refinement.flow.execution_policy
+        << " flow_execution_policy_alpha=" << context.refinement.flow.execution_policy_alpha
+        << " flow_use_most_balanced_minimum_cut=" << std::boolalpha << context.refinement.flow.use_most_balanced_minimum_cut
+        << " flow_use_improvement_history=" << std::boolalpha << context.refinement.flow.use_improvement_history
         << " num_threads=" << context.shared_memory.num_threads
         << " initial_hyperedge_distribution=" << context.shared_memory.initial_distribution;
 

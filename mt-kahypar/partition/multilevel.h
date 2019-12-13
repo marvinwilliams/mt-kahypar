@@ -56,10 +56,13 @@ static inline void partition(Hypergraph& hypergraph, const Context& context, con
   io::printLocalSearchBanner(context);
   utils::Timer::instance().start_timer("refinement", "Refinement");
   std::unique_ptr<IRefiner> label_propagation =
-    RefinementFactory::getInstance().createObject(
-      context.refinement.algorithm, hypergraph, context);
+    LabelPropagationFactory::getInstance().createObject(
+      context.refinement.label_propagation.algorithm, hypergraph, context);
+  std::unique_ptr<IRefiner> flow =
+    FlowFactory::getInstance().createObject(
+      context.refinement.flow.algorithm, hypergraph, context);
 
-  coarsener->uncoarsen(label_propagation);
+  coarsener->uncoarsen(label_propagation, flow);
   utils::Timer::instance().stop_timer("refinement");
 
   io::printPartitioningResults(hypergraph, context, "Local Search Results:");

@@ -64,8 +64,8 @@ using InitialPartitionerFactory = kahypar::meta::Factory<InitialPartitioningMode
 
 
 
-using RefinementFactory = kahypar::meta::Factory<RefinementAlgorithm,
-                                              IRefiner* (*)(Hypergraph&, const Context&)>;
+using LabelPropagationFactory = kahypar::meta::Factory<LabelPropagationAlgorithm,
+                                                       IRefiner* (*)(Hypergraph&, const Context&)>;
 
 using LabelPropagationKm1Dispatcher = kahypar::meta::StaticMultiDispatchFactory<LabelPropagationKm1Refiner,
                                                                                 IRefiner,
@@ -75,9 +75,12 @@ using LabelPropagationCutDispatcher = kahypar::meta::StaticMultiDispatchFactory<
                                                                                 IRefiner,
                                                                                 kahypar::meta::Typelist<ExecutionPolicyClasses>>;
 
+using FlowFactory = kahypar::meta::Factory<FlowAlgorithm,
+                                           IRefiner* (*)(Hypergraph&, const Context&)>;
+
 using FlowDispatcher = kahypar::meta::StaticMultiDispatchFactory<FlowRefiner,
-                                                                                IRefiner,
-                                                                                kahypar::meta::Typelist<ExecutionPolicyClasses>>;
+                                                                 IRefiner,
+                                                                 kahypar::meta::Typelist<ExecutionPolicyClasses>>;
 
 } //namespace mt-kahypar
 

@@ -37,8 +37,9 @@ class ICoarsener {
     coarsenImpl();
   }
 
-  bool uncoarsen(std::unique_ptr<IRefiner>& label_propagation) {
-    return uncoarsenImpl(label_propagation);
+  bool uncoarsen(std::unique_ptr<IRefiner>& label_propagation,
+                 std::unique_ptr<IRefiner>& flow) {
+    return uncoarsenImpl(label_propagation, flow);
   }
 
   virtual ~ICoarsener() = default;
@@ -48,6 +49,7 @@ class ICoarsener {
 
  private:
   virtual void coarsenImpl() = 0;
-  virtual bool uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation) = 0;
+  virtual bool uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
+                             std::unique_ptr<IRefiner>& flow) = 0;
 };
 }  // namespace kahypar

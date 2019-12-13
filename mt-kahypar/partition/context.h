@@ -173,37 +173,18 @@ inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningPa
   return str;
 }
 
-struct RefinementParameters {
-  struct FlowParameter{
-    double alpha = 16.0;
-    bool use_improvement_history = true;
-    bool use_most_balanced_minimum_cut = true;
-  };
-  RefinementAlgorithm algorithm = RefinementAlgorithm::do_nothing;
+struct LabelPropagationParameters {
+  LabelPropagationAlgorithm algorithm = LabelPropagationAlgorithm::do_nothing;
   size_t maximum_iterations = 1;
   size_t part_weight_update_frequency = 100;
   bool numa_aware = false;
   bool rebalancing = true;
-  bool use_batch_uncontractions = true;
-  size_t batch_size = 1;
   ExecutionType execution_policy = ExecutionType::UNDEFINED;
   double execution_policy_alpha = 2.0;
-  FlowParameter flow{};
 };
 
-inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& params) {
-  str << "Refinement Parameters:" << std::endl;
-  if(params.algorithm == RefinementAlgorithm::flow){
-    str << "  Flow Parameters:" << std::endl;
-    str << "    alpha:                            " << params.flow.alpha << std::endl;
-    str << "    use improvement history:          "
-        << std::boolalpha << params.flow.use_improvement_history << std::endl;
-        str << "    use most balanced minimum cut:"
-        << std::boolalpha << params.flow.use_most_balanced_minimum_cut << std::endl;
-
-  }else{
-    str << "  Label Propagation Parameters:" << std::endl;
-  }
+inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParameters& params) {
+  str << "  Label Propagation Parameters:" << std::endl;
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Maximum Iterations:               " << params.maximum_iterations << std::endl;
   str << "    Part Weight Update Frequency:     " << params.part_weight_update_frequency << std::endl;
@@ -214,6 +195,47 @@ inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& 
   return str;
 }
 
+struct FlowParameters {
+  FlowAlgorithm algorithm = FlowAlgorithm::do_nothing;
+  double alpha = 16.0;
+  ExecutionType execution_policy = ExecutionType::UNDEFINED;
+  double execution_policy_alpha = 2.0;
+  bool use_most_balanced_minimum_cut = true;
+  bool use_improvement_history = true;
+};
+
+inline std::ostream & operator<< (std::ostream& str, const FlowParameters& params) {
+  str << "  Flow Parameters:" << std::endl;
+  str << "    Algorithm:                        " << params.algorithm << std::endl;
+  str << "    Alpha:                            " << params.alpha << std::endl;
+  str << "    Execution Policy:                 " << params.execution_policy << std::endl;
+  str << "    Execution Policy Alpha:           " << params.execution_policy_alpha << std::endl;
+  str << "    Use Most Balanced Minimum Cut:    " << std::boolalpha << params.use_most_balanced_minimum_cut << std::endl;
+  str << "    Use Improvement History:          " << std::boolalpha << params.use_improvement_history << std::endl;
+  return str;
+}
+
+struct RefinementParameters {
+  LabelPropagationParameters label_propagation {};
+  FlowParameters flow {};
+  bool use_batch_uncontractions = true;
+  size_t batch_size = 1;
+};
+
+inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& params) {
+  str << "Refinement Parameters:" << std::endl;
+  str << "  Use Batch Uncontractions:           " << std::boolalpha << params.use_batch_uncontractions << std::endl;
+  if (params.use_batch_uncontractions) {
+    str << "  Batch Size:                         " << params.batch_size << std::endl;
+  }
+  if ( params.label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
+    str << std::endl << params.label_propagation;
+  }
+  if ( params.flow.algorithm != FlowAlgorithm::do_nothing ) {
+    str << std::endl << params.flow;
+  }
+  return str;
+}
 
 struct SharedMemoryParameters {
   size_t num_threads = 1;
@@ -263,21 +285,21 @@ class Context {
 
   void sanityCheck() {
     if (partition.objective == kahypar::Objective::cut &&
-        refinement.algorithm == RefinementAlgorithm::label_propagation_km1) {
-      ALGO_SWITCH("Refinement algorithm" << refinement.algorithm << "only works for km1 metric."
+        refinement.label_propagation.algorithm == LabelPropagationAlgorithm::label_propagation_km1) {
+      ALGO_SWITCH("Refinement algorithm" << refinement.label_propagation.algorithm << "only works for km1 metric."
                                          << "Do you want to use the cut version of the label propagation refiner (Y/N)?",
-                  "Partitioning with" << refinement.algorithm
+                  "Partitioning with" << refinement.label_propagation.algorithm
                                          << "refiner in combination with cut metric is not possible!",
-                  refinement.algorithm,
-                  RefinementAlgorithm::label_propagation_cut);
+                  refinement.label_propagation.algorithm,
+                  LabelPropagationAlgorithm::label_propagation_cut);
     } else if (partition.objective == kahypar::Objective::km1 &&
-               refinement.algorithm == RefinementAlgorithm::label_propagation_cut) {
-      ALGO_SWITCH("Refinement algorithm" << refinement.algorithm << "only works for cut metric."
+               refinement.label_propagation.algorithm == LabelPropagationAlgorithm::label_propagation_cut) {
+      ALGO_SWITCH("Refinement algorithm" << refinement.label_propagation.algorithm << "only works for cut metric."
                                          << "Do you want to use the km1 version of the label propagation refiner (Y/N)?",
-                  "Partitioning with" << refinement.algorithm
+                  "Partitioning with" << refinement.label_propagation.algorithm
                                          << "refiner in combination with km1 metric is not possible!",
-                  refinement.algorithm,
-                  RefinementAlgorithm::label_propagation_km1);
+                  refinement.label_propagation.algorithm,
+                  LabelPropagationAlgorithm::label_propagation_km1);
     }
   }
 };

@@ -119,7 +119,8 @@ class CommunityCoarsenerBase {
     _pruner[community_id].removeParallelHyperedges(_hg, community_id, _community_history[community_id].back());
   }
 
-  bool doUncoarsen(std::unique_ptr<IRefiner>& label_propagation) {
+  bool doUncoarsen(std::unique_ptr<IRefiner>& label_propagation,
+                   std::unique_ptr<IRefiner>& flow) {
     ASSERT(!_init, "Community coarsener must be finalized before uncoarsening");
 
     int64_t num_nodes = 0;
@@ -171,6 +172,11 @@ class CommunityCoarsenerBase {
         // NOTE, label propagation refiner relies on the assumption, that it is called after
         // each uncontraction. Do not move the refiner call out of this loop.
         label_propagation->refine(refinement_nodes, current_metrics);
+      }
+
+      // Call flow refiner
+      if (flow) {
+        flow->refine(refinement_nodes, current_metrics);
       }
 
       uncontraction_progress.setObjective(

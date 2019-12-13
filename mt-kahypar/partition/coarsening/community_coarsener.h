@@ -223,8 +223,9 @@ class CommunityCoarsenerT : public ICoarsener,
                                          (int64_t)_pruner[community_id].removedSingleNodeHyperedges().size());
   }
 
-  bool uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation) override {
-    return this->doUncoarsen(label_propagation);
+  bool uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
+                     std::unique_ptr<IRefiner>& flow) override {
+    return this->doUncoarsen(label_propagation, flow);
   }
 
   using Base::_hg;
