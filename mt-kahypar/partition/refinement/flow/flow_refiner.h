@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include "tbb/enumerable_thread_specific.h"
 #include "tbb/parallel_do.h"
 
 #include "mt-kahypar/partition/refinement/i_refiner.h"
@@ -24,14 +25,21 @@ class FlowRefinerT final : public IRefiner{
         using TBB = typename TypeTraits::TBB;
         using HwTopology = typename TypeTraits::HwTopology;
         using GainCalculator = GainPolicy<HyperGraph>;
-        using Network = ds::FlowNetwork<TypeTraits>;
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
+
+        using FlowNetwork = ds::FlowNetwork<TypeTraits>;
+        using MaximumFlow = IBFS<TypeTraits, FlowNetwork>;
+        using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
+        using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
 
     public:
         explicit FlowRefinerT(HyperGraph& hypergraph, const Context& context):
             _hg(hypergraph),
             _context(context),
+            _flow_network(_hg.initialNumNodes(), _hg.initialNumEdges(), _hg.initialNumNodes() + 2 * _hg.initialNumEdges()),
+            _maximum_flow(_hg.initialNumNodes() + 2 * _hg.initialNumEdges(), _hg.initialNumNodes()),
+            _visited(_hg.initialNumNodes() + _hg.initialNumEdges()),
             _current_level(0),
             _execution_policy(context.refinement.flow.execution_policy_alpha),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
@@ -50,10 +58,11 @@ class FlowRefinerT final : public IRefiner{
             _execution_policy.initialize(_hg, _hg.currentNumNodes());
         }
 
-        bool refineImpl(const std::vector<HypernodeID>&, kahypar::Metrics& best_metrics) override final {
+        bool refineImpl(const std::vector<HypernodeID>& refinement_nodes, kahypar::Metrics& best_metrics) override final {
             // flow refinement is not executed on all levels of the n-level hierarchy.
             // If flow should be executed on the current level is determined by the execution policy.
-            ++_current_level;
+            ASSERT(refinement_nodes.size() % 2 == 0);
+            _current_level += refinement_nodes.size() / 2;
             if ( !_execution_policy.execute(_current_level) ) {
                 return false;
             }
@@ -85,6 +94,9 @@ class FlowRefinerT final : public IRefiner{
                 auto edges = scheduler.getInitialParallelEdges();
                 active_block_exist = false;
                 //parallel here
+                // TODO(reister): this looks like the right parallel primitive to parallelize the flow
+                // computations. However, we should think of a threshold to abort the parallel flow computations
+                // when the feeder does not contain as many edges to fully utilize the cores.
                 tbb::parallel_do(edges,
                     [&](Edge e,
                         tbb::parallel_do_feeder<Edge>& feeder){
@@ -141,9 +153,9 @@ class FlowRefinerT final : public IRefiner{
 
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
-            Network flow_network = FlowNetwork<TypeTraits>(_hg, _context, static_cast<size_t>(_hg.initialNumNodes()) + 2 * _hg.initialNumEdges());
-            IBFS<TypeTraits,Network> maximum_flow = IBFS<TypeTraits,Network>(_hg, _context, flow_network);
-            kahypar::ds::FastResetFlagArray<> visited = kahypar::ds::FastResetFlagArray<>(static_cast<size_t>(_hg.initialNumNodes() + _hg.initialNumEdges()));
+            FlowNetwork& flow_network = _flow_network.local();
+            MaximumFlow& maximum_flow = _maximum_flow.local();
+            kahypar::ds::FastResetFlagArray<>& visited = _visited.local();
 
 
             do {
@@ -178,15 +190,15 @@ class FlowRefinerT final : public IRefiner{
                 CutBuildPolicy<TypeTraits>::buildFlowNetwork(_hg, _context, flow_network,
                                                 cut_hes, alpha, block_0, block_1,
                                                 visited);
-                const HyperedgeWeight cut_flow_network_before = flow_network.build(block_0, block_1);
+                const HyperedgeWeight cut_flow_network_before = flow_network.build(_hg, _context, block_0, block_1);
 
                 // Find minimum (S,T)-bipartition
-                const HyperedgeWeight cut_flow_network_after = maximum_flow.minimumSTCut(block_0, block_1);
+                const HyperedgeWeight cut_flow_network_after = maximum_flow.minimumSTCut(_hg, flow_network, _context, block_0, block_1);
 
                 // Maximum Flow algorithm returns infinity, if all
                 // hypernodes contained in the flow problem are either
                 // sources or sinks
-                if (cut_flow_network_after == Network::kInfty) {
+                if (cut_flow_network_after == FlowNetwork::kInfty) {
                     break;
                 }
 
@@ -227,7 +239,7 @@ class FlowRefinerT final : public IRefiner{
                     alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
-                maximum_flow.rollback(current_improvement);
+                maximum_flow.rollback(_hg, flow_network, current_improvement);
 
                 // Perform moves in quotient graph in order to update
                 // cut hyperedges between adjacent blocks.
@@ -273,6 +285,9 @@ class FlowRefinerT final : public IRefiner{
 
     HyperGraph& _hg;
     const Context& _context;
+    ThreadLocalFlowNetwork _flow_network;
+    ThreadLocalMaximumFlow _maximum_flow;
+    ThreadLocalFastResetFlagArray _visited;
     size_t _current_level;
     ExecutionPolicy _execution_policy;
     std::vector<std::vector<size_t> > _num_improvements;

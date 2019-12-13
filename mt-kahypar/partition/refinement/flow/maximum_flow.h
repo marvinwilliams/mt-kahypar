@@ -47,17 +47,15 @@ namespace mt_kahypar {
 template <typename TypeTraits, class Network = Mandatory>
 class MaximumFlow {
 using HyperGraph = typename TypeTraits::HyperGraph;
+using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
  public:
-  MaximumFlow(HyperGraph& hypergraph, const Context& context, Network& flow_network) :
-    _hg(hypergraph),
-    _context(context),
-    _flow_network(flow_network),
-    _parent(flow_network.initialSize(), nullptr),
-    _visited(flow_network.initialSize()),
+  MaximumFlow(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
+    _parent(initial_size, nullptr),
+    _visited(initial_size),
     _Q(),
-    _mbmc(hypergraph, _context, flow_network),
-    _original_part_id(_hg.initialNumNodes(), 0) { }
+    _mbmc(initial_size),
+    _original_part_id(initial_num_nodes, 0) { }
 
   virtual ~MaximumFlow() { }
 
@@ -68,35 +66,37 @@ using HyperGraph = typename TypeTraits::HyperGraph;
   MaximumFlow& operator= (MaximumFlow&&) = delete;
 
 
-  virtual Flow maximumFlow() = 0;
+  virtual Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) = 0;
 
-  HyperedgeWeight minimumSTCut(const PartitionID block_0, const PartitionID block_1) {
-    if (_flow_network.isTrivialFlow()) {
+  HyperedgeWeight minimumSTCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
+                               const Context& context,
+                               const PartitionID block_0, const PartitionID block_1) {
+    if (flow_network.isTrivialFlow()) {
       return Network::kInfty;
     }
-    
-    const PartitionID default_part = 
-      _context.refinement.flow.use_most_balanced_minimum_cut ? block_0 : block_1;
-    for (const HypernodeID& hn : _flow_network.hypernodes()) {
-      _original_part_id[hn] = _hg.partID(hn);
-      moveHypernode(hn, default_part);
+
+    const PartitionID default_part =
+      context.refinement.flow.use_most_balanced_minimum_cut ? block_0 : block_1;
+    for (const HypernodeID& hn : flow_network.hypernodes()) {
+      _original_part_id[hn] = hypergraph.partID(hn);
+      moveHypernode(hypergraph, hn, default_part);
     }
 
-    const HyperedgeWeight cut = maximumFlow();
+    const HyperedgeWeight cut = maximumFlow(hypergraph, flow_network);
 
-    if (_context.refinement.flow.use_most_balanced_minimum_cut) {
-      _mbmc.mostBalancedMinimumCut(block_0, block_1);
+    if (context.refinement.flow.use_most_balanced_minimum_cut) {
+      _mbmc.mostBalancedMinimumCut(hypergraph, flow_network, context, block_0, block_1);
     } else {
-      bfs<true>(block_0);
+      bfs<true>(hypergraph, flow_network, block_0);
     }
 
     return cut;
   }
 
-  void rollback(const bool store_part_id = false) {
-    for (const HypernodeID& hn : _flow_network.hypernodes()) {
-      const PartitionID from = _hg.partID(hn);
-      moveHypernode(hn, _original_part_id[hn]);
+  void rollback(HyperGraph& hypergraph, FlowNetwork& flow_network, const bool store_part_id = false) {
+    for (const HypernodeID& hn : flow_network.hypernodes()) {
+      const PartitionID from = hypergraph.partID(hn);
+      moveHypernode(hypergraph, hn, _original_part_id[hn]);
       if (store_part_id) {
         _original_part_id[hn] = from;
       }
@@ -108,7 +108,7 @@ using HyperGraph = typename TypeTraits::HyperGraph;
   }
 
   template <bool assign_hypernodes = false>
-  bool bfs(const PartitionID block = 0) {
+  bool bfs(HyperGraph& hypergraph, FlowNetwork& flow_network, const PartitionID block = 0) {
     bool augmenting_path_exists = false;
     _parent.resetUsedEntries();
     _visited.reset();
@@ -117,7 +117,7 @@ using HyperGraph = typename TypeTraits::HyperGraph;
     }
 
     // Initialize queue with all source nodes
-    for (const NodeID& s : _flow_network.sources()) {
+    for (const NodeID& s : flow_network.sources()) {
       _visited.set(s, true);
       _parent.set(s, nullptr);
       _Q.push(s);
@@ -128,26 +128,26 @@ using HyperGraph = typename TypeTraits::HyperGraph;
       _Q.pop();
 
       if (assign_hypernodes) {
-        if (_flow_network.interpreteHypernode(u)) {
-          moveHypernode(u, block);
-        } else if (_flow_network.interpreteHyperedge(u)) {
-          const HyperedgeID he = _flow_network.mapToHyperedgeID(u);
-          for (const HypernodeID& pin : _hg.pins(he)) {
-            if (_flow_network.containsHypernode(pin)) {
-              moveHypernode(pin, block);
+        if (flow_network.interpreteHypernode(u)) {
+          moveHypernode(hypergraph, u, block);
+        } else if (flow_network.interpreteHyperedge(u)) {
+          const HyperedgeID he = flow_network.mapToHyperedgeID(u);
+          for (const HypernodeID& pin : hypergraph.pins(he)) {
+            if (flow_network.containsHypernode(pin)) {
+              moveHypernode(hypergraph, pin, block);
             }
           }
         }
       }
 
-      if (_flow_network.isSink(u)) {
+      if (flow_network.isSink(u)) {
         augmenting_path_exists = true;
         continue;
       }
 
-      for (ds::FlowEdge& e : _flow_network.incidentEdges(u)) {
+      for (ds::FlowEdge& e : flow_network.incidentEdges(u)) {
         const NodeID v = e.target;
-        if (!_visited[v] && _flow_network.residualCapacity(e)) {
+        if (!_visited[v] && flow_network.residualCapacity(e)) {
           _parent.set(v, &e);
           _visited.set(v, true);
           _Q.push(v);
@@ -163,19 +163,19 @@ using HyperGraph = typename TypeTraits::HyperGraph;
   template <typename T>
   FRIEND_TEST(AMaximumFlow, AugmentAlongPath);
 
-  Flow augment(const NodeID cur, const Flow min_flow = Network::kInfty) {
-    if (_flow_network.isSource(cur) || min_flow == 0) {
+  Flow augment(FlowNetwork& flow_network, const NodeID cur, const Flow min_flow = Network::kInfty) {
+    if (flow_network.isSource(cur) || min_flow == 0) {
       return min_flow;
     } else {
       ds::FlowEdge* e = _parent.get(cur);
-      const Flow f = augment(e->source, std::min(min_flow, _flow_network.residualCapacity(*e)));
+      const Flow f = augment(e->source, std::min(min_flow, flow_network.residualCapacity(*e)));
 
       ASSERT([&]() {
-          const Flow residual_forward_before = _flow_network.residualCapacity(*e);
-          const Flow residual_backward_before = _flow_network.residualCapacity(_flow_network.reverseEdge(*e));
-          _flow_network.increaseFlow(*e, f);
-          Flow residual_forward_after = _flow_network.residualCapacity(*e);
-          Flow residual_backward_after = _flow_network.residualCapacity(_flow_network.reverseEdge(*e));
+          const Flow residual_forward_before = flow_network.residualCapacity(*e);
+          const Flow residual_backward_before = flow_network.residualCapacity(flow_network.reverseEdge(*e));
+          flow_network.increaseFlow(*e, f);
+          Flow residual_forward_after = flow_network.residualCapacity(*e);
+          Flow residual_backward_after = flow_network.residualCapacity(flow_network.reverseEdge(*e));
           if (residual_forward_before != Network::kInfty && residual_forward_before != residual_forward_after + f) {
             LOG << "Residual capacity should be " << (residual_forward_before - f) << "!";
             return false;
@@ -184,9 +184,9 @@ using HyperGraph = typename TypeTraits::HyperGraph;
             LOG << "Residual capacity should be " << (residual_backward_before + f) << "!";
             return false;
           }
-          _flow_network.increaseFlow(_flow_network.reverseEdge(*e), f);
-          residual_forward_after = _flow_network.residualCapacity(*e);
-          residual_backward_after = _flow_network.residualCapacity(_flow_network.reverseEdge(*e));
+          flow_network.increaseFlow(flow_network.reverseEdge(*e), f);
+          residual_forward_after = flow_network.residualCapacity(*e);
+          residual_backward_after = flow_network.residualCapacity(flow_network.reverseEdge(*e));
           if (residual_forward_before != residual_forward_after ||
               residual_backward_before != residual_backward_after) {
             LOG << "Restoring original capacities failed!";
@@ -195,22 +195,18 @@ using HyperGraph = typename TypeTraits::HyperGraph;
           return true;
         } (), "Flow is not increased correctly!");
 
-      _flow_network.increaseFlow(*e, f);
+      flow_network.increaseFlow(*e, f);
       return f;
     }
   }
 
-  void moveHypernode(const HypernodeID hn, const PartitionID to) {
-    ASSERT(_hg.partID(hn) != -1, "Hypernode " << hn << " should be assigned to a part");
-    const PartitionID from = _hg.partID(hn);
-    if (from != to ) { //&& !_hg.isFixedVertex(hn)
-      while(_hg.changeNodePart(hn, from, to) == false);
+  void moveHypernode(HyperGraph& hypergraph, const HypernodeID hn, const PartitionID to) {
+    ASSERT(hypergraph.partID(hn) != -1, "Hypernode " << hn << " should be assigned to a part");
+    const PartitionID from = hypergraph.partID(hn);
+    if (from != to ) { //&& !hypergraph.isFixedVertex(hn)
+      while(hypergraph.changeNodePart(hn, from, to) == false);
     }
   }
-
-  HyperGraph& _hg;
-  const Context& _context;
-  Network& _flow_network;
 
   // Datastructure for BFS
   kahypar::ds::FastResetArray<mt_kahypar::ds::FlowEdge*> _parent;
@@ -226,15 +222,15 @@ template <typename TypeTraits, class Network = Mandatory>
 class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
   using Base = MaximumFlow<TypeTraits,Network>;
   using FlowGraph = maxflow::Graph<int, int, int>;
-  private:
+ private:
   using HyperGraph = typename TypeTraits::HyperGraph;
+  using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
  public:
-  BoykovKolmogorov(HyperGraph& hypergraph, const Context& context, Network& flow_network) :
-    Base(hypergraph, context, flow_network),
-    _flow_graph(static_cast<size_t>(hypergraph.initialNumNodes()) + 2 * hypergraph.initialNumEdges(),
-                static_cast<size_t>(hypergraph.initialNumNodes()) + 2 * hypergraph.initialNumEdges()),
-    _flow_network_mapping(static_cast<size_t>(hypergraph.initialNumNodes()) + 2 * hypergraph.initialNumEdges(), 0) { }
+  BoykovKolmogorov(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
+    Base(initial_size, initial_num_nodes),
+    _flow_graph(initial_size, initial_size),
+    _flow_network_mapping(initial_size, 0) { }
 
   ~BoykovKolmogorov() = default;
 
@@ -244,7 +240,8 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
   BoykovKolmogorov(BoykovKolmogorov&&) = delete;
   BoykovKolmogorov& operator= (BoykovKolmogorov&&) = delete;
 
-  Flow maximumFlow() {
+  Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) {
+    unused(hypergraph);
     mapToExternalFlowNetwork();
 
     const Flow max_flow = _flow_graph.maxflow();
@@ -258,7 +255,7 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
       a = _flow_graph.get_next_arc(a);
     }
 
-    ASSERT(!Base::bfs(), "Found augmenting path after flow computation finished!");
+    ASSERT(!Base::bfs(hypergraph, flow_network), "Found augmenting path after flow computation finished!");
     return max_flow;
   }
 
@@ -268,28 +265,28 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
   template <typename T>
   FRIEND_TEST(AMaximumFlow, AugmentAlongPath);
 
-  void mapToExternalFlowNetwork() {
+  void mapToExternalFlowNetwork(FlowNetwork& flow_network) {
     _flow_graph.reset();
     _visited.reset();
-    const Flow infty = _flow_network.totalWeightHyperedges();
+    const Flow infty = flow_network.totalWeightHyperedges();
 
-    for (const NodeID& node : _flow_network.nodes()) {
+    for (const NodeID& node : flow_network.nodes()) {
       const NodeID id = _flow_graph.add_node();
       _flow_network_mapping[node] = id;
-      if (_flow_network.isSource(node)) {
+      if (flow_network.isSource(node)) {
         _flow_graph.add_tweights(id, infty, 0);
       }
-      if (_flow_network.isSink(node)) {
+      if (flow_network.isSink(node)) {
         _flow_graph.add_tweights(id, 0, infty);
       }
     }
 
-    for (const NodeID node : _flow_network.nodes()) {
+    for (const NodeID node : flow_network.nodes()) {
       const NodeID u = _flow_network_mapping[node];
-      for (ds::FlowEdge& edge : _flow_network.incidentEdges(node)) {
+      for (ds::FlowEdge& edge : flow_network.incidentEdges(node)) {
         const NodeID v = _flow_network_mapping[edge.target];
         const Capacity c = edge.capacity;
-        ds::FlowEdge& rev_edge = _flow_network.reverseEdge(edge);
+        ds::FlowEdge& rev_edge = flow_network.reverseEdge(edge);
         const Capacity rev_c = rev_edge.capacity;
         if (!_visited[edge.target]) {
           FlowGraph::arc* a = _flow_graph.add_edge(u, v, c, rev_c);
@@ -301,9 +298,6 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
     }
   }
 
-  using Base::_hg;
-  using Base::_context;
-  using Base::_flow_network;
   using Base::_parent;
   using Base::_visited;
 
@@ -318,12 +312,13 @@ class IBFS : public MaximumFlow<TypeTraits, Network>{
   using FlowGraph = maxflow::IBFSGraph;
  private:
   using HyperGraph = typename TypeTraits::HyperGraph;
+  using FlowNetwork = ds::FlowNetwork<TypeTraits>;
+
  public:
-  IBFS(HyperGraph& hypergraph, const Context& context, Network& flow_network) :
-    Base(hypergraph, context, flow_network),
+  IBFS(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
+    Base(initial_size, initial_num_nodes),
     _flow_graph(FlowGraph::IB_INIT_COMPACT),
-    _flow_network_mapping(static_cast<size_t>(hypergraph.initialNumNodes()) +
-                          2 * hypergraph.initialNumEdges(), 0) { }
+    _flow_network_mapping(initial_size, 0) { }
 
   ~IBFS() = default;
 
@@ -333,8 +328,9 @@ class IBFS : public MaximumFlow<TypeTraits, Network>{
   IBFS(IBFS&&) = delete;
   IBFS& operator= (IBFS&&) = delete;
 
-  Flow maximumFlow() {
-    mapToExternalFlowNetwork();
+  Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) {
+    unused(hypergraph);
+    mapToExternalFlowNetwork(flow_network);
 
     _flow_graph.computeMaxFlow();
     const Flow max_flow = _flow_graph.getFlow();
@@ -348,7 +344,7 @@ class IBFS : public MaximumFlow<TypeTraits, Network>{
       a++;
     }
 
-    ASSERT(!Base::bfs(), "Found augmenting path after flow computation finished!");
+    ASSERT(!Base::bfs(hypergraph, flow_network), "Found augmenting path after flow computation finished!");
     return max_flow;
   }
 
@@ -358,26 +354,26 @@ class IBFS : public MaximumFlow<TypeTraits, Network>{
   template <typename T>
   FRIEND_TEST(AMaximumFlow, AugmentAlongPath);
 
-  void mapToExternalFlowNetwork() {
-    _flow_graph.initSize(_flow_network.numNodes(), _flow_network.numEdges() - _flow_network.numUndirectedEdges());
+  void mapToExternalFlowNetwork(FlowNetwork& flow_network) {
+    _flow_graph.initSize(flow_network.numNodes(), flow_network.numEdges() - flow_network.numUndirectedEdges());
     _visited.reset();
-    const Flow infty = _flow_network.totalWeightHyperedges();
+    const Flow infty = flow_network.totalWeightHyperedges();
     NodeID cur_id = 0;
 
-    for (const NodeID& node : _flow_network.nodes()) {
+    for (const NodeID& node : flow_network.nodes()) {
       _flow_graph.addNode(cur_id,
-                          _flow_network.isSource(node) ? infty : 0,
-                          _flow_network.isSink(node) ? infty : 0);
+                          flow_network.isSource(node) ? infty : 0,
+                          flow_network.isSink(node) ? infty : 0);
       _flow_network_mapping[node] = cur_id;
       cur_id++;
     }
 
-    for (const NodeID node : _flow_network.nodes()) {
+    for (const NodeID node : flow_network.nodes()) {
       const NodeID u = _flow_network_mapping[node];
-      for (ds::FlowEdge& edge : _flow_network.incidentEdges(node)) {
+      for (ds::FlowEdge& edge : flow_network.incidentEdges(node)) {
         const NodeID v = _flow_network_mapping[edge.target];
         const Capacity c = edge.capacity;
-        ds::FlowEdge& rev_edge = _flow_network.reverseEdge(edge);
+        ds::FlowEdge& rev_edge = flow_network.reverseEdge(edge);
         const Capacity rev_c = rev_edge.capacity;
         if (!_visited[edge.target]) {
           _flow_graph.addEdge(u, v, c, rev_c, &edge, &rev_edge);
@@ -389,9 +385,6 @@ class IBFS : public MaximumFlow<TypeTraits, Network>{
     _flow_graph.initGraph();
   }
 
-  using Base::_hg;
-  using Base::_context;
-  using Base::_flow_network;
   using Base::_parent;
   using Base::_visited;
 

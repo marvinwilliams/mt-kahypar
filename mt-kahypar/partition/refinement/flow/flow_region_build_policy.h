@@ -42,7 +42,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
 
  public:
   template <class Network = Mandatory>
-  static inline HypernodeID bfs(const HyperGraph& hg,
+  static inline HypernodeID bfs(HyperGraph& hg,
                                 Network& flow_network,
                                 std::vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
@@ -66,7 +66,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
       const HypernodeID hn = Q.front();
       Q.pop();
 
-      flow_network.addHypernode(hn);
+      flow_network.addHypernode(hg, hn);
       ++num_hypernodes_added;
 
       for (const HyperedgeID& he : hg.incidentEdges(hn)) {
@@ -136,7 +136,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     if (num_nodes_block_0 == hg.localPartSize(block_0)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_0 = *(flow_network.hypernodes().second - 1);
-      flow_network.removeHypernode(last_hn_block_0);
+      flow_network.removeHypernode(hg, last_hn_block_0);
     }
 
     const HypernodeID num_nodes_block_1 = FlowRegionBuildPolicy<TypeTraits>::bfs(hg,
@@ -148,7 +148,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     if (num_nodes_block_1 == hg.localPartSize(block_1)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_1 = *(flow_network.hypernodes().second - 1);
-      flow_network.removeHypernode(last_hn_block_1);
+      flow_network.removeHypernode(hg, last_hn_block_1);
     }
 
     ASSERT([&]() {

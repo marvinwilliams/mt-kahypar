@@ -57,7 +57,7 @@ class QuotientGraphBlockScheduler {
     _round_edges(),
     _active_blocks(_context.partition.k, true),
     _locked_blocks(_context.partition.k, false),
-    
+
     _block_pair_cut_he(context.partition.k,
                        std::vector<std::vector<HyperedgeID> >(context.partition.k,
                                                               std::vector<HyperedgeID>())),
@@ -79,7 +79,7 @@ class QuotientGraphBlockScheduler {
               _block_pair_cut_he[block0][block1].push_back(he);
             }
           }
-        } 
+        }
       }
     }
     for (const edge& e : edge_list) {
@@ -89,6 +89,8 @@ class QuotientGraphBlockScheduler {
 
   std::vector<edge> getInitialParallelEdges(){
     std::vector<edge> initialEdges;
+    // TODO(reister): use 'const edge& e' in order to prevent that elements are copied
+    // or modified during iteration.
     for(auto edge:_quotient_graph){
       if(_active_blocks[edge.first] && _active_blocks[edge.second]){
         _round_edges.push_back(edge);
@@ -110,19 +112,30 @@ class QuotientGraphBlockScheduler {
     //reset active-array before each round
     //blocks are set active, if improvement was found
     _active_blocks.assign(_context.partition.k, false);
-    
+
     return initialEdges;
   }
 
   void scheduleNextBlock(tbb::parallel_do_feeder<edge>& feeder, const PartitionID block_0, const PartitionID block_1){
+    // TODO(reister): Usually I'm not a big fan of locks, but I think in this situation it is okay
+    // since the function is called not that often during flow refinement. Alternatively, you can
+    // implement the locking mechanism with atomics and perform a compare_and_swap operation on the
+    // two blocks. If both are successful you can add the edge to the feeder, otherwise reset them and continue
+    // to next pair of blocks.
     tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
     //unlock the blocks
     _locked_blocks[block_0] = false;
     _locked_blocks[block_1] = false;
 
     //start new flow-calclation for blocks
+    // TODO(reister): Usually we don't use std::list, since erase has linear running time.
+    // Again this should be not a problem, since the list only contains k^2 elements at most.
+    // But what you could do instead is use a vector and if you add an element to the feeder
+    // you can swap it to the end and decrement a pointer to that vector. The pointer points
+    // to all elements that where not considered during that current round. Once all blocks are
+    // processed you can just reset the pointer to the end of the vector and start again.
     std::list<edge>::const_iterator e = _round_edges.cbegin();
-    while (e != _round_edges.cend()){
+    while (e != _round_edges.cend()) {
       if (!_locked_blocks[e->first] && !_locked_blocks[e->second]) {
         _locked_blocks[e->first] = true;
         _locked_blocks[e->second] = true;
