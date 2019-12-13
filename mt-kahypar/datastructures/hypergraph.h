@@ -1362,17 +1362,6 @@ class Hypergraph {
         });
   }
 
-  //Returns number of active Hypernodes
-  HypernodeID currentNumNodes() const{
-    HypernodeID current_num_nodes = 0;
-    for ( const HypernodeID& hn : nodes() ) {
-      unused(hn);
-      ++current_num_nodes;
-    }
-    return current_num_nodes;
-  }
-
-
   // ####################### Copy #######################
 
   // ! Makes a copy of the current state of the hypergraph (without partition info).

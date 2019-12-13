@@ -202,9 +202,14 @@ class QuotientGraphBlockScheduler {
 
   void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to) {
     if (from != to) {
+      // TODO(reister): This should not fail, since flow problems are independent:
+      // bool success = _hg.changeNodePart(hn, from, to);
+      // ASSERT(success);
       while(_hg.changeNodePart(hn, from, to) == false);
       for (const HyperedgeID& he : _hg.incidentEdges(hn)) {
         if (_hg.pinCountInPart(he, to) == 1) {
+          // TODO(reister): This is not thread-safe and this is also why
+          // your assertion fails rarely.
           for (const PartitionID& part : _hg.connectivitySet(he)) {
             if (to < part) {
               _block_pair_cut_he[to][part].push_back(he);

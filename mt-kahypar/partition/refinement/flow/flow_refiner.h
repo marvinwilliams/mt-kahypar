@@ -40,6 +40,7 @@ class FlowRefinerT final : public IRefiner{
             _flow_network(_hg.initialNumNodes(), _hg.initialNumEdges(), _hg.initialNumNodes() + 2 * _hg.initialNumEdges()),
             _maximum_flow(_hg.initialNumNodes() + 2 * _hg.initialNumEdges(), _hg.initialNumNodes()),
             _visited(_hg.initialNumNodes() + _hg.initialNumEdges()),
+            _current_num_nodes(0),
             _current_level(0),
             _execution_policy(context.refinement.flow.execution_policy_alpha),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
@@ -55,7 +56,11 @@ class FlowRefinerT final : public IRefiner{
 
     private:
         void initialize() {
-            _execution_policy.initialize(_hg, _hg.currentNumNodes());
+            for ( const HypernodeID& hn : _hg.nodes() ) {
+                unused(hn);
+                ++_current_num_nodes;
+            }
+            _execution_policy.initialize(_hg, _current_num_nodes);
         }
 
         bool refineImpl(const std::vector<HypernodeID>& refinement_nodes, kahypar::Metrics& best_metrics) override final {
@@ -63,10 +68,10 @@ class FlowRefinerT final : public IRefiner{
             // If flow should be executed on the current level is determined by the execution policy.
             ASSERT(refinement_nodes.size() % 2 == 0);
             _current_level += refinement_nodes.size() / 2;
+            _current_num_nodes += refinement_nodes.size() / 2;
             if ( !_execution_policy.execute(_current_level) ) {
                 return false;
             }
-
 
             utils::Timer::instance().start_timer("flow", "Flow");
 
@@ -132,6 +137,12 @@ class FlowRefinerT final : public IRefiner{
 
                 //Update bestmetrics
                 _hg.updateGlobalPartInfos();
+
+                // TODO(reister): I agree with you that you cannot verify the metric inside the adaptive
+                // flow iterations, but what you can do is to sum up delta inside the flow iterations
+                // (cut_flow_network_after - cut_flow_network_before and use an atomic to sum up the deltas
+                // globally) and compare here the metric before minus the delta with
+                // metrics::objective(_hg, _context.partition.objective) in an assertion.
                 HyperedgeWeight current_metric = metrics::objective(_hg, _context.partition.objective);
                 HyperedgeWeight current_imbalance = metrics::imbalance(_hg, _context);
 
@@ -267,7 +278,7 @@ class FlowRefinerT final : public IRefiner{
         }
 
         bool isRefinementOnLastLevel() {
-            return _hg.currentNumNodes() == _hg.initialNumNodes();
+          return _current_num_nodes == _hg.initialNumNodes();
         }
 
         /*
@@ -288,6 +299,7 @@ class FlowRefinerT final : public IRefiner{
     ThreadLocalFlowNetwork _flow_network;
     ThreadLocalMaximumFlow _maximum_flow;
     ThreadLocalFastResetFlagArray _visited;
+    HypernodeID _current_num_nodes;
     size_t _current_level;
     ExecutionPolicy _execution_policy;
     std::vector<std::vector<size_t> > _num_improvements;
