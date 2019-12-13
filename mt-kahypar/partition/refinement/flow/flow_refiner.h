@@ -43,8 +43,7 @@ class FlowRefinerT final : public IRefiner{
             _current_num_nodes(0),
             _current_level(0),
             _execution_policy(context.refinement.flow.execution_policy_alpha),
-            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
-            _iteration(0) {
+            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)) {
                 initialize();
         }
 
@@ -87,13 +86,11 @@ class FlowRefinerT final : public IRefiner{
             utils::Timer::instance().stop_timer("build_quotient_graph");
 
             // Active Block Scheduling
-            ++_iteration;
             bool improvement = false;
             bool active_block_exist = true;
             size_t current_round = 1;
 
-            utils::Timer::instance().start_timer("flow_refinement_" + std::to_string(_iteration),
-                                                 "Flow Refinement " + std::to_string(_iteration));
+            utils::Timer::instance().start_timer("flow_refinement_", "Flow Refinement ");
             while (active_block_exist) {
                 scheduler.randomShuffleQoutientEdges();
                 auto edges = scheduler.getInitialParallelEdges();
@@ -102,6 +99,9 @@ class FlowRefinerT final : public IRefiner{
                 // TODO(reister): this looks like the right parallel primitive to parallelize the flow
                 // computations. However, we should think of a threshold to abort the parallel flow computations
                 // when the feeder does not contain as many edges to fully utilize the cores.
+                // Furthermore, we have to think of numa-awareness. One possible solution could be to schedule
+                // a pairwise flow-based refinement on the numa node which contains the most nodes of the two
+                // blocks.
                 tbb::parallel_do(edges,
                     [&](Edge e,
                         tbb::parallel_do_feeder<Edge>& feeder){
@@ -130,7 +130,6 @@ class FlowRefinerT final : public IRefiner{
                         }
 
                         scheduler.scheduleNextBlock(feeder, block_0, block_1);
-
                     }
                 );
                 //LOG << "ROUND done_______________________________________________________";
@@ -151,7 +150,7 @@ class FlowRefinerT final : public IRefiner{
 
                 current_round++;
             }
-            utils::Timer::instance().stop_timer("flow_refinement_" + std::to_string(_iteration));
+            utils::Timer::instance().stop_timer("flow_refinement");
             //LOG << "REFINEMENT done_______________________________________________________";
 
             utils::Timer::instance().stop_timer("flow");
@@ -272,6 +271,11 @@ class FlowRefinerT final : public IRefiner{
                 if (!improvement && cut_flow_network_before == cut_flow_network_after) {
                     break;
                 }
+
+                // TODO(reister): I added this line to update the local part weights. However, it seems
+                // that the flow refiner produces imbalanced partitions. This should be a point we have to
+                // address.
+                _hg.updateLocalPartInfos();
             } while (alpha > 1.0);
 
             return improvement;
@@ -303,7 +307,6 @@ class FlowRefinerT final : public IRefiner{
     size_t _current_level;
     ExecutionPolicy _execution_policy;
     std::vector<std::vector<size_t> > _num_improvements;
-    size_t _iteration;
 };
 
 

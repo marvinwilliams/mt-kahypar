@@ -56,6 +56,16 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
       if (queue_weight + hg.nodeWeight(hn) <= max_part_weight) {
         Q.push(hn);
         queue_weight += hg.nodeWeight(hn);
+        // TODO(reister): Note, in case we have several numa nodes, than node ids
+        // are not consecutive. The first 16 bit are reserved for the numa node id
+        // and the remaining 48 bits for the vertex id. However, you can map those
+        // ids to a consecutive range by calling hg.originalNodeID(hn). Your line
+        // would than look like this:
+        // visited.set(hg.originalNodeID(hn), true);
+        // You can test your code locally on a numa architecture by enabling
+        // USE_HARDWARE_MOCK in definitions.h. Please, reconsider your code on all
+        // places where you access an array with a vertex id and make sure that if
+        // USE_HARDWARE_MOCK is enabled no segmentation fault occurs.
         visited.set(hn, true);
       }
     }
