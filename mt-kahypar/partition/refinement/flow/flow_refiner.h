@@ -43,7 +43,8 @@ class FlowRefinerT final : public IRefiner{
             _current_num_nodes(0),
             _current_level(0),
             _execution_policy(context.refinement.flow.execution_policy_alpha),
-            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)) {
+            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+            _round_delta(0) {
                 initialize();
         }
 
@@ -90,11 +91,12 @@ class FlowRefinerT final : public IRefiner{
             bool active_block_exist = true;
             size_t current_round = 1;
 
-            utils::Timer::instance().start_timer("flow_refinement_", "Flow Refinement ");
+            utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
             while (active_block_exist) {
                 scheduler.randomShuffleQoutientEdges();
                 auto edges = scheduler.getInitialParallelEdges();
                 active_block_exist = false;
+                _round_delta = 0;
                 //parallel here
                 // TODO(reister): this looks like the right parallel primitive to parallelize the flow
                 // computations. However, we should think of a threshold to abort the parallel flow computations
@@ -134,7 +136,7 @@ class FlowRefinerT final : public IRefiner{
                 );
                 //LOG << "ROUND done_______________________________________________________";
 
-                //Update bestmetrics
+                
                 _hg.updateGlobalPartInfos();
 
                 // TODO(reister): I agree with you that you cannot verify the metric inside the adaptive
@@ -142,9 +144,20 @@ class FlowRefinerT final : public IRefiner{
                 // (cut_flow_network_after - cut_flow_network_before and use an atomic to sum up the deltas
                 // globally) and compare here the metric before minus the delta with
                 // metrics::objective(_hg, _context.partition.objective) in an assertion.
+                
                 HyperedgeWeight current_metric = metrics::objective(_hg, _context.partition.objective);
                 HyperedgeWeight current_imbalance = metrics::imbalance(_hg, _context);
+                
+                //check if the metric improved as exspected
+                ASSERT(best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta
+                        == current_metric,
+                        "Sum of deltas is not the global improvement!"
+                        << V(_context.partition.objective)
+                        << V(best_metrics.getMetric(_context.partition.mode, _context.partition.objective))
+                        << V(_round_delta)
+                        << V(current_metric));
 
+                //Update bestmetrics
                 best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
                 best_metrics.imbalance = current_imbalance;
 
@@ -163,6 +176,7 @@ class FlowRefinerT final : public IRefiner{
 
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
+            HyperedgeWeight thread_local_delta = 0;
             FlowNetwork& flow_network = _flow_network.local();
             MaximumFlow& maximum_flow = _maximum_flow.local();
             kahypar::ds::FastResetFlagArray<>& visited = _visited.local();
@@ -186,7 +200,7 @@ class FlowRefinerT final : public IRefiner{
                 //
                 // always use heuristic
                 if (cut_weight <= 10 && !isRefinementOnLastLevel()) {
-                    return improvement;
+                    break;
                 }
 
                 // If cut is 0 no improvement is possible
@@ -216,14 +230,6 @@ class FlowRefinerT final : public IRefiner{
                 ASSERT(cut_flow_network_before >= cut_flow_network_after,
                         "Flow calculation should not increase cut!"
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
-                /*
-                ASSERT(best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - delta
-                        == metrics::objective(_hg, _context.partition.objective),
-                        "Maximum Flow is not the minimum cut!"
-                        << V(_context.partition.objective)
-                        << V(best_metrics.getMetric(_context.partition.mode, _context.partition.objective))
-                        << V(delta)
-                        << V(metrics::objective(_hg, _context.partition.objective)));*/
 
                 const double current_imbalance = metrics::localImbalance(_hg, _context);
                 //const HyperedgeWeight old_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
@@ -245,7 +251,7 @@ class FlowRefinerT final : public IRefiner{
                     //best_metrics.imbalance = current_imbalance;
                     improvement = true;
                     current_improvement = true;
-
+                    thread_local_delta += delta;
                     alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
@@ -278,6 +284,11 @@ class FlowRefinerT final : public IRefiner{
                 _hg.updateLocalPartInfos();
             } while (alpha > 1.0);
 
+            //atomic-add improvements to _round_delta
+            if(thread_local_delta > 0){
+                _round_delta.fetch_and_add(thread_local_delta);
+            }
+
             return improvement;
         }
 
@@ -307,6 +318,7 @@ class FlowRefinerT final : public IRefiner{
     size_t _current_level;
     ExecutionPolicy _execution_policy;
     std::vector<std::vector<size_t> > _num_improvements;
+    tbb::atomic<HyperedgeWeight> _round_delta;
 };
 
 
