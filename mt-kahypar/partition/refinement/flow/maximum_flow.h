@@ -204,7 +204,8 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
     ASSERT(hypergraph.partID(hn) != -1, "Hypernode " << hn << " should be assigned to a part");
     const PartitionID from = hypergraph.partID(hn);
     if (from != to ) { //&& !hypergraph.isFixedVertex(hn)
-      while(hypergraph.changeNodePart(hn, from, to) == false);
+      bool success = hypergraph.changeNodePart(hn, from, to);
+      ASSERT(success);
     }
   }
 

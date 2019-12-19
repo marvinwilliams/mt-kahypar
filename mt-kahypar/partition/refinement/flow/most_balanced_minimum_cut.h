@@ -164,7 +164,8 @@ class MostBalancedMinimumCut {
             const PartitionID from = hypergraph.partID(v);
             const PartitionID to = best_partition_id[u];
             if (from != to) {
-              while(hypergraph.changeNodePart(v, from, to) == false);
+              bool success = hypergraph.changeNodePart(v, from, to);
+              ASSERT(success);
               part_before[u] = from;
             }
           }
@@ -185,7 +186,8 @@ class MostBalancedMinimumCut {
             const PartitionID from = hypergraph.partID(v);
             const PartitionID to = part_before[u];
             if (from != to) {
-              while(hypergraph.changeNodePart(v, from, to) == false);
+              bool success = hypergraph.changeNodePart(v, from, to);
+              ASSERT(success);
             }
           }
         }
@@ -208,7 +210,8 @@ class MostBalancedMinimumCut {
         const PartitionID from = hypergraph.partID(v);
         const PartitionID to = best_partition_id[u];
         if (from != to) {
-          while(hypergraph.changeNodePart(v, from, to) == false);
+          bool success = hypergraph.changeNodePart(v, from, to);
+          ASSERT(success);
         }
       }
     }
@@ -254,7 +257,8 @@ class MostBalancedMinimumCut {
         if (!sourceSet) {
           const PartitionID from = hypergraph.partID(u);
           if (from == block_0) {
-            while(hypergraph.changeNodePart(u, block_0, block_1) == false);
+            bool success = hypergraph.changeNodePart(u, block_0, block_1);
+            ASSERT(success);
           }
         }
       } else if (flow_network.interpreteHyperedge(u, sourceSet)) {
@@ -264,7 +268,8 @@ class MostBalancedMinimumCut {
             if (!sourceSet) {
               PartitionID from = hypergraph.partID(pin);
               if (from == block_0) {
-                while(hypergraph.changeNodePart(pin, block_0, block_1) == false);
+                bool success = hypergraph.changeNodePart(pin, block_0, block_1);
+                ASSERT(success);
               }
             }
             if (flow_network.isRemovedHypernode(pin)) {
