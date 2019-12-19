@@ -110,6 +110,8 @@ class FlowRefinerT final : public IRefiner{
                         const PartitionID block_0 = e.first;
                         const PartitionID block_1 = e.second;
 
+                        _hg.updateLocalPartInfos(block_0, block_1);
+
                         //LOG<< V(sched_getcpu()) << "computing:" V(block_0) << "and" << V(block_1);
 
                         // Heuristic: If a flow refinement never improved a bipartition,
@@ -146,7 +148,7 @@ class FlowRefinerT final : public IRefiner{
                 // metrics::objective(_hg, _context.partition.objective) in an assertion.
                 
                 HyperedgeWeight current_metric = metrics::objective(_hg, _context.partition.objective);
-                HyperedgeWeight current_imbalance = metrics::imbalance(_hg, _context);
+                double current_imbalance = metrics::imbalance(_hg, _context);
                 
                 //check if the metric improved as exspected
                 ASSERT(best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta
@@ -156,6 +158,11 @@ class FlowRefinerT final : public IRefiner{
                         << V(best_metrics.getMetric(_context.partition.mode, _context.partition.objective))
                         << V(_round_delta)
                         << V(current_metric));
+                
+                //check if imbalance is feasable
+                ASSERT(current_imbalance <= _context.partition.epsilon,
+                        "Imbalance got to bad!"
+                        << V(current_imbalance));
 
                 //Update bestmetrics
                 best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
@@ -165,7 +172,6 @@ class FlowRefinerT final : public IRefiner{
             }
             utils::Timer::instance().stop_timer("flow_refinement");
             //LOG << "REFINEMENT done_______________________________________________________";
-
             utils::Timer::instance().stop_timer("flow");
             return improvement;
         }
@@ -186,6 +192,12 @@ class FlowRefinerT final : public IRefiner{
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
                 const double old_imbalance = metrics::localImbalance(_hg, _context);
+                //check if imbalance is feasable
+                ASSERT(old_imbalance <= _context.partition.epsilon,
+                        "Old local_imbalance got to bad!"
+                        << V(old_imbalance)
+                        << V(metrics::imbalance(_hg, _context))
+                        <<V(printPartWeights(block_0, block_1)));
 
                 // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
                 std::vector<HyperedgeID> cut_hes;
@@ -232,23 +244,18 @@ class FlowRefinerT final : public IRefiner{
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
 
                 const double current_imbalance = metrics::localImbalance(_hg, _context);
-                //const HyperedgeWeight old_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
-                //const HyperedgeWeight current_metric = old_metric - delta;
-
-
-                //const bool equal_metric = current_metric == best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
                 const bool equal_metric = delta == 0;
-                //const bool improved_metric = current_metric < best_metrics.getMetric(_context.partition.mode, _context.partition.objective);
                 const bool improved_metric = delta > 0;
-                //const bool improved_imbalance = current_imbalance < best_metrics.imbalance;
                 const bool improved_imbalance = current_imbalance < old_imbalance;
                 const bool is_feasible_partition = current_imbalance <= _context.partition.epsilon;
 
                 bool current_improvement = false;
                 if ((improved_metric && (is_feasible_partition || improved_imbalance)) ||
                     (equal_metric && improved_imbalance)) {
-                    //best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
-                    //best_metrics.imbalance = current_imbalance;
+                    //check if imbalance is feasable
+                    ASSERT(current_imbalance <= _context.partition.epsilon,
+                        "new local_imbalance got to bad!"
+                        << V(current_imbalance));
                     improvement = true;
                     current_improvement = true;
                     thread_local_delta += delta;
@@ -281,7 +288,11 @@ class FlowRefinerT final : public IRefiner{
                 // TODO(reister): I added this line to update the local part weights. However, it seems
                 // that the flow refiner produces imbalanced partitions. This should be a point we have to
                 // address.
-                _hg.updateLocalPartInfos();
+                //_hg.updateLocalPartInfos();
+                // would update the localPartInfos with the current state of other threads. The Threads can be in the middle of
+                // a flow_calculation and the Graph can be in an infeasable imbalance. I instead update only the two relevant
+                // blocks in the local part infos at the beginning of the parallel flow refinement.
+
             } while (alpha > 1.0);
 
             //atomic-add improvements to _round_delta
@@ -296,18 +307,24 @@ class FlowRefinerT final : public IRefiner{
           return _current_num_nodes == _hg.initialNumNodes();
         }
 
-        /*
-        void printMetric(bool newline = false, bool endline = false) {
-            if (newline) {
-            DBG << "";
-            }
-            DBG << V(metrics::imbalance(_hg, _context))
-                << V(_context.partition.objective)
-                << V(metrics::objective(_hg, _context.partition.objective));
-            if (endline) {
-            DBG << "-------------------------------------------------------------";
-            }
-        }*/
+        //debug only
+        int printPartWeights(PartitionID block_0, PartitionID block_1){
+                int localWeight = 0,gloablweight = 0;
+                for(int k = 0; k < _context.partition.k; k++){
+                    localWeight += _hg.localPartWeight(k);
+                    gloablweight += _hg.partWeight(k);
+                }
+                LOG << V(localWeight) << V(gloablweight);
+
+                LOG << V(block_0) << V(_hg.localPartSize(block_0)) << V(_hg.localPartWeight(block_0));
+                LOG << V(block_0) << V(_hg.partSize(block_0)) << V(_hg.partWeight(block_0));
+                _hg.printBlockInfos(block_0);
+
+                LOG << V(block_1) << V(_hg.localPartSize(block_1)) << V(_hg.localPartWeight(block_1));
+                LOG << V(block_1) << V(_hg.partSize(block_1)) << V(_hg.partWeight(block_1));
+                _hg.printBlockInfos(block_1);
+            return 0;
+        }
 
     HyperGraph& _hg;
     const Context& _context;

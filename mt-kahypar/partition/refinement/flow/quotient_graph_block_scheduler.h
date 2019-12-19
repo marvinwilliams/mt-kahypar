@@ -91,22 +91,24 @@ class QuotientGraphBlockScheduler {
     std::vector<edge> initialEdges;
     // TODO(reister): use 'const edge& e' in order to prevent that elements are copied
     // or modified during iteration.
-    for(auto edge:_quotient_graph){
+    for(auto const edge:_quotient_graph){
       if(_active_blocks[edge.first] && _active_blocks[edge.second]){
         _round_edges.push_back(edge);
       }
     }
-    std::list<edge>::const_iterator e = _round_edges.cbegin();
-    while (e != _round_edges.cend()){
-      if (!_locked_blocks[e->first] && !_locked_blocks[e->second]) {
-        initialEdges.push_back(*e);
-        _locked_blocks[e->first] = true;
-        _locked_blocks[e->second] = true;
 
-        e = _round_edges.erase(e);
-      }
-      else {
-        ++e;
+    size_t N = _round_edges.size();
+    for (size_t i = 0; i < N; ++i) {
+      const edge e = _round_edges[i];
+      if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
+        initialEdges.push_back(e);
+        _locked_blocks[e.first] = true;
+        _locked_blocks[e.second] = true;
+
+        std::swap(_round_edges[i], _round_edges[N - 1]);
+        _round_edges.pop_back();
+        --i;
+        --N;
       }
     }
     //reset active-array before each round
@@ -134,17 +136,18 @@ class QuotientGraphBlockScheduler {
     // you can swap it to the end and decrement a pointer to that vector. The pointer points
     // to all elements that where not considered during that current round. Once all blocks are
     // processed you can just reset the pointer to the end of the vector and start again.
-    std::list<edge>::const_iterator e = _round_edges.cbegin();
-    while (e != _round_edges.cend()) {
-      if (!_locked_blocks[e->first] && !_locked_blocks[e->second]) {
-        _locked_blocks[e->first] = true;
-        _locked_blocks[e->second] = true;
-        feeder.add(*e);
+    size_t N = _round_edges.size();
+    for (size_t i = 0; i < N; ++i) {
+      const edge e = _round_edges[i];
+      if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
+        _locked_blocks[e.first] = true;
+        _locked_blocks[e.second] = true;
+        feeder.add(e);
 
-        e = _round_edges.erase(e);
-      }
-      else {
-        ++e;
+        std::swap(_round_edges[i], _round_edges[N - 1]);
+        _round_edges.pop_back();
+        --i;
+        --N;
       }
     }
   }
@@ -203,9 +206,9 @@ class QuotientGraphBlockScheduler {
   void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to) {
     if (from != to) {
       // TODO(reister): This should not fail, since flow problems are independent:
-      // bool success = _hg.changeNodePart(hn, from, to);
-      // ASSERT(success);
-      while(_hg.changeNodePart(hn, from, to) == false);
+      bool success = _hg.changeNodePart(hn, from, to);
+      ASSERT(success);
+
       for (const HyperedgeID& he : _hg.incidentEdges(hn)) {
         if (_hg.pinCountInPart(he, to) == 1) {
           // TODO(reister): This is not thread-safe and this is also why
@@ -251,7 +254,7 @@ class QuotientGraphBlockScheduler {
   const Context& _context;
   std::vector<edge> _quotient_graph;
   //holds all eges, that are executed in that round (both blocks are active)
-  std::list<edge> _round_edges;
+  std::vector<edge> _round_edges;
 
   std::vector<bool> _active_blocks;
   std::vector<bool> _locked_blocks;

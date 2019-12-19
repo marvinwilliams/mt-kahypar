@@ -150,6 +150,41 @@ class Hypergraph {
       }
     }
 
+    void printBlockInfos(int block, const tbb::enumerable_thread_specific<ThreadPartInfos>& infos){
+      for(const ThreadPartInfos& info:infos){
+        LOG << V(info._delta[block].weight);
+        LOG << V(info._current[block].weight);
+        LOG << V(info._global[block].weight);
+
+        LOG << V(info._delta[block].size);
+        LOG << V(info._current[block].size);
+        LOG << V(info._global[block].size);
+      }
+    }
+
+    /**
+     * Appliying the deltas of all threads to local block weights and sizes of block_0 and block_1.
+     */
+    void snapshot(const tbb::enumerable_thread_specific<ThreadPartInfos>& infos, PartitionID block_0, PartitionID block_1) {
+      // Reset current block weights
+      _current[block_0] = _global[block_0];
+      _current[block_1] = _global[block_1];
+
+      // Applying deltas of all threads
+      for (const ThreadPartInfos& thread_info : infos) {
+        // It can happen that in some situations (when frequently updating local part
+        // weights) that the current thread info is initialized and therefore iterating
+        // over all k's would fail
+        if (thread_info._delta.size() == (size_t)_k) {
+          _current[block_0].weight += thread_info._delta[block_0].weight;
+          _current[block_0].size += thread_info._delta[block_0].size;
+          
+          _current[block_1].weight += thread_info._delta[block_1].weight;
+          _current[block_1].size += thread_info._delta[block_1].size;
+        }
+      }
+    }
+
     const std::vector<PartInfo>& delta() const {
       return _delta;
     }
@@ -845,6 +880,10 @@ class Hypergraph {
     _local_part_info.local().snapshot(_local_part_info);
   }
 
+  void updateLocalPartInfos(PartitionID block_0, PartitionID block_1) {
+    _local_part_info.local().snapshot(_local_part_info, block_0, block_1);
+  }
+
   // ! Updates the global block weights
   // ! Note, this function is not thread safe and should be only called in
   // ! a single-threaded setting.
@@ -1439,6 +1478,10 @@ class Hypergraph {
     copy_hypergraph.setCommunityNodeMapping(std::move(community_node_mapping));
 
     return std::make_pair(std::move(copy_hypergraph), std::move(hn_mapping));
+  }
+
+  void printBlockInfos(int block){
+    _local_part_info.local().printBlockInfos(block, _local_part_info);
   }
 
  private:
