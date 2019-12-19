@@ -151,6 +151,19 @@ static inline double localImbalance(HyperGraph& hypergraph, const Context& conte
 }
 
 template< typename HyperGraph >
+static inline double localBlockImbalance(HyperGraph& hypergraph, const Context& context, PartitionID block_0, PartitionID block_1) {
+
+  double balance_0 = (hypergraph.localPartWeight(block_0) /
+                        static_cast<double>(context.partition.perfect_balance_part_weights[block_0]));
+  
+  double balance_1 = (hypergraph.localPartWeight(block_1) /
+                        static_cast<double>(context.partition.perfect_balance_part_weights[block_1]));
+
+  double max_balance = std::max(balance_0, balance_1);
+  return max_balance - 1.0;
+}
+
+template< typename HyperGraph >
 static inline double avgHyperedgeDegree(const HyperGraph& hypergraph) {
   return static_cast<double>(hypergraph.initialNumPins()) / hypergraph.initialNumEdges();
 }

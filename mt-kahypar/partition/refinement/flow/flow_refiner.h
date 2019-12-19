@@ -191,7 +191,7 @@ class FlowRefinerT final : public IRefiner{
             do {
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
-                const double old_imbalance = metrics::localImbalance(_hg, _context);
+                const double old_imbalance = metrics::localBlockImbalance(_hg, _context, block_0, block_1);
                 //check if imbalance is feasable
                 ASSERT(old_imbalance <= _context.partition.epsilon,
                         "Old local_imbalance got to bad!"
@@ -243,7 +243,7 @@ class FlowRefinerT final : public IRefiner{
                         "Flow calculation should not increase cut!"
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
 
-                const double current_imbalance = metrics::localImbalance(_hg, _context);
+                const double current_imbalance = metrics::localBlockImbalance(_hg, _context, block_0, block_1);
                 const bool equal_metric = delta == 0;
                 const bool improved_metric = delta > 0;
                 const bool improved_imbalance = current_imbalance < old_imbalance;
