@@ -165,6 +165,7 @@ class MostBalancedMinimumCut {
             const PartitionID to = best_partition_id[u];
             if (from != to) {
               bool success = hypergraph.changeNodePart(v, from, to);
+              unused(success);
               ASSERT(success);
               part_before[u] = from;
             }
@@ -187,6 +188,7 @@ class MostBalancedMinimumCut {
             const PartitionID to = part_before[u];
             if (from != to) {
               bool success = hypergraph.changeNodePart(v, from, to);
+              unused(success);
               ASSERT(success);
             }
           }
@@ -211,6 +213,7 @@ class MostBalancedMinimumCut {
         const PartitionID to = best_partition_id[u];
         if (from != to) {
           bool success = hypergraph.changeNodePart(v, from, to);
+          unused(success);
           ASSERT(success);
         }
       }
@@ -258,6 +261,7 @@ class MostBalancedMinimumCut {
           const PartitionID from = hypergraph.partID(u);
           if (from == block_0) {
             bool success = hypergraph.changeNodePart(u, block_0, block_1);
+            unused(success);
             ASSERT(success);
           }
         }
@@ -269,6 +273,7 @@ class MostBalancedMinimumCut {
               PartitionID from = hypergraph.partID(pin);
               if (from == block_0) {
                 bool success = hypergraph.changeNodePart(pin, block_0, block_1);
+                unused(success);
                 ASSERT(success);
               }
             }

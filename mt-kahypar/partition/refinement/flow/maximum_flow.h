@@ -205,6 +205,7 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
     const PartitionID from = hypergraph.partID(hn);
     if (from != to ) { //&& !hypergraph.isFixedVertex(hn)
       bool success = hypergraph.changeNodePart(hn, from, to);
+      unused(success);
       ASSERT(success);
     }
   }

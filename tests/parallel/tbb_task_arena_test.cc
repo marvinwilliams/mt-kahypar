@@ -80,6 +80,10 @@ class ATBBNumaArenaTest : public Test {
     return TBBArena::instance(num_threads).numa_task_arena(node);
   }
 
+  tbb::task_group& numa_task_group(int node) {
+    return TBBArena::instance(num_threads).numa_task_group(TBBArena::GLOBAL_TASK_GROUP, node);
+  }
+
   void wait(const int node, tbb::task_group& group) {
     TBBArena::instance(num_threads).wait(node, group);
   }
@@ -95,7 +99,7 @@ class ATBBNumaArenaTest : public Test {
 #define SYSTEM_HAS_MORE_THAN_FOUR_CORES false
 typedef ::testing::Types<Numa<1>, Numa<2>
                          #if SYSTEM_HAS_MORE_THAN_FOUR_CORES
-                         , Numa<3>, Numa<4>
+                         , Numa<4>
                          #endif
                          > NumaNodesTemplate;
 
@@ -115,18 +119,16 @@ TYPED_TEST(ATBBNumaArenaTest, ChecksTBBArenaInitialization) {
 TYPED_TEST(ATBBNumaArenaTest, ChecksThreadsToNumaNodeAssignment) {
   for (int node = 0; node < this->expected_num_numa_nodes(); ++node) {
     std::vector<bool> cpus(this->expected_number_of_threads(), false);
-    tbb::task_arena& arena = this->numa_task_arena(node);
-    tbb::task_group group;
-    arena.execute([&group, &cpus]() {
-          group.run([&cpus]() {
+    this->numa_task_arena(node).execute([this, node, &cpus]() {
+          this->numa_task_group(node).run([&cpus]() {
             tbb::parallel_for(0, 1000000, [&cpus](const size_t&) {
               cpus[sched_getcpu()] = true;
             });
           });
         });
 
-    arena.execute([&] {
-          group.wait();
+    this->numa_task_arena(node).execute([&] {
+          this->numa_task_group(node).wait();
         });
 
     std::vector<int> expected_cpus = this->get_cpus_of_numa_node(node);

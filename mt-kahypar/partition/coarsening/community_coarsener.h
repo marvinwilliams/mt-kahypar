@@ -66,8 +66,8 @@ class CommunityCoarsenerT : public ICoarsener,
   static constexpr HypernodeID kInvalidHypernode = std::numeric_limits<HypernodeID>::max();
 
  public:
-  CommunityCoarsenerT(HyperGraph& hypergraph, const Context& context) :
-    Base(hypergraph, context),
+  CommunityCoarsenerT(HyperGraph& hypergraph, const Context& context, const TaskGroupID task_group_id) :
+    Base(hypergraph, context, task_group_id),
     _enable_randomization(true) { }
 
   CommunityCoarsenerT(const CommunityCoarsenerT&) = delete;
@@ -122,7 +122,7 @@ class CommunityCoarsenerT : public ICoarsener,
       int num_threads = TBB::instance().number_of_threads_on_numa_node(node);
       for (int i = 0; i < num_threads; ++i) {
         TBB::instance().numa_task_arena(node).execute([&, node] {
-            TBB::instance().numa_task_group(node).run([&, node] {
+            TBB::instance().numa_task_group(_task_group_id, node).run([&, node] {
               tbb::concurrent_queue<PartitionID>& queue = community_queues[node];
               while (!queue.empty()) {
                 PartitionID community_id = -1;
@@ -145,7 +145,7 @@ class CommunityCoarsenerT : public ICoarsener,
           });
       }
     }
-    TBB::instance().wait();
+    TBB::instance().wait(_task_group_id);
     utils::Timer::instance().stop_timer("parallel_community_coarsening");
 
     // Finalize community coarsening
@@ -190,17 +190,17 @@ class CommunityCoarsenerT : public ICoarsener,
       }
 
       for (const HypernodeID& hn : nodes) {
-        if (_hg.nodeIsEnabled(hn) && _hg.nodeDegree(hn) <= _context.coarsening.high_degree_vertex_threshold) {
+        if (_hg.nodeIsEnabled(hn) && !_hg.isHighDegreeVertex(hn)) {
           Rating rating = rater.rate(hn);
 
           if (rating.target != kInvalidHypernode) {
             rater.markAsMatched(hn);
             rater.markAsMatched(rating.target);
-            if (_hg.nodeDegree(rating.target) < _context.coarsening.high_degree_vertex_threshold) {
+            if (_hg.isHighDegreeVertex(rating.target)) {
+              this->performContraction(rating.target, hn);
+            } else {
               this->performContraction(hn, rating.target);
               tmp_nodes.emplace_back(hn);
-            } else {
-              this->performContraction(rating.target, hn);
             }
             --current_num_nodes;
           }
@@ -231,6 +231,7 @@ class CommunityCoarsenerT : public ICoarsener,
   using Base::_hg;
   using Base::_context;
   using Base::_pruner;
+  using Base::_task_group_id;
   bool _enable_randomization;
 };
 

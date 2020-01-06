@@ -134,12 +134,13 @@ struct CoarseningParameters {
   RatingParameters rating = { };
   HypernodeID contraction_limit_multiplier = std::numeric_limits<HypernodeID>::max();
   double max_allowed_weight_multiplier = std::numeric_limits<double>::max();
+  double max_allowed_high_degree_node_weight_multiplier = std::numeric_limits<double>::max();
   bool use_high_degree_vertex_threshold = false;
 
   // Those will be determined dynamically
   HypernodeWeight max_allowed_node_weight = 0;
+  HypernodeWeight max_allowed_high_degree_node_weight = 0;
   HypernodeID contraction_limit = 0;
-  double hypernode_weight_fraction = 0.0;
   HyperedgeID high_degree_vertex_threshold = std::numeric_limits<HyperedgeID>::max();
 };
 
@@ -147,7 +148,9 @@ inline std::ostream & operator<< (std::ostream& str, const CoarseningParameters&
   str << "Coarsening Parameters:" << std::endl;
   str << "  Algorithm:                          " << params.algorithm << std::endl;
   str << "  max allowed weight multiplier:      " << params.max_allowed_weight_multiplier << std::endl;
+  str << "  max allowed high degree multiplier: " << params.max_allowed_high_degree_node_weight_multiplier << std::endl;
   str << "  maximum allowed hypernode weight:   " << params.max_allowed_node_weight << std::endl;
+  str << "  maximum allowed high-degree weight: " << params.max_allowed_high_degree_node_weight << std::endl;
   str << "  contraction limit multiplier:       " << params.contraction_limit_multiplier << std::endl;
   str << "  contraction limit:                  " << params.contraction_limit << std::endl;
   if ( params.use_high_degree_vertex_threshold ) {
@@ -158,18 +161,18 @@ inline std::ostream & operator<< (std::ostream& str, const CoarseningParameters&
 }
 
 struct InitialPartitioningParameters {
-  std::string context_file = "";
   InitialPartitioningMode mode = InitialPartitioningMode::UNDEFINED;
-  bool call_kahypar_multiple_times = false;
   size_t runs = 1;
+  size_t lp_maximum_iterations = 1;
+  size_t lp_initial_block_size = 1;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningParameters& params) {
   str << "Initial Partitioning Parameters:" << std::endl;
-  str << "  Initial Partitioning Context:       " << params.context_file << std::endl;
   str << "  Initial Partitioning Mode:          " << params.mode << std::endl;
-  str << "  Call KaHyPar multiple times:        " << std::boolalpha << params.call_kahypar_multiple_times << std::endl;
   str << "  Number of Runs:                     " << params.runs << std::endl;
+  str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
+  str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
   return str;
 }
 
@@ -177,10 +180,13 @@ struct LabelPropagationParameters {
   LabelPropagationAlgorithm algorithm = LabelPropagationAlgorithm::do_nothing;
   size_t maximum_iterations = 1;
   size_t part_weight_update_frequency = 100;
+  bool localized = false;
   bool numa_aware = false;
   bool rebalancing = true;
   ExecutionType execution_policy = ExecutionType::UNDEFINED;
   double execution_policy_alpha = 2.0;
+  bool execute_always = false;
+  bool execute_sequential = false;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParameters& params) {
@@ -188,10 +194,13 @@ inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParam
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Maximum Iterations:               " << params.maximum_iterations << std::endl;
   str << "    Part Weight Update Frequency:     " << params.part_weight_update_frequency << std::endl;
+  str << "    Localized:                        " << std::boolalpha << params.localized << std::endl;
   str << "    Numa Aware:                       " << std::boolalpha << params.numa_aware << std::endl;
   str << "    Rebalancing:                      " << std::boolalpha << params.rebalancing << std::endl;
-  str << "    Execution Policy:                 " << params.execution_policy << std::endl;
-  str << "    Execution Policy Alpha:           " << params.execution_policy_alpha << std::endl;
+  if ( !params.localized ) {
+    str << "    Execution Policy:                 " << params.execution_policy << std::endl;
+    str << "    Execution Policy Alpha:           " << params.execution_policy_alpha << std::endl;
+  }
   return str;
 }
 
@@ -239,13 +248,13 @@ inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& 
 
 struct SharedMemoryParameters {
   size_t num_threads = 1;
-  InitialHyperedgeDistribution initial_distribution = InitialHyperedgeDistribution::UNDEFINED;
+  InitialHyperedgeDistribution initial_hyperedge_distribution = InitialHyperedgeDistribution::UNDEFINED;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const SharedMemoryParameters& params) {
   str << "Shared Memory Parameters:             " << std::endl;
   str << "  Number of Threads:                  " << params.num_threads << std::endl;
-  str << "  Initial Hyperedge Distribution:     " << params.initial_distribution << std::endl;
+  str << "  Initial Hyperedge Distribution:     " << params.initial_hyperedge_distribution << std::endl;
   return str;
 }
 
@@ -283,6 +292,43 @@ class Context {
     }
   }
 
+  void setupContractionLimit(const HypernodeWeight total_hypergraph_weight) {
+    // Setup contraction limit
+    if (initial_partitioning.mode == InitialPartitioningMode::recursive) {
+      coarsening.contraction_limit =
+        2 * std::max(shared_memory.num_threads, static_cast<size_t>(partition.k)) *
+        coarsening.contraction_limit_multiplier;
+    } else {
+      coarsening.contraction_limit =
+        coarsening.contraction_limit_multiplier * partition.k;
+    }
+
+    // Setup maximum allowed vertex and high-degree vertex weight
+    setupMaximumAllowedNodeWeight(total_hypergraph_weight);
+  }
+
+  void setupMaximumAllowedNodeWeight(const HypernodeWeight total_hypergraph_weight) {
+    HypernodeWeight min_block_weight = std::numeric_limits<HypernodeWeight>::max();
+    for ( PartitionID part_id = 0; part_id < partition.k; ++part_id ) {
+      min_block_weight = std::min(min_block_weight, partition.max_part_weights[part_id]);
+    }
+
+    double hypernode_weight_fraction =
+      coarsening.max_allowed_weight_multiplier
+      / coarsening.contraction_limit;
+    double high_degree_hypernode_weight_fraction =
+      coarsening.max_allowed_high_degree_node_weight_multiplier
+      / coarsening.contraction_limit;
+    coarsening.max_allowed_node_weight =
+      std::ceil(hypernode_weight_fraction * total_hypergraph_weight);
+    coarsening.max_allowed_high_degree_node_weight =
+      std::ceil(high_degree_hypernode_weight_fraction * total_hypergraph_weight);
+    coarsening.max_allowed_node_weight =
+      std::min(coarsening.max_allowed_node_weight, min_block_weight);
+    coarsening.max_allowed_high_degree_node_weight =
+      std::min(coarsening.max_allowed_high_degree_node_weight, min_block_weight);
+  }
+
   void sanityCheck() {
     if (partition.objective == kahypar::Objective::cut &&
         refinement.label_propagation.algorithm == LabelPropagationAlgorithm::label_propagation_km1) {
@@ -300,6 +346,13 @@ class Context {
                                          << "refiner in combination with km1 metric is not possible!",
                   refinement.label_propagation.algorithm,
                   LabelPropagationAlgorithm::label_propagation_km1);
+    }
+
+    if ( refinement.label_propagation.localized ) {
+      // If we use localized label propagation, we want to execute LP on each level
+      // only on the uncontracted hypernodes
+      refinement.label_propagation.execution_policy = ExecutionType::constant;
+      refinement.label_propagation.execution_policy_alpha = 1.0;
     }
   }
 };

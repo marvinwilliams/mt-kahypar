@@ -184,10 +184,10 @@ class Timer {
 
   void stop_timer(const std::string& key, bool force = false) {
     unused(key);
-    HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
     std::lock_guard<std::mutex> lock(_timing_mutex);
 
     if (_enable || force) {
+      HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
       ASSERT(!force || !_local_active_timings.local().empty());
       ActiveTiming current_timing;
       // First check if there are some active timings on the local stack
@@ -199,7 +199,7 @@ class Timer {
         _local_active_timings.local().pop_back();
       } else {
         ASSERT(!_active_timings.empty());
-        ASSERT(_active_timings.back().key() == key);
+        ASSERT(_active_timings.back().key() == key, V(_active_timings.back().key()) << V(key));
         current_timing = _active_timings.back();
         _active_timings.pop_back();
       }

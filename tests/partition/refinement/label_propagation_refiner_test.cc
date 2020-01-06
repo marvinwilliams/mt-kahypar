@@ -23,7 +23,7 @@
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/partition/context.h"
-#include "mt-kahypar/partition/initial_partitioning/direct_initial_partitioner.h"
+#include "mt-kahypar/partition/initial_partitioning/flat/bfs_initial_partitioner.h"
 #include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
 #include "mt-kahypar/partition/refinement/policies/execution_policy.h"
 #include "mt-kahypar/partition/refinement/policies/gain_policy.h"
@@ -91,20 +91,29 @@ class ALabelPropagationRefiner : public Test {
     // Initial Partitioning
     context.initial_partitioning.mode = InitialPartitioningMode::recursive;
     context.initial_partitioning.runs = 1;
-    context.initial_partitioning.context_file = "../test_instances/fast_initial_partitioning.ini";
 
     // Label Propagation
     context.refinement.label_propagation.algorithm = Config::LP_ALGO;
     context.refinement.label_propagation.execution_policy = ExecutionType::exponential;
     context.refinement.label_propagation.part_weight_update_frequency = 5;
+    context.refinement.label_propagation.localized = false;
+    #ifdef KAHYPAR_TRAVIS_BUILD
+    context.refinement.label_propagation.numa_aware = false;
+    #else
+    context.refinement.label_propagation.numa_aware = true;
+    #endif
 
     // Read hypergraph
     hypergraph = io::readHypergraphFile<HyperGraph, StreamingHyperGraph, TBB, HwTopology>(
       "../test_instances/unweighted_ibm01.hgr", context.partition.k, InitialHyperedgeDistribution::equally);
     context.setupPartWeights(hypergraph.totalWeight());
+    for ( const HypernodeID& hn : hypergraph.nodes() ) {
+      hypergraph.setCommunityID(hn, 0);
+    }
+    hypergraph.initializeCommunities();
     initialPartition();
 
-    refiner = std::make_unique<Refiner>(hypergraph, context);
+    refiner = std::make_unique<Refiner>(hypergraph, context, TBB::GLOBAL_TASK_GROUP);
   }
 
   static void SetUpTestSuite() {
@@ -112,8 +121,13 @@ class ALabelPropagationRefiner : public Test {
   }
 
   void initialPartition() {
-    DirectInitialPartitionerT<TypeTraits> initial_partitioner(hypergraph, context, true);
-    initial_partitioner.initialPartition();
+    Context ip_context(context);
+    ip_context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
+    InitialPartitioningDataContainerT<TypeTraits> ip_data(hypergraph, ip_context, TBB::GLOBAL_TASK_GROUP);
+    BFSInitialPartitionerT<TypeTraits>& initial_partitioner = *new(tbb::task::allocate_root())
+      BFSInitialPartitionerT<TypeTraits>(InitialPartitioningAlgorithm::bfs, ip_data, ip_context);
+    tbb::task::spawn_root_and_wait(initial_partitioner);
+    ip_data.apply();
     metrics.km1 = metrics::km1(hypergraph);
     metrics.cut = metrics::hyperedgeCut(hypergraph);
     metrics.imbalance = metrics::imbalance(hypergraph, context);
@@ -128,7 +142,7 @@ class ALabelPropagationRefiner : public Test {
 template <typename Config>
 size_t ALabelPropagationRefiner<Config>::num_threads = HwTopology::instance().num_cpus();
 
-static constexpr double EPS = 10e-6;
+static constexpr double EPS = 0.05;
 
 typedef ::testing::Types<TestConfig<2, kahypar::Objective::cut>,
                          TestConfig<4, kahypar::Objective::cut>,

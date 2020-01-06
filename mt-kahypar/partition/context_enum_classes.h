@@ -89,9 +89,23 @@ enum class AcceptancePolicy : uint8_t {
   UNDEFINED
 };
 
+enum class InitialPartitioningAlgorithm : uint8_t {
+  random = 0,
+  bfs = 1,
+  greedy_round_robin_fm = 2,
+  greedy_global_fm = 3,
+  greedy_sequential_fm = 4,
+  greedy_round_robin_max_net = 5,
+  greedy_global_max_net = 6,
+  greedy_sequential_max_net = 7,
+  label_propagation = 8,
+  UNDEFINED = 9
+};
+
 enum class InitialPartitioningMode : uint8_t {
   direct,
   recursive,
+  recursive_bisection,
   UNDEFINED
 };
 
@@ -110,6 +124,7 @@ enum class ExecutionType : uint8_t {
   exponential,
   multilevel,
   constant,
+  none,
   UNDEFINED
 };
 
@@ -214,10 +229,28 @@ std::ostream & operator<< (std::ostream& os, const RatingFunction& func) {
   return os << static_cast<uint8_t>(func);
 }
 
+std::ostream & operator<< (std::ostream& os, const InitialPartitioningAlgorithm& algo) {
+  switch (algo) {
+    case InitialPartitioningAlgorithm::random: return os << "random";
+    case InitialPartitioningAlgorithm::bfs: return os << "bfs";
+    case InitialPartitioningAlgorithm::greedy_round_robin_fm: return os << "greedy_round_robin_fm";
+    case InitialPartitioningAlgorithm::greedy_global_fm: return os << "greedy_global_fm";
+    case InitialPartitioningAlgorithm::greedy_sequential_fm: return os << "greedy_sequential_fm";
+    case InitialPartitioningAlgorithm::greedy_round_robin_max_net: return os << "greedy_round_robin_max_net";
+    case InitialPartitioningAlgorithm::greedy_global_max_net: return os << "greedy_global_max_net";
+    case InitialPartitioningAlgorithm::greedy_sequential_max_net: return os << "greedy_sequential_max_net";
+    case InitialPartitioningAlgorithm::label_propagation: return os << "label_propagation";
+    case InitialPartitioningAlgorithm::UNDEFINED: return os << "UNDEFINED";
+      // omit default case to trigger compiler warning for missing cases
+  }
+  return os << static_cast<uint8_t>(algo);
+}
+
 std::ostream & operator<< (std::ostream& os, const InitialPartitioningMode& mode) {
   switch (mode) {
     case InitialPartitioningMode::direct: return os << "direct";
     case InitialPartitioningMode::recursive: return os << "recursive";
+    case InitialPartitioningMode::recursive_bisection: return os << "recursive_bisection";
     case InitialPartitioningMode::UNDEFINED: return os << "UNDEFINED";
       // omit default case to trigger compiler warning for missing cases
   }
@@ -249,6 +282,7 @@ std::ostream & operator<< (std::ostream& os, const ExecutionType& type) {
     case ExecutionType::exponential: return os << "exponential";
     case ExecutionType::multilevel: return os << "multilevel";
     case ExecutionType::constant: return os << "constant";
+    case ExecutionType::none: return os << "none";
     case ExecutionType::UNDEFINED: return os << "UNDEFINED";
       // omit default case to trigger compiler warning for missing cases
   }
@@ -349,11 +383,37 @@ static RatingFunction ratingFunctionFromString(const std::string& function) {
   return RatingFunction::UNDEFINED;
 }
 
+static InitialPartitioningAlgorithm initialPartitioningAlgorithmFromString(const std::string& algo) {
+  if (algo == "random") {
+    return InitialPartitioningAlgorithm::random;
+  } else if (algo == "bfs") {
+    return InitialPartitioningAlgorithm::bfs;
+  } else if (algo == "greedy_round_robin_fm") {
+    return InitialPartitioningAlgorithm::greedy_round_robin_fm;
+  } else if (algo == "greedy_global_fm") {
+    return InitialPartitioningAlgorithm::greedy_global_fm;
+  } else if (algo == "greedy_sequential_fm") {
+    return InitialPartitioningAlgorithm::greedy_sequential_fm;
+  } else if (algo == "greedy_round_robin_max_net") {
+    return InitialPartitioningAlgorithm::greedy_round_robin_max_net;
+  } else if (algo == "greedy_global_max_net") {
+    return InitialPartitioningAlgorithm::greedy_global_max_net;
+  } else if (algo == "greedy_sequential_max_net") {
+    return InitialPartitioningAlgorithm::greedy_sequential_max_net;
+  } else if (algo == "label_propagation") {
+    return InitialPartitioningAlgorithm::label_propagation;
+  }
+  ERROR("Illegal option: " + algo);
+  return InitialPartitioningAlgorithm::UNDEFINED;
+}
+
 static InitialPartitioningMode initialPartitioningModeFromString(const std::string& mode) {
   if (mode == "direct") {
     return InitialPartitioningMode::direct;
   } else if (mode == "recursive") {
     return InitialPartitioningMode::recursive;
+  } else if (mode == "recursive_bisection") {
+    return InitialPartitioningMode::recursive_bisection;
   }
   ERROR("Illegal option: " + mode);
   return InitialPartitioningMode::UNDEFINED;
@@ -388,6 +448,8 @@ static ExecutionType executionTypeFromString(const std::string& type) {
     return ExecutionType::multilevel;
   } else if (type == "constant") {
     return ExecutionType::constant;
+  } else if (type == "none") {
+    return ExecutionType::none;
   }
   ERROR("Illegal option: " + type);
   return ExecutionType::UNDEFINED;

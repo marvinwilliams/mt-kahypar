@@ -44,6 +44,9 @@ option(KAHYPAR_ENABLE_HEAVY_INITIAL_PARTITIONING_ASSERTIONS
 option(KAHYPAR_ENABLE_HEAVY_REFINEMENT_ASSERTIONS
   "Enable heavy assertions in refinement phase." OFF)
 
+option(KAHYPAR_TRAVIS_BUILD
+  "Indicate that this build is executed on Travis CI." OFF)
+
 if(KAHYPAR_DISABLE_ASSERTIONS)
   add_compile_definitions(KAHYPAR_DISABLE_ASSERTIONS)
 endif(KAHYPAR_DISABLE_ASSERTIONS)
@@ -67,6 +70,10 @@ endif(KAHYPAR_ENABLE_HEAVY_INITIAL_PARTITIONING_ASSERTIONS)
 if(KAHYPAR_ENABLE_HEAVY_REFINEMENT_ASSERTIONS)
   add_compile_definitions(KAHYPAR_ENABLE_HEAVY_REFINEMENT_ASSERTIONS)
 endif(KAHYPAR_ENABLE_HEAVY_REFINEMENT_ASSERTIONS)
+
+if(KAHYPAR_TRAVIS_BUILD)
+  add_compile_definitions(KAHYPAR_TRAVIS_BUILD)
+endif(KAHYPAR_TRAVIS_BUILD)
 
 if(KAHYPAR_USE_MINIMAL_BOOST)
   include(ExternalProject)
@@ -211,24 +218,6 @@ ELSE ()
     MESSAGE(STATUS "WARNING: hwlock library not found.")
 ENDIF ()
 
-# find libkahypar
-
-FIND_PATH(KAHYPAR_INCLUDE_DIR NAME libkahypar.h
-  HINTS "/usr/local/include" "${CMAKE_CURRENT_SOURCE_DIR}/external_tools/kahypar/include" )
-
-FIND_LIBRARY(KAHYPAR_LIBRARY NAME libkahypar.so
-  HINTS "/usr/local/lib" "${CMAKE_CURRENT_SOURCE_DIR}/external_tools/kahypar/build/lib" )
-
-IF (KAHYPAR_INCLUDE_DIR AND KAHYPAR_LIBRARY)
-    SET(KAHYPAR_FOUND TRUE)
-    MESSAGE(STATUS "Found kahypar library: inc=${KAHYPAR_INCLUDE_DIR}, lib=${KAHYPAR_LIBRARY}")
-    include_directories(${KAHYPAR_INCLUDE_DIR})
-    link_libraries(${KAHYPAR_LIBRARY})
-ELSE ()
-    SET(KAHYPAR_FOUND FALSE)
-    MESSAGE(STATUS "WARNING: kahypar library not found.")
-ENDIF ()
-
 # TODO: Add git revision
 
 if(NOT MSVC)
@@ -246,6 +235,7 @@ if(NOT MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ltbb")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ltbbmalloc_proxy")
 
   include(CheckSSE4_2)
   if( BUILTIN_POPCNT )

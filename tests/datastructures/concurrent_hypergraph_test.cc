@@ -644,10 +644,10 @@ TEST_F(AConcurrentHypergraph, UncontractsABatchOfContractionsConcurrently1)  {
 
   std::reverse(batch.begin(), batch.end());
   for ( const Memento& memento : batch ) {
-    hypergraph.preprocessMementoForBatchUncontraction(
+    hypergraph.restoreDisabledHyperedgesThatBecomeNonParallel(
       memento, parallel_he_representative, batch_hypernodes);
   }
-  hypergraph.uncontract(batch, parallel_he_representative, batch_hypernodes);
+  hypergraph.uncontract(batch, parallel_he_representative, batch_hypernodes, false);
 
   verifyPinIterators(hypergraph, { hypergraph.globalEdgeID(0), hypergraph.globalEdgeID(1),
     hypergraph.globalEdgeID(2), hypergraph.globalEdgeID(3) },
@@ -685,10 +685,10 @@ TEST_F(AConcurrentHypergraph, UncontractsABatchOfContractionsConcurrently2)  {
 
   std::reverse(batch.begin(), batch.end());
   for ( const Memento& memento : batch ) {
-    hypergraph.preprocessMementoForBatchUncontraction(
+    hypergraph.restoreDisabledHyperedgesThatBecomeNonParallel(
       memento, parallel_he_representative, batch_hypernodes);
   }
-  hypergraph.uncontract(batch, parallel_he_representative, batch_hypernodes);
+  hypergraph.uncontract(batch, parallel_he_representative, batch_hypernodes, false);
 
   verifyPinIterators(hypergraph, { hypergraph.globalEdgeID(0), hypergraph.globalEdgeID(1),
     hypergraph.globalEdgeID(2), hypergraph.globalEdgeID(3) },
@@ -726,10 +726,10 @@ TEST_F(AConcurrentHypergraph, UncontractsABatchOfContractionsConcurrently3)  {
 
   std::reverse(batch.begin(), batch.end());
   for ( const Memento& memento : batch ) {
-    hypergraph.preprocessMementoForBatchUncontraction(
+    hypergraph.restoreDisabledHyperedgesThatBecomeNonParallel(
       memento, parallel_he_representative, batch_hypernodes);
   }
-  hypergraph.uncontract(batch, parallel_he_representative, batch_hypernodes);
+  hypergraph.uncontract(batch, parallel_he_representative, batch_hypernodes, false);
 
   verifyPinIterators(hypergraph, { hypergraph.globalEdgeID(0), hypergraph.globalEdgeID(1),
     hypergraph.globalEdgeID(2), hypergraph.globalEdgeID(3) },

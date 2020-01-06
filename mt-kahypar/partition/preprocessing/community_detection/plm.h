@@ -71,7 +71,7 @@ class PLM {
                                                     _context.shared_memory.num_threads)));
     }
 
-    std::vector<NodeID> nodes(G.numNodes());
+    parallel::scalable_vector<NodeID> nodes(G.numNodes());
     for (NodeID u : G.nodes()) {
       nodes[u] = u;
       clusterVolumes[u].store(G.nodeVolume(u));

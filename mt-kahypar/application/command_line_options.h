@@ -190,6 +190,10 @@ po::options_description createCoarseningOptionsDescription(Context& context,
     po::value<double>(&context.coarsening.max_allowed_weight_multiplier)->value_name("<double>"),
     "The maximum weight of a vertex in the coarsest hypergraph H is:\n"
     "(s * w(H)) / (t * k)\n")
+    ("c-s-high-degree",
+    po::value<double>(&context.coarsening.max_allowed_high_degree_node_weight_multiplier)->value_name("<double>"),
+    "The maximum weight of a high degree vertex in the coarsest hypergraph H is:\n"
+    "(s * w(H)) / (t * k)\n")
     ("c-t",
     po::value<HypernodeID>(&context.coarsening.contraction_limit_multiplier)->value_name("<int>"),
     "Coarsening stops when there are no more than t * k hypernodes left")
@@ -235,16 +239,19 @@ po::options_description createInitialPartitioningOptionsDescription(Context& con
     }),
     "Mode of initial partitioning:\n"
     "- direct\n"
-    "- recursive")
-    ("i-call-kahypar-multiple-times",
-    po::value<bool>(&context.initial_partitioning.call_kahypar_multiple_times)->value_name("<bool>"),
-    "If true, KaHyPar is called i-runs times during IP (with one call to IP of KaHyPar).\n"
-    "Otherwise, KaHyPar is called s-num-threads times and the IP of KaHyPar is called i-runs times\n"
-    "(splitted over s-num-threads)"
-    "(default: false)")
+    "- recursive\n"
+    "- recursive_bisection")
     ("i-runs",
     po::value<size_t>(&context.initial_partitioning.runs)->value_name("<size_t>"),
     "Number of runs for initial partitioner \n"
+    "(default: 1)")
+    ("i-lp-maximum-iterations",
+    po::value<size_t>(&context.initial_partitioning.lp_maximum_iterations)->value_name("<size_t>"),
+    "Maximum number of iterations of label propagation initial partitioner \n"
+    "(default: 1)")
+    ("i-lp-initial-block-size",
+    po::value<size_t>(&context.initial_partitioning.lp_initial_block_size)->value_name("<size_t>"),
+    "Initial block size used for label propagation initial partitioner \n"
     "(default: 1)");
   return options;
 }
@@ -278,10 +285,14 @@ po::options_description createRefinementOptionsDescription(Context& context, con
     po::value<size_t>(&context.refinement.label_propagation.part_weight_update_frequency)->value_name("<size_t>"),
     "Determines after how many iterations the local part weights are updated\n"
     "(default 100)")
+    ("r-lp-localized",
+    po::value<bool>(&context.refinement.label_propagation.localized)->value_name("<bool>"),
+    "If true, label propagation is executed only on the previously uncontracted vertices)\n"
+    "(default false)")
     ("r-lp-numa-aware",
     po::value<bool>(&context.refinement.label_propagation.numa_aware)->value_name("<bool>"),
     "If true, label propagation is executed numa friendly (which means that nodes are processed on its numa nodes)\n"
-    "(default true)")
+    "(default false)")
     ("r-lp-rebalancing",
     po::value<bool>(&context.refinement.label_propagation.rebalancing)->value_name("<bool>"),
     "If true, zero gain moves are used to rebalance solution\n"
@@ -346,7 +357,7 @@ po::options_description createSharedMemoryOptionsDescription(Context& context,
     ("s-initial-hyperedge-distribution",
     po::value<std::string>()->value_name("<string>")->notifier(
       [&](const std::string& strategy) {
-      context.shared_memory.initial_distribution = mt_kahypar::initialHyperedgeDistributionFromString(strategy);
+      context.shared_memory.initial_hyperedge_distribution = mt_kahypar::initialHyperedgeDistributionFromString(strategy);
     }),
     "Determines how hyperedges are distributed to numa nodes after reading hypergraph file: \n"
     " - equally\n"
@@ -371,10 +382,7 @@ void processCommandLineInput(Context& context, int argc, char* argv[]) {
     "Number of blocks")
     ("epsilon,e",
     po::value<double>(&context.partition.epsilon)->value_name("<double>")->required(),
-    "Imbalance parameter epsilon")
-    ("i-context-file",
-    po::value<std::string>(&context.initial_partitioning.context_file)->required()->value_name("<string>"),
-    "Context file for initial partitioning call to KaHyPar.");
+    "Imbalance parameter epsilon");
 
   std::string context_path;
   po::options_description preset_options("Preset Options", num_columns);

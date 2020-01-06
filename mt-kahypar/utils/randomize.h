@@ -25,6 +25,8 @@
 #include <thread>
 #include <vector>
 
+#include "tbb/task_group.h"
+
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
 
@@ -119,6 +121,14 @@ class Randomize {
 
   template <typename T>
   void shuffleVector(std::vector<T>& vector, int cpu_id = -1) {
+    if (cpu_id == -1)
+      cpu_id = sched_getcpu();
+    ASSERT(cpu_id < (int)std::thread::hardware_concurrency());
+    std::shuffle(vector.begin(), vector.end(), _rand[cpu_id].getGenerator());
+  }
+
+  template <typename T>
+  void shuffleVector(parallel::scalable_vector<T>& vector, int cpu_id = -1) {
     if (cpu_id == -1)
       cpu_id = sched_getcpu();
     ASSERT(cpu_id < (int)std::thread::hardware_concurrency());

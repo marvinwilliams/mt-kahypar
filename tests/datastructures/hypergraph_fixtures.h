@@ -50,10 +50,11 @@ class AHypergraph : public Test {
   using HyperedgeVector = parallel::scalable_vector<HyperedgeID>;
 
  public:
-  using TBBArena = typename TestTypeTraits<NUM_NUMA_NODES>::TBB;
-  using HwTopology = typename TestTypeTraits<NUM_NUMA_NODES>::HwTopology;
-  using TestStreamingHypergraph = typename TestTypeTraits<NUM_NUMA_NODES>::StreamingHyperGraph;
-  using TestHypergraph = typename TestTypeTraits<NUM_NUMA_NODES>::HyperGraph;
+  using TypeTraits = TestTypeTraits<NUM_NUMA_NODES>;
+  using TBBArena = typename TypeTraits::TBB;
+  using HwTopology = typename TypeTraits::HwTopology;
+  using TestStreamingHypergraph = typename TypeTraits::StreamingHyperGraph;
+  using TestHypergraph = typename TypeTraits::HyperGraph;
 
   AHypergraph() { }
 
@@ -74,7 +75,8 @@ class AHypergraph : public Test {
     std::vector<TestStreamingHypergraph> numa_hypergraphs;
     for (int node = 0; node < NUM_NUMA_NODES; ++node) {
       TBBArena::instance().numa_task_arena(node).execute([&] {
-            numa_hypergraphs.emplace_back(node, k, false);
+            numa_hypergraphs.emplace_back(node, k,
+              TBBArena::instance().numa_task_arena(node), false);
           });
     }
 
@@ -92,7 +94,8 @@ class AHypergraph : public Test {
     }
 
     // Create hypergraph (that also initialize hypernodes)
-    TestHypergraph hypergraph(num_hypernodes, std::move(numa_hypergraphs), std::move(node_mapping), k);
+    TestHypergraph hypergraph(num_hypernodes, std::move(numa_hypergraphs),
+      std::move(node_mapping), k, TBBArena::GLOBAL_TASK_GROUP);
 
     if (communities.size() > 0) {
       ASSERT(num_hypernodes == communities.size());

@@ -207,6 +207,7 @@ class QuotientGraphBlockScheduler {
     if (from != to) {
       // TODO(reister): This should not fail, since flow problems are independent:
       bool success = _hg.changeNodePart(hn, from, to);
+      unused(success);
       ASSERT(success);
 
       for (const HyperedgeID& he : _hg.incidentEdges(hn)) {

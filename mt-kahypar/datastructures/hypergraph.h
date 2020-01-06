@@ -75,6 +75,7 @@ class Hypergraph {
   using CommunityIterator = typename StreamingHypergraph::CommunityIterator;
   using Memento = typename StreamingHypergraph::Memento;
   using UncontractionCase = typename StreamingHypergraph::UncontractionCase;
+  using TaskGroupID = typename TBBNumaArena::TaskGroupID;
 
   // ! Generic function that will be called if a hypernode v moves from a block from to a block to for
   // ! each incident net of the moved vertex v.
@@ -84,8 +85,8 @@ class Hypergraph {
   // !  3.) Pin count in block from after move
   // !  4.) Pin count in block to after move
   // ! This function can be used to compute e.g. the delta in cut or km1 metric after a move
-  using DeltaFunction = std::function<void (const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID)>;
-  #define NOOP_FUNC [] (const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID) { \
+  using DeltaFunction = std::function<void (const HyperedgeID, const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID)>;
+  #define NOOP_FUNC [] (const HyperedgeID, const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID) { \
 }
 
   using HighResClockTimepoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
@@ -178,7 +179,7 @@ class Hypergraph {
         if (thread_info._delta.size() == (size_t)_k) {
           _current[block_0].weight += thread_info._delta[block_0].weight;
           _current[block_0].size += thread_info._delta[block_0].size;
-          
+
           _current[block_1].weight += thread_info._delta[block_1].weight;
           _current[block_1].size += thread_info._delta[block_1].size;
         }
@@ -236,6 +237,7 @@ class Hypergraph {
     _num_pins(0),
     _num_communities(0),
     _k(0),
+    _is_high_degree_vertex(),
     _communities_num_hypernodes(),
     _communities_num_pins(),
     _community_degree(),
@@ -243,6 +245,7 @@ class Hypergraph {
     _local_part_info([&] {
         return ThreadPartInfos::construct(_k, _part_info);
       }),
+    _is_init_num_cut_hyperedges(false),
     _contraction_index(),
     _hypergraphs(),
     _node_mapping(),
@@ -254,12 +257,15 @@ class Hypergraph {
   // ! based on the current hyperedge distribution
   Hypergraph(const HypernodeID num_hypernodes,
              std::vector<StreamingHypergraph>&& hypergraphs,
-             PartitionID k) :
+             PartitionID k,
+             const TaskGroupID task_group_id) :
     _num_hypernodes(num_hypernodes),
+    _num_removed_hypernodes(0),
     _num_hyperedges(0),
     _num_pins(0),
     _num_communities(0),
     _k(k),
+    _is_high_degree_vertex(num_hypernodes, false),
     _communities_num_hypernodes(),
     _communities_num_pins(),
     _community_degree(),
@@ -267,13 +273,14 @@ class Hypergraph {
     _local_part_info([&] {
         return ThreadPartInfos::construct(_k, _part_info);
       }),
+    _is_init_num_cut_hyperedges(false),
     _contraction_index(),
     _hypergraphs(std::move(hypergraphs)),
     _node_mapping(num_hypernodes, 0),
     _edge_mapping(),
     _community_node_mapping() {
     computeNodeMapping();
-    initializeHypernodes();
+    initializeHypernodes(task_group_id);
   }
 
   // ! Constructs a hypergraph based on the given numa hypergraphs
@@ -281,12 +288,15 @@ class Hypergraph {
   Hypergraph(const HypernodeID num_hypernodes,
              std::vector<StreamingHypergraph>&& hypergraphs,
              std::vector<HypernodeID>&& node_mapping,
-             PartitionID k) :
+             PartitionID k,
+             const TaskGroupID task_group_id) :
     _num_hypernodes(num_hypernodes),
+    _num_removed_hypernodes(0),
     _num_hyperedges(0),
     _num_pins(0),
     _num_communities(0),
     _k(k),
+    _is_high_degree_vertex(num_hypernodes, false),
     _communities_num_hypernodes(),
     _communities_num_pins(),
     _community_degree(),
@@ -294,12 +304,43 @@ class Hypergraph {
     _local_part_info([&] {
         return ThreadPartInfos::construct(_k, _part_info);
       }),
+    _is_init_num_cut_hyperedges(false),
     _contraction_index(),
     _hypergraphs(std::move(hypergraphs)),
     _node_mapping(std::move(node_mapping)),
     _edge_mapping(),
     _community_node_mapping() {
-    initializeHypernodes();
+    initializeHypernodes(task_group_id);
+  }
+
+  // ! Constructs a hypergraph based on the given numa hypergraphs
+  // ! and node mapping
+  Hypergraph(const HypernodeID num_hypernodes,
+             StreamingHypergraph&& hypergraph,
+             PartitionID k) :
+    _num_hypernodes(num_hypernodes),
+    _num_removed_hypernodes(0),
+    _num_hyperedges(0),
+    _num_pins(0),
+    _num_communities(0),
+    _k(k),
+    _is_high_degree_vertex(num_hypernodes, false),
+    _communities_num_hypernodes(),
+    _communities_num_pins(),
+    _community_degree(),
+    _part_info(k),
+    _local_part_info([&] {
+        return ThreadPartInfos::construct(_k, _part_info);
+      }),
+    _is_init_num_cut_hyperedges(false),
+    _contraction_index(),
+    _hypergraphs(),
+    _node_mapping(),
+    _edge_mapping(),
+    _community_node_mapping() {
+    _hypergraphs.emplace_back(std::move(hypergraph));
+    _node_mapping.assign(num_hypernodes, 0);
+    initializeHypernodesSequential();
   }
 
   Hypergraph(const Hypergraph&) = delete;
@@ -307,10 +348,12 @@ class Hypergraph {
 
   Hypergraph(Hypergraph&& other) :
     _num_hypernodes(other._num_hypernodes),
+    _num_removed_hypernodes(other._num_removed_hypernodes),
     _num_hyperedges(other._num_hyperedges),
     _num_pins(other._num_pins),
     _num_communities(other._num_communities),
     _k(other._k),
+    _is_high_degree_vertex(std::move(other._is_high_degree_vertex)),
     _communities_num_hypernodes(std::move(other._communities_num_hypernodes)),
     _communities_num_pins(std::move(other._communities_num_pins)),
     _community_degree(std::move(other._community_degree)),
@@ -318,6 +361,7 @@ class Hypergraph {
     _local_part_info([&] {
         return ThreadPartInfos::construct(_k, _part_info);
       }),
+    _is_init_num_cut_hyperedges(other._is_init_num_cut_hyperedges),
     _contraction_index(std::move(other._contraction_index)),
     _hypergraphs(std::move(other._hypergraphs)),
     _node_mapping(std::move(other._node_mapping)),
@@ -326,10 +370,12 @@ class Hypergraph {
 
   Hypergraph & operator= (Hypergraph&& other) {
     _num_hypernodes = other._num_hypernodes;
+    _num_removed_hypernodes = other._num_removed_hypernodes;
     _num_hyperedges = other._num_hyperedges;
     _num_pins = other._num_pins;
     _num_communities = other._num_communities;
     _k = other._k;
+    _is_high_degree_vertex = std::move(other._is_high_degree_vertex);
     _communities_num_hypernodes = std::move(other._communities_num_hypernodes);
     _communities_num_pins = std::move(other._communities_num_pins);
     _community_degree = std::move(other._community_degree);
@@ -337,6 +383,7 @@ class Hypergraph {
     _local_part_info = ThreadLocalPartInfos([&] {
           return ThreadPartInfos::construct(_k, _part_info);
         });
+    _is_init_num_cut_hyperedges = other._is_init_num_cut_hyperedges;
     _contraction_index = std::move(other._contraction_index);
     _hypergraphs = std::move(other._hypergraphs);
     _node_mapping = std::move(other._node_mapping);
@@ -356,6 +403,11 @@ class Hypergraph {
   HypernodeID initialNumNodes(const int node) const {
     ASSERT(node < (int)_hypergraphs.size());
     return _hypergraphs[node].initialNumNodes();
+  }
+
+  // ! Number of removed hypernodes
+  HypernodeID numRemovedHypernodes() const {
+    return _num_removed_hypernodes;
   }
 
   // ! Initial number of hyperedges
@@ -390,10 +442,17 @@ class Hypergraph {
   }
 
   // ! Recomputes the total weight of the hypergraph (in parallel)
-  void updateTotalWeight() {
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+  void updateTotalWeight(const TaskGroupID task_group_id) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           _hypergraphs[node].updateTotalWeight();
         });
+  }
+
+  // ! Recomputes the total weight of the hypergraph (sequential)
+  void updateTotalWeight() {
+    for ( StreamingHypergraph& hypergraph : _hypergraphs ) {
+      hypergraph.updateTotalWeightSequential();
+    }
   }
 
   // ! Number of blocks this hypergraph is partitioned into
@@ -516,6 +575,31 @@ class Hypergraph {
     return hypergraph_of_vertex(u).nodeDegree(u);
   }
 
+  bool isHighDegreeVertex(const HypernodeID u) const {
+    ASSERT(originalNodeID(u) < _is_high_degree_vertex.size());
+    return _is_high_degree_vertex[originalNodeID(u)];
+  }
+
+  void markAllHighDegreeVertices(const HypernodeID high_degree_threshold) {
+    for ( const HypernodeID& hn : nodes() ) {
+      if ( nodeDegree(hn) >= high_degree_threshold ) {
+        ASSERT(originalNodeID(hn) < _is_high_degree_vertex.size());
+        _is_high_degree_vertex[originalNodeID(hn)] = true;
+      }
+    }
+  }
+
+  // ! Number of invalid incident nets
+  HyperedgeID numInvalidIncidentNets(const HypernodeID u) const {
+    return hypergraph_of_vertex(u).numInvalidIncidentNets(u);
+  }
+
+  // ! Contraction index of the vertex in the contraction hierarchy
+  HypernodeID contractionIndex(const HypernodeID u) const {
+    ASSERT(originalNodeID(u) < _contraction_index.size());
+    return _contraction_index[originalNodeID(u)];
+  }
+
   // ! Returns, whether a hypernode is enabled or not
   bool nodeIsEnabled(const HypernodeID u) const {
     return hypergraph_of_vertex(u).nodeIsEnabled(u);
@@ -529,6 +613,12 @@ class Hypergraph {
   // ! Disable a hypernode (must be enabled before)
   void disableHypernode(const HypernodeID u) {
     hypergraph_of_vertex(u).disableHypernode(u);
+  }
+
+  // ! Remove hypernode
+  void removeHypernode(const HypernodeID u) {
+    disableHypernode(u);
+    ++_num_removed_hypernodes;
   }
 
   // ####################### Hyperedge Information #######################
@@ -756,23 +846,26 @@ class Hypergraph {
       for (const HyperedgeID& he : incidentEdges(u)) {
         HyperedgeID pin_count_in_from_part_after = hypergraph_of_edge(he).decrementPinCountInPart(he, from);
         HyperedgeID pin_count_in_to_part_after = hypergraph_of_edge(he).incrementPinCountInPart(he, to);
-        bool no_pins_left_in_source_part = pin_count_in_from_part_after == 0;
-        bool only_one_pin_in_to_part = pin_count_in_to_part_after == 1;
         HypernodeID edge_size = edgeSize(he);
 
-        delta_func(edgeWeight(he), edge_size, pin_count_in_from_part_after, pin_count_in_to_part_after);
+        delta_func(he, edgeWeight(he), edge_size, pin_count_in_from_part_after, pin_count_in_to_part_after);
 
-        if (no_pins_left_in_source_part && !only_one_pin_in_to_part &&
-            pin_count_in_to_part_after == edge_size) {
-          // In that case, hyperedge he becomes an internal hyperedge
-          for (const HypernodeID& pin : pins(he)) {
-            hypergraph_of_vertex(pin).decrementIncidentNumCutHyperedges(pin);
-          }
-        } else if (!no_pins_left_in_source_part && only_one_pin_in_to_part &&
-                   pin_count_in_from_part_after == edge_size - 1) {
-          // In that case, hyperedge he becomes an cut hyperede
-          for (const HypernodeID& pin : pins(he)) {
-            hypergraph_of_vertex(pin).incrementIncidentNumCutHyperedges(pin);
+        if ( _is_init_num_cut_hyperedges ) {
+          bool no_pins_left_in_source_part = pin_count_in_from_part_after == 0;
+          bool only_one_pin_in_to_part = pin_count_in_to_part_after == 1;
+
+          if (no_pins_left_in_source_part && !only_one_pin_in_to_part &&
+              pin_count_in_to_part_after == edge_size) {
+            // In that case, hyperedge he becomes an internal hyperedge
+            for (const HypernodeID& pin : pins(he)) {
+              hypergraph_of_vertex(pin).decrementIncidentNumCutHyperedges(pin);
+            }
+          } else if (!no_pins_left_in_source_part && only_one_pin_in_to_part &&
+                    pin_count_in_from_part_after == edge_size - 1) {
+            // In that case, hyperedge he becomes an cut hyperede
+            for (const HypernodeID& pin : pins(he)) {
+              hypergraph_of_vertex(pin).incrementIncidentNumCutHyperedges(pin);
+            }
           }
         }
       }
@@ -784,22 +877,25 @@ class Hypergraph {
   }
 
   // ! Helper function to compute delta for cut-metric after changeNodePart
-  static HyperedgeWeight cutDelta(const HyperedgeWeight edge_weight,
+  static HyperedgeWeight cutDelta(const HyperedgeID,
+                                  const HyperedgeWeight edge_weight,
                                   const HypernodeID edge_size,
                                   const HypernodeID pin_count_in_from_part_after,
                                   const HypernodeID pin_count_in_to_part_after) {
-    if (pin_count_in_to_part_after == edge_size) {
-      return -edge_weight;
-    } else if (pin_count_in_from_part_after == edge_size - 1 &&
-               pin_count_in_to_part_after == 1) {
-      return edge_weight;
-    } else {
-      return 0;
+    if ( edge_size > 1 ) {
+      if (pin_count_in_to_part_after == edge_size) {
+        return -edge_weight;
+      } else if (pin_count_in_from_part_after == edge_size - 1 &&
+                pin_count_in_to_part_after == 1) {
+        return edge_weight;
+      }
     }
+    return 0;
   }
 
   // ! Helper function to compute delta for km1-metric after changeNodePart
-  static HyperedgeWeight km1Delta(const HyperedgeWeight edge_weight,
+  static HyperedgeWeight km1Delta(const HyperedgeID,
+                                  const HyperedgeWeight edge_weight,
                                   const HypernodeID,
                                   const HypernodeID pin_count_in_from_part_after,
                                   const HypernodeID pin_count_in_to_part_after) {
@@ -826,9 +922,11 @@ class Hypergraph {
   // ! NOTE, this function have to be called after initial partitioning
   // ! and before local search.
   void initializeNumCutHyperedges() {
+    ASSERT(!_is_init_num_cut_hyperedges, "Cut hyperedges already initialized");
     for (StreamingHypergraph& hypergraph : _hypergraphs) {
       hypergraph.initializeNumCutHyperedges(_hypergraphs);
     }
+    _is_init_num_cut_hyperedges = true;
   }
 
   // ! Number of blocks which pins of hyperedge e belongs to
@@ -899,6 +997,24 @@ class Hypergraph {
     }
 
     // Reset local block weights
+    for (ThreadPartInfos& thread_part_info : _local_part_info) {
+      thread_part_info.reset();
+    }
+  }
+
+  // ! Reset partition (not thread-safe)
+  void resetPartition() {
+    // Reset partition on streaming hypergraphs
+    for ( StreamingHypergraph& streaming_hypergraph : _hypergraphs ) {
+      streaming_hypergraph.resetPartition();
+    }
+    _is_init_num_cut_hyperedges = false;
+
+    // Reset global and local block weights
+    for ( PartitionID part_id = 0; part_id < _k; ++part_id ) {
+      _part_info[part_id].weight = 0;
+      _part_info[part_id].size = 0;
+    }
     for (ThreadPartInfos& thread_part_info : _local_part_info) {
       thread_part_info.reset();
     }
@@ -1015,7 +1131,7 @@ class Hypergraph {
     // Postprocessing Memento
     // Remove all previously enabled parallel hyperedges from
     // invalid part of incident nets of v
-    postprocessMemento(memento);
+    removeEnabledHyperedgesFromInvalidPart(memento.v, false);
 
     HEAVY_REFINEMENT_ASSERT(numIncidentCutHyperedges(memento.u) == numIncidentCutHEs(memento.u),
                             V(memento.u) << V(numIncidentCutHyperedges(memento.u)) << V(numIncidentCutHEs(memento.u)));
@@ -1024,20 +1140,20 @@ class Hypergraph {
   }
 
   /*!
-   * This function has to be called before the batch uncontraction function for each
-   * memento in the batch in uncontraction order. It reverses the contraction stored
-   * in the memento and restores all disabled parallel hyperedges that would become
-   * non-parallel to its representative hyperedge due to the uncontraction stored in
-   * memento.
+   * This function reverses the contraction stored in the memento and restores all disabled
+   * parallel hyperedges that would become non-parallel to its representative hyperedge due to
+   * the uncontraction stored in memento.
+   *
+   * Note, this function is not thread-safe and have to be called in uncontraction order.
    *
   * \param memento Memento remembering the contraction operation that should be reverted
   * \param parallel_he_representative for each disabled hyperedge it contains it
   *                                   parallel representative.
   * \param batch_hypernodes bitset that contains all contraction partners of the batch
    */
-  void preprocessMementoForBatchUncontraction(const Memento& memento,
-                                              parallel::scalable_vector<HyperedgeID>& parallel_he_representative,
-                                              const kahypar::ds::FastResetFlagArray<>& batch_hypernodes) {
+  void restoreDisabledHyperedgesThatBecomeNonParallel(const Memento& memento,
+                                                      parallel::scalable_vector<HyperedgeID>& parallel_he_representative,
+                                                      const kahypar::ds::FastResetFlagArray<>& batch_hypernodes) {
     ASSERT(nodeIsEnabled(memento.u) && !nodeIsEnabled(memento.v));
     reverseContraction(memento);
     if (hypergraph_of_vertex(memento.u).hypernode(memento.u).invalidIncidentNets() > 0) {
@@ -1048,16 +1164,56 @@ class Hypergraph {
   }
 
   /*!
+   * In contrast to restoreDisabledHyperedgesThatBecomeNonParallel(...), this function only finds
+   * all hyperedges that would become non-parallel to its representative due to the uncontraction
+   * stored in the memento and stores it in a vector.
+   *
+   * This function is thread-safe and can be called in parallel for an entire batch to find all hyperedges
+   * that become non-parallel to its representative and afterwards restore only those hyperedges sequential.
+   *
+   * \param memento Memento remembering the contraction operation that should be reverted
+   * \param parallel_he_representative for each disabled hyperedge it contains it
+   *                                   parallel representative.
+   * \param batch_hypernodes bitset that contains all contraction partners of the batch
+   */
+  parallel::scalable_vector<HyperedgeID> findDisabledHyperedgesThatBecomeNonParallel(
+    const Memento& memento,
+    parallel::scalable_vector<HyperedgeID>& parallel_he_representative,
+    const kahypar::ds::FastResetFlagArray<>& batch_hypernodes) {
+    ASSERT(nodeIsEnabled(memento.u) && !nodeIsEnabled(memento.v));
+    reverseContraction(memento);
+
+    parallel::scalable_vector<HyperedgeID> non_parallel_hyperedges;
+    if (hypergraph_of_vertex(memento.u).hypernode(memento.u).invalidIncidentNets() > 0) {
+      markAllIncidentNetsOf(memento.v);
+
+      StreamingHypergraph& hypergraph_of_u = hypergraph_of_vertex(memento.u);
+      auto& incident_hes_of_u = hypergraph_of_u.incident_nets(memento.u);
+      size_t incident_hes_start = hypergraph_of_u.hypernode(memento.u).invalidIncidentNets();
+      for (size_t incident_hes_it = 0; incident_hes_it != incident_hes_start; ++incident_hes_it) {
+        const HyperedgeID& he = incident_hes_of_u[incident_hes_it];
+        if (!edgeIsEnabled(he)) {
+          HyperedgeID non_parallel_representative = findNonParallelRepresentativeOfHyperedge(
+            memento, he, parallel_he_representative, &batch_hypernodes);
+
+          if (non_parallel_representative != kInvalidHyperedge) {
+            non_parallel_hyperedges.push_back(non_parallel_representative);
+          }
+        }
+      }
+    }
+    return non_parallel_hyperedges;
+  }
+
+  /*!
    * Undoes a batch of contractions that was remembered by the mementos in parallel.
    *
    * Note, in order that this function works correctly and in a thread-safe manner, the
-   * function preprocessMementoForBatchUncontraction(...) has to be called for each
-   * memento in the batch before in order of their uncontraction position in the hierarchy.
-   * Furthermore, the batch has to fullfil some preconditions:
-   *   1.) Each representative of a contraction is only allowed to occur at
-   *       most once in the batch ( <(u,v), ..., (u, w)> not allowed ).
-   *   2.) A representative of a contraction must be enabled before the batch uncontraction
-   *       (<(u,v), ..., (v, w)> not allowed).
+   * function find- or restoreDisabledHyperedgesThatBecomeNonParallel(...) has to be called for each
+   * memento in the batch before.
+   * Furthermore, the batch has to fullfil a precondition:
+   *   - A representative of a contraction must be enabled before the batch uncontraction
+   *     (<(u,v), ..., (v, w)> not allowed).
    *
    * \param memento Memento remembering the contraction operation that should be reverted
    * \param parallel_he_representative for each disabled hyperedge it contains it
@@ -1066,23 +1222,44 @@ class Hypergraph {
    */
   void uncontract(const std::vector<Memento>& batch,
                   parallel::scalable_vector<HyperedgeID>& parallel_he_representative,
-                  const kahypar::ds::FastResetFlagArray<>& batch_hypernodes) {
+                  const kahypar::ds::FastResetFlagArray<>& batch_hypernodes,
+                  const bool remove_enabled_hyperedges_from_u) {
     // Verify preconditions for batch uncontractions
     ASSERT(batch.size() > 0);
     HEAVY_REFINEMENT_ASSERT(batch_uncontraction_precondition_assertions(batch, batch_hypernodes));
 
     tbb::parallel_for(0UL, batch.size(), [&](const size_t i) {
-          const Memento& memento = batch[i];
-          DBG << "uncontracting (" << memento.u << "," << memento.v << ")";
-          markAllIncidentNetsOf(memento.v);
+          // All mementos containing the same representative have to processed
+          // by the same thread in order that this function is thread-safe.
+          // The precondition is that the batch is sorted by the representative.
+          // Consequently, all uncontractions with same representative are consecutive
+          // in the batch. A thread processes the memento, if it is the first memento in the
+          // batch containing the representative.
+          bool process_memento = (i == 0 || batch[i].u != batch[i - 1].u);
+          if ( process_memento ) {
+            const HypernodeID representative = batch[i].u;
+            for ( size_t idx = i; idx < batch.size(); ++idx ) {
+              const Memento& memento = batch[idx];
+              if ( memento.u != representative ) {
+                break;
+              }
 
-          // Uncontract Hyperedges
-          uncontractHyperedges(memento, parallel_he_representative, &batch_hypernodes);
+              DBG << "uncontracting (" << memento.u << "," << memento.v << ")";
+              markAllIncidentNetsOf(memento.v);
 
-          // Postprocessing Memento
-          // Remove all previously enabled parallel hyperedges from
-          // invalid part of incident nets of v
-          postprocessMemento(memento);
+              // Uncontract Hyperedges
+              uncontractHyperedges(memento, parallel_he_representative, &batch_hypernodes);
+
+              // Postprocessing Memento
+              // Remove all previously enabled parallel hyperedges from
+              // invalid part of incident nets of v
+              removeEnabledHyperedgesFromInvalidPart(memento.v, false);
+            }
+
+            if ( remove_enabled_hyperedges_from_u ) {
+              removeEnabledHyperedgesFromInvalidPart(representative, true);
+            }
+          }
         });
 
     // Verify postconditions for batch uncontractions
@@ -1235,7 +1412,7 @@ class Hypergraph {
           const HypernodeID pin = hypergraph_of_he._incidence_array[incidence_array_pos];
           const HypernodeID original_id = originalNodeID(pin);
           if (batch[original_id] && _contraction_index[original_id] > contraction_index) {
-            hypergraph_of_vertex(pin).insertIncidentEdgeToHypernode(he, pin);
+            hypergraph_of_vertex(pin).insertIncidentEdgeToHypernodeFromInvalidPart(he, pin);
           } else {
             break;
           }
@@ -1245,7 +1422,7 @@ class Hypergraph {
           const HypernodeID pin = hypergraph_of_he._incidence_array[incidence_array_pos];
           const HypernodeID original_id = originalNodeID(pin);
           if (batch[original_id] && _contraction_index[original_id] > contraction_index) {
-            hypergraph_of_vertex(pin).insertIncidentEdgeToHypernode(he, pin);
+            hypergraph_of_vertex(pin).insertIncidentEdgeToHypernodeFromInvalidPart(he, pin);
           } else {
             break;
           }
@@ -1289,12 +1466,12 @@ class Hypergraph {
    *
    * Note, this function have to be called before parallel community coarsening.
    */
-  void initializeCommunityHyperedges() {
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+  void initializeCommunityHyperedges(const TaskGroupID task_group_id) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           _hypergraphs[node].initializeCommunityHyperedges(_hypergraphs);
         });
 
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           _hypergraphs[node].initializeCommunityHypernodes(_hypergraphs);
         });
   }
@@ -1328,9 +1505,9 @@ class Hypergraph {
    * Note this function have to be called after parallel community coarsening such
    * that uncontractions can be performed correctly.
    */
-  void removeCommunityHyperedges() {
+  void removeCommunityHyperedges(const TaskGroupID task_group_id) {
     ASSERT(_contraction_index.size() == _num_hypernodes);
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           _hypergraphs[node].removeCommunityHyperedges(_contraction_index, _hypergraphs);
         });
   }
@@ -1386,17 +1563,61 @@ class Hypergraph {
     utils::Timer::instance().stop_timer("compute_num_community_pins");
   }
 
+  /*!
+   * Initializes community-related information after all vertices are assigned to a community.
+   * This includes:
+   *  1.) Number of Communities
+   *  2.) Number of Vertices per Community
+   *  3.) Number of Pins per Community
+   *  4.) For each hypernode v of community C, we compute a unique id within
+   *      that community in the range [0, |C|)
+   */
+  void initializeCommunitiesSequential() {
+    // Compute number of communities
+    utils::Timer::instance().start_timer("compute_number_of_communities", "Compute Num of Communities");
+    _num_communities = 0;
+    for ( const HypernodeID& hn : nodes() ) {
+      _num_communities = std::max(_num_communities, communityID(hn) + 1);
+    }
+    utils::Timer::instance().stop_timer("compute_number_of_communities");
+
+    // Compute number of hypernodes per community and also for each node
+    // a unique node id within each community
+    utils::Timer::instance().start_timer("compute_num_community_hns", "Compute Num Community HNs");
+    _communities_num_hypernodes.assign(_num_communities, 0);
+    _community_degree.assign(_num_communities, 0);
+    for (const HypernodeID& hn : nodes()) {
+      PartitionID community_id = communityID(hn);
+      ASSERT(community_id < _num_communities);
+      hypergraph_of_vertex(hn).hypernode(hn).setCommunityNodeId(_communities_num_hypernodes[community_id]);
+      ++_communities_num_hypernodes[community_id];
+      _community_degree[community_id] += nodeDegree(hn);
+    }
+    utils::Timer::instance().stop_timer("compute_num_community_hns");
+
+    // Compute number of pins per community
+    utils::Timer::instance().start_timer("compute_num_community_pins", "Compute Num Community Pins");
+    _communities_num_pins.assign(_num_communities, 0);
+    for (const HyperedgeID& he : edges()) {
+      for (const HypernodeID& pin : pins(he)) {
+        ASSERT(communityID(pin) < _num_communities);
+        ++_communities_num_pins[communityID(pin)];
+      }
+    }
+    utils::Timer::instance().stop_timer("compute_num_community_pins");
+  }
+
   // ! Resets the ids of all pins in the incidence array to its original node id
-  void resetPinsToOriginalNodeIds() {
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+  void resetPinsToOriginalNodeIds(const TaskGroupID task_group_id) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           _hypergraphs[node].resetPinsToOriginalNodeIds(_hypergraphs);
         });
   }
 
   // ! Invalidates all disabled hyperedges from the incident nets array of each node
   // ! For further details please take a look at the documentation of uncontraction(...)
-  void invalidateDisabledHyperedgesFromIncidentNets() {
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+  void invalidateDisabledHyperedgesFromIncidentNets(const TaskGroupID task_group_id) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           _hypergraphs[node].invalidateDisabledHyperedgesFromIncidentNets(_hypergraphs);
         });
   }
@@ -1411,26 +1632,33 @@ class Hypergraph {
   // ! To map between the original and the copied hypergraph a mapping is returned
   // ! that contains a mapping from the original node ids of the original hypergraph to
   // ! original node ids of the copied hypergraph.
-  std::pair<Self, parallel::scalable_vector<HypernodeID> > copy(const PartitionID k) {
+  std::pair<Self, parallel::scalable_vector<HypernodeID> > copy(const PartitionID num_blocks,
+                                                                const TaskGroupID& task_group_id,
+                                                                const PartitionID part_id = -1,
+                                                                const bool cut_net_splitting = true) {
     // Allocate numa hypergraph on their corresponding numa nodes
     std::vector<StreamingHypergraph> numa_hypergraphs;
-    TBBNumaArena::instance().execute_sequential_on_all_numa_nodes([&](const int node) {
-          numa_hypergraphs.emplace_back(node, k);
+    TBBNumaArena::instance().execute_sequential_on_all_numa_nodes(task_group_id, [&](const int node) {
+          numa_hypergraphs.emplace_back(node, num_blocks, TBBNumaArena::instance().numa_task_arena(node));
         });
 
     // Compactify vertex ids
     parallel::scalable_vector<HypernodeID> hn_mapping(_num_hypernodes, kInvalidHyperedge);
     parallel::scalable_vector<HypernodeWeight> hn_weights;
     parallel::scalable_vector<PartitionID> community_ids;
+    parallel::scalable_vector<bool> is_high_degree_vertex;
     std::vector<HypernodeID> hn_to_numa_node;
     HypernodeID num_hypernodes = 0;
     for (const HypernodeID& hn : nodes()) {
       ASSERT(originalNodeID(hn) < _num_hypernodes);
       ASSERT(communityID(hn) != kInvalidPartition);
-      hn_mapping[originalNodeID(hn)] = num_hypernodes++;
-      hn_weights.emplace_back(nodeWeight(hn));
-      community_ids.emplace_back(communityID(hn));
-      hn_to_numa_node.emplace_back(StreamingHypergraph::get_numa_node_of_vertex(hn));
+      if ( part_id == -1 || partID(hn) == part_id ) {
+        hn_mapping[originalNodeID(hn)] = num_hypernodes++;
+        hn_weights.emplace_back(nodeWeight(hn));
+        community_ids.emplace_back(communityID(hn));
+        is_high_degree_vertex.emplace_back(isHighDegreeVertex(hn));
+        hn_to_numa_node.emplace_back(StreamingHypergraph::get_numa_node_of_vertex(hn));
+      }
     }
 
     // Compactify hyperedge ids
@@ -1438,18 +1666,26 @@ class Hypergraph {
     HypernodeID num_hyperedges = 0;
     for (const HyperedgeID& he : edges()) {
       ASSERT(originalEdgeID(he) < _num_hyperedges);
-      he_mapping[originalEdgeID(he)] = num_hyperedges++;
+      if ( part_id == -1 || ( pinCountInPart(he, part_id) > 0 &&
+           (cut_net_splitting || connectivity(he) == 1) ) ) {
+        he_mapping[originalEdgeID(he)] = num_hyperedges++;
+      }
     }
 
     // Copy Hyperedges
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           tbb::parallel_for(0UL, _num_hyperedges, [&](const HyperedgeID& id) {
             const HyperedgeID he = globalEdgeID(id);
-            if (edgeIsEnabled(he) && StreamingHypergraph::get_numa_node_of_hyperedge(he) == node) {
+            if (edgeIsEnabled(he) && StreamingHypergraph::get_numa_node_of_hyperedge(he) == node &&
+               ( part_id == -1 || ( pinCountInPart(he, part_id) > 0 &&
+               ( cut_net_splitting || connectivity(he) == 1) ) ) ) {
               parallel::scalable_vector<HypernodeID> hyperedge;
               for (const HypernodeID& pin : pins(he)) {
-                hyperedge.emplace_back(hn_mapping[originalNodeID(pin)]);
+                if ( part_id == -1 || partID(pin) == part_id ) {
+                  hyperedge.emplace_back(hn_mapping[originalNodeID(pin)]);
+                }
               }
+              ASSERT(hyperedge.size() > 0);
               numa_hypergraphs[node].streamHyperedge(
                 hyperedge, he_mapping[originalEdgeID(he)], edgeWeight(he));
             }
@@ -1457,20 +1693,21 @@ class Hypergraph {
         });
 
     // Initialize Hyperedges
-    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes([&](const int node) {
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
           numa_hypergraphs[node].initializeHyperedges(num_hypernodes);
         });
 
     // Initialize Hypergraph
     Self copy_hypergraph(num_hypernodes, std::move(numa_hypergraphs),
-                         std::move(hn_to_numa_node), k);
+                         std::move(hn_to_numa_node), num_blocks, task_group_id);
 
     // Initialize node weights and community ids
     tbb::parallel_for(0UL, num_hypernodes, [&](const HypernodeID& id) {
+          copy_hypergraph._is_high_degree_vertex[id] = is_high_degree_vertex[id];
           copy_hypergraph.setNodeWeight(copy_hypergraph.globalNodeID(id), hn_weights[id]);
           copy_hypergraph.setCommunityID(copy_hypergraph.globalNodeID(id), community_ids[id]);
         });
-    copy_hypergraph.updateTotalWeight();
+    copy_hypergraph.updateTotalWeight(task_group_id);
     copy_hypergraph.initializeCommunities();
 
     // Initialize community to numa node mapping
@@ -1480,7 +1717,76 @@ class Hypergraph {
     return std::make_pair(std::move(copy_hypergraph), std::move(hn_mapping));
   }
 
-  void printBlockInfos(int block){
+  std::pair<Self, parallel::scalable_vector<HypernodeID> > copy_sequential(const PartitionID num_blocks,
+                                                                           const PartitionID part_id = -1,
+                                                                           const bool cut_net_splitting = true) {
+    // Allocate Numa Hypergraph
+    StreamingHypergraph hypergraph(-1, num_blocks, TBBNumaArena::instance().numa_task_arena(0));
+
+    // Compactify vertex ids
+    parallel::scalable_vector<HypernodeID> hn_mapping(_num_hypernodes, kInvalidHyperedge);
+    parallel::scalable_vector<HypernodeWeight> hn_weights;
+    parallel::scalable_vector<PartitionID> community_ids;
+    parallel::scalable_vector<bool> is_high_degree_vertex;
+    std::vector<HypernodeID> hn_to_numa_node;
+    HypernodeID num_hypernodes = 0;
+    for (const HypernodeID& hn : nodes()) {
+      ASSERT(originalNodeID(hn) < _num_hypernodes);
+      ASSERT(communityID(hn) != kInvalidPartition);
+      if ( part_id == -1 || partID(hn) == part_id ) {
+        hn_mapping[originalNodeID(hn)] = num_hypernodes++;
+        hn_weights.emplace_back(nodeWeight(hn));
+        community_ids.emplace_back(communityID(hn));
+        is_high_degree_vertex.emplace_back(isHighDegreeVertex(hn));
+        hn_to_numa_node.emplace_back(0);
+      }
+    }
+
+    // Compactify hyperedge ids
+    parallel::scalable_vector<HypernodeID> he_mapping(_num_hyperedges, kInvalidHyperedge);
+    HypernodeID num_hyperedges = 0;
+    for (const HyperedgeID& he : edges()) {
+      ASSERT(originalEdgeID(he) < _num_hyperedges);
+      if ( part_id == -1 || ( pinCountInPart(he, part_id) > 0 &&
+           (cut_net_splitting || connectivity(he) == 1) ) ) {
+        he_mapping[originalEdgeID(he)] = num_hyperedges++;
+
+        parallel::scalable_vector<HypernodeID> hyperedge;
+        for (const HypernodeID& pin : pins(he)) {
+          if ( part_id == -1 || partID(pin) == part_id ) {
+            hyperedge.emplace_back(hn_mapping[originalNodeID(pin)]);
+          }
+        }
+        ASSERT(hyperedge.size() > 0);
+        hypergraph.streamHyperedge(
+          hyperedge, he_mapping[originalEdgeID(he)], edgeWeight(he));
+      }
+    }
+
+    // Initialize Hyperedges
+    hypergraph.initializeHyperedgesSequential(num_hypernodes);
+
+    // Initialize Hypergraph
+    Self copy_hypergraph(num_hypernodes, std::move(hypergraph), num_blocks);
+
+    // Initialize node weights and community ids
+    for ( HypernodeID id = 0; id < num_hypernodes; ++id ) {
+      const HypernodeID hn = copy_hypergraph.globalNodeID(id);
+      copy_hypergraph._is_high_degree_vertex[id] = is_high_degree_vertex[id];
+      copy_hypergraph.setNodeWeight(hn, hn_weights[id]);
+      copy_hypergraph.setCommunityID(hn, community_ids[id]);
+    }
+    copy_hypergraph.updateTotalWeight();
+    copy_hypergraph.initializeCommunitiesSequential();
+
+    // Initialize community to numa node mapping
+    std::vector<PartitionID> community_node_mapping(_community_node_mapping);
+    copy_hypergraph.setCommunityNodeMapping(std::move(community_node_mapping));
+
+    return std::make_pair(std::move(copy_hypergraph), std::move(hn_mapping));
+  }
+
+  void printBlockInfos(int block) {
     _local_part_info.local().printBlockInfos(block, _local_part_info);
   }
 
@@ -1550,7 +1856,6 @@ class Hypergraph {
   KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void restoreNonParallelDisabledHyperedges(const Memento& memento,
                                                                             parallel::scalable_vector<HyperedgeID>& parallel_he_representative,
                                                                             const kahypar::ds::FastResetFlagArray<>* batch_hypernodes = nullptr) {
-    bool is_batch_uncontraction = batch_hypernodes != nullptr;
     // Uncontraction starts by checking if a disabled parallel hyperedge becomes non-parallel
     // to one of its representatives. Usually all parallel hyperedges are enabled before
     // uncontraction (see hypergraph pruner). However, in some cases this is not the case.
@@ -1559,69 +1864,106 @@ class Hypergraph {
     StreamingHypergraph& hypergraph_of_u = hypergraph_of_vertex(memento.u);
     auto& incident_hes_of_u = hypergraph_of_u.incident_nets(memento.u);
     size_t incident_hes_start = hypergraph_of_u.hypernode(memento.u).invalidIncidentNets();
-    std::vector<HyperedgeID> disabled_hyperedges;
     for (size_t incident_hes_it = 0; incident_hes_it != incident_hes_start; ++incident_hes_it) {
       const HyperedgeID& he = incident_hes_of_u[incident_hes_it];
       if (!edgeIsEnabled(he)) {
-        disabled_hyperedges.push_back(he);
+        HyperedgeID non_parallel_representative = findNonParallelRepresentativeOfHyperedge(
+          memento, he, parallel_he_representative, batch_hypernodes);
+
+        if (non_parallel_representative != kInvalidHyperedge) {
+          restoreParallelHyperedge(non_parallel_representative, memento,
+            parallel_he_representative, batch_hypernodes);
+        }
+      } else {
+        // At that point, we have already restored the hyperedge and inserted it into the valid
+        // part of the vertex incident nets => just remove the hyperedge from the invalid part
+        ASSERT(incident_hes_start > 0);
+        std::swap(incident_hes_of_u[incident_hes_it--], incident_hes_of_u[--incident_hes_start]);
+        std::swap(incident_hes_of_u[incident_hes_start], incident_hes_of_u.back());
+        incident_hes_of_u.pop_back();
+        hypergraph_of_u.hypernode(memento.u).decrementInvalidIncidentNets();
       }
     }
-    // All disabled hyperedges have to be traversed in decreasing order of their edge id
-    // when checking if they become non-parallel to one of its representatives.
-    std::sort(disabled_hyperedges.begin(), disabled_hyperedges.end(),
-              [&](const HyperedgeID& lhs, const HyperedgeID& rhs) {
-          return lhs > rhs;
-        });
+  }
 
-    // Check if a disabled parallel hyperedges will become non-parallel to
-    // its representative.
-    for (const HyperedgeID& he : disabled_hyperedges) {
-      if (!edgeIsEnabled(he)) {
-        StreamingHypergraph& hypergraph_of_he = hypergraph_of_edge(he);
-        HyperedgeID representative = findRepresentative(he, parallel_he_representative);
-        const size_t edge_size = edgeSize(representative);
-        bool becomes_non_parallel = false;
+  /*!
+   * Checks if a hyperedge becomes non-parallel to one of its representatives. For more details,
+   * please have look at restoreNonParallelDisabledHyperedges(...).
+   *
+   * \param memento Memento remembering the contraction operation that should be reverted
+   * \param he Hyperedge that should be checked, if it becomes non-parallel to one of its representatives
+   * \param parallel_he_representative for each disabled hyperedge it contains it
+   *                                   parallel representative.
+   * \param batch_hypernodes bitset that contains all contraction partners of the batch
+   */
+  KAHYPAR_ATTRIBUTE_ALWAYS_INLINE HyperedgeID findNonParallelRepresentativeOfHyperedge(const Memento& memento,
+                                                                                       const HyperedgeID he,
+                                                                                       const parallel::scalable_vector<HyperedgeID>& parallel_he_representative,
+                                                                                       const kahypar::ds::FastResetFlagArray<>* batch_hypernodes = nullptr) {
+    ASSERT(!edgeIsEnabled(he), "Hyperedge" << he << "is already enabled");
+    HyperedgeID non_parallel_representative = kInvalidHyperedge;
 
-        HyperedgeID last_representative = he;
-        HyperedgeID current_representative = originalEdgeID(he);
-        representative = globalEdgeID(current_representative);
-        // Verify if hyperedge becomes non-parallel to one of its representatives (all hyperedges
-        // on the path to the root in the hyperedge representative tree)
-        while (!becomes_non_parallel && parallel_he_representative[current_representative] != kInvalidHyperedge) {
-          last_representative = representative;
-          current_representative = parallel_he_representative[current_representative];
-          representative = globalEdgeID(current_representative);
+    StreamingHypergraph& hypergraph_of_he = hypergraph_of_edge(he);
+    HyperedgeID representative = findRepresentative(he, parallel_he_representative);
+    const size_t edge_size = edgeSize(representative);
+    bool becomes_non_parallel = false;
 
-          StreamingHypergraph& hypergraph_of_rep = hypergraph_of_edge(representative);
+    HyperedgeID last_representative = he;
+    HyperedgeID current_representative = originalEdgeID(he);
+    representative = globalEdgeID(current_representative);
+    // Verify if hyperedge becomes non-parallel to one of its representatives (all hyperedges
+    // on the path to the root in the hyperedge representative tree)
+    while (!becomes_non_parallel && parallel_he_representative[current_representative] != kInvalidHyperedge) {
+      last_representative = representative;
+      current_representative = parallel_he_representative[current_representative];
+      representative = globalEdgeID(current_representative);
 
-          // In case, both hyperedges fall into different uncontraction cases, than both become
-          // non parallel afterwards.
-          UncontractionCase case_rep = is_batch_uncontraction ?
-                                       hypergraph_of_rep.get_uncontraction_case(representative, edge_size, memento.v, _hypergraphs, *batch_hypernodes) :
-                                       hypergraph_of_rep.get_uncontraction_case(representative, edge_size, memento.v);
-          bool is_case_1_rep = case_rep != UncontractionCase::CASE_2;
-          UncontractionCase case_he = is_batch_uncontraction ?
-                                      hypergraph_of_he.get_uncontraction_case(he, edge_size, memento.v, _hypergraphs, *batch_hypernodes) :
-                                      hypergraph_of_he.get_uncontraction_case(he, edge_size, memento.v);
-          bool is_case_1_he = case_he != UncontractionCase::CASE_2;
-
-          // In case, the contraction partner v contains either the disabled hyperedge or
-          // the representative (but not both), than both become non parallel afterwards.
-          becomes_non_parallel = becomes_non_parallel ||
-                                 (hypergraph_of_he.containsIncidentNet(he) &&
-                                  !hypergraph_of_rep.containsIncidentNet(representative)) ||
-                                 (!hypergraph_of_he.containsIncidentNet(he) &&
-                                  hypergraph_of_rep.containsIncidentNet(representative)) ||
-                                 (!is_case_1_rep && is_case_1_he) ||
-                                 (is_case_1_rep && !is_case_1_he);
-        }
-
-        if (becomes_non_parallel) {
-          restoreParallelHyperedge(last_representative, memento, parallel_he_representative, batch_hypernodes);
-          incident_hes_start = hypergraph_of_u.hypernode(memento.u).invalidIncidentNets();
-        }
-      }
+      StreamingHypergraph& hypergraph_of_rep = hypergraph_of_edge(representative);
+      becomes_non_parallel = checkIfHyperedgeBecomesNonParallelToRepresentative(
+        memento, he, representative, edge_size, hypergraph_of_he, hypergraph_of_rep, batch_hypernodes);
     }
+
+    if (becomes_non_parallel) {
+      non_parallel_representative = last_representative;
+    }
+
+    return non_parallel_representative;
+  }
+
+  // ! Checks if hyperedge he becomes non-parallel to its representative due to the uncontraction
+  // ! stored in the memento. For more details, please have look at restoreNonParallelDisabledHyperedges(...)
+  KAHYPAR_ATTRIBUTE_ALWAYS_INLINE bool checkIfHyperedgeBecomesNonParallelToRepresentative(
+    const Memento& memento,
+    const HyperedgeID he, const HyperedgeID representative, const size_t edge_size,
+    StreamingHypergraph& hypergraph_of_he, StreamingHypergraph& hypergraph_of_rep,
+    const kahypar::ds::FastResetFlagArray<>* batch_hypernodes = nullptr) {
+
+    const bool is_batch_uncontraction = batch_hypernodes != nullptr;
+    bool becomes_non_parallel = false;
+    const bool contains_he = hypergraph_of_he.containsIncidentNet(he);
+    const bool contains_rep = hypergraph_of_rep.containsIncidentNet(representative);
+    if ( contains_he || contains_rep ) {
+      // In case, both hyperedges fall into different uncontraction cases, than both become
+      // non parallel afterwards.
+      UncontractionCase case_rep = is_batch_uncontraction ?
+                                  hypergraph_of_rep.get_uncontraction_case(representative, edge_size, memento.v, _hypergraphs, *batch_hypernodes) :
+                                  hypergraph_of_rep.get_uncontraction_case(representative, edge_size, memento.v);
+      bool is_case_1_rep = case_rep != UncontractionCase::CASE_2;
+      UncontractionCase case_he = is_batch_uncontraction ?
+                                  hypergraph_of_he.get_uncontraction_case(he, edge_size, memento.v, _hypergraphs, *batch_hypernodes) :
+                                  hypergraph_of_he.get_uncontraction_case(he, edge_size, memento.v);
+      bool is_case_1_he = case_he != UncontractionCase::CASE_2;
+
+      // In case, the contraction partner v contains either the disabled hyperedge or
+      // the representative (but not both), than both become non parallel afterwards.
+      becomes_non_parallel = becomes_non_parallel ||
+                            (contains_he && !contains_rep) ||
+                            (!contains_he && contains_rep) ||
+                            (!is_case_1_rep && is_case_1_he) ||
+                            (is_case_1_rep && !is_case_1_he);
+    }
+
+    return becomes_non_parallel;
   }
 
   /*!
@@ -1667,7 +2009,6 @@ class Hypergraph {
     size_t incident_hes_end = incident_hes_of_u.size();
     for (size_t incident_hes_it = incident_hes_start; incident_hes_it != incident_hes_end; ++incident_hes_it) {
       const HyperedgeID he = incident_hes_of_u[incident_hes_it];
-      // LOG << V(memento.u) << V(memento.v) << V(he);
       if (hypergraph_of_edge(he).uncontract(
             memento.u, memento.v, he, incident_hes_it, _hypergraphs, batch_hypernodes)) {
         --incident_hes_it;
@@ -1676,15 +2017,20 @@ class Hypergraph {
     }
   }
 
-  void postprocessMemento(const Memento& memento) {
-    StreamingHypergraph& hypergraph_of_v = hypergraph_of_vertex(memento.v);
-    auto& incident_hes_of_v = hypergraph_of_v.incident_nets(memento.v);
-    size_t incident_hes_start = hypergraph_of_v.hypernode(memento.v).invalidIncidentNets();
+  void removeEnabledHyperedgesFromInvalidPart(const HypernodeID u,
+                                              const bool remove_enabled_hyperedges) {
+    StreamingHypergraph& hypergraph_of_u = hypergraph_of_vertex(u);
+    auto& incident_hes_of_u = hypergraph_of_u.incident_nets(u);
+    size_t incident_hes_start = hypergraph_of_u.hypernode(u).invalidIncidentNets();
     for (size_t incident_hes_it = 0; incident_hes_it != incident_hes_start; ++incident_hes_it) {
-      const HyperedgeID he = incident_hes_of_v[incident_hes_it];
+      const HyperedgeID he = incident_hes_of_u[incident_hes_it];
       if (edgeIsEnabled(he)) {
-        std::swap(incident_hes_of_v[incident_hes_it--], incident_hes_of_v[--incident_hes_start]);
-        hypergraph_of_v.hypernode(memento.v).decrementInvalidIncidentNets();
+        std::swap(incident_hes_of_u[incident_hes_it--], incident_hes_of_u[--incident_hes_start]);
+        hypergraph_of_u.hypernode(u).decrementInvalidIncidentNets();
+        if ( remove_enabled_hyperedges ) {
+          std::swap(incident_hes_of_u[incident_hes_start], incident_hes_of_u.back());
+          incident_hes_of_u.pop_back();
+        }
       }
     }
   }
@@ -1743,7 +2089,7 @@ class Hypergraph {
    * by the vertex to numa node mapping) and afterwards the incident nets data
    * structure is initialized.
    */
-  void initializeHypernodes() {
+  void initializeHypernodes(const TaskGroupID task_group_id) {
     // Verify that node mapping is valid
     ASSERT([&]() {
           for (HypernodeID hn = 0; hn < _num_hypernodes; ++hn) {
@@ -1762,18 +2108,13 @@ class Hypergraph {
     // Stream hypernodes into corresponding streaming hypergraph, where it
     // is assigned to
     std::vector<HypernodeID> tmp_node_mapping(_num_hypernodes);
-    for (HypernodeID node = 0; node < num_streaming_hypergraphs; ++node) {
-      TBBNumaArena::instance().numa_task_arena(node).execute([&] {
-            TBBNumaArena::instance().numa_task_group(node).run([&, node] {
-              tbb::parallel_for(0UL, _num_hypernodes, [&](const HypernodeID& hn) {
-                if (_node_mapping[hn] == node) {
-                  tmp_node_mapping[hn] = _hypergraphs[node].streamHypernode(hn, 1);
-                }
-              });
-            });
-          });
-    }
-    TBBNumaArena::instance().wait();
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const size_t node) {
+      tbb::parallel_for(0UL, _num_hypernodes, [&](const HypernodeID& hn) {
+        if (_node_mapping[hn] == node) {
+          tmp_node_mapping[hn] = _hypergraphs[node].streamHypernode(hn, 1);
+        }
+      });
+    });
     _node_mapping = std::move(tmp_node_mapping);
     utils::Timer::instance().stop_timer("stream_hypernodes");
 
@@ -1781,14 +2122,9 @@ class Hypergraph {
     // NOTE, that also involves streaming local incident nets to other
     // streaming hypergraphs
     utils::Timer::instance().start_timer("initialize_numa_hypernodes", "Initialize Numa Hypernodes");
-    for (size_t node = 0; node < num_streaming_hypergraphs; ++node) {
-      TBBNumaArena::instance().numa_task_arena(node).execute([&] {
-            TBBNumaArena::instance().numa_task_group(node).run([&, node] {
-              _hypergraphs[node].initializeHypernodes(_hypergraphs, _node_mapping);
-            });
-          });
-    }
-    TBBNumaArena::instance().wait();
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
+      _hypergraphs[node].initializeHypernodes(_hypergraphs, _node_mapping);
+    });
     utils::Timer::instance().stop_timer("initialize_numa_hypernodes");
 
     // Verify that number of hypernodes is equal to number of hypernodes
@@ -1811,15 +2147,91 @@ class Hypergraph {
 
     // Initialize incident nets of hypernodes
     utils::Timer::instance().start_timer("initialize_incident_nets", "Initialize Incident Nets");
-    for (size_t node = 0; node < num_streaming_hypergraphs; ++node) {
-      TBBNumaArena::instance().numa_task_arena(node).execute([&] {
-            TBBNumaArena::instance().numa_task_group(node).run([&, node] {
-              _hypergraphs[node].initializeIncidentNets();
-            });
-          });
-    }
-    TBBNumaArena::instance().wait();
+    TBBNumaArena::instance().execute_parallel_on_all_numa_nodes(task_group_id, [&](const int node) {
+      _hypergraphs[node].initializeIncidentNets();
+    });
     utils::Timer::instance().stop_timer("initialize_incident_nets");
+
+    ASSERT([&] {
+          // Internally verify that incident nets are constructed correctly
+          for (size_t node = 0; node < num_streaming_hypergraphs; ++node) {
+            if (!_hypergraphs[node].verify_incident_nets_of_hypergraph(_hypergraphs)) {
+              return false;
+            }
+          }
+          return true;
+        } (), "Initialization of incident nets failed");
+
+    for (size_t node = 0; node < num_streaming_hypergraphs; ++node) {
+      _num_hyperedges += _hypergraphs[node].initialNumEdges();
+      _num_pins += _hypergraphs[node].initialNumPins();
+    }
+
+    utils::Timer::instance().start_timer("initialize_he_mapping", "Initialize HE Mapping");
+    _edge_mapping.resize(_num_hyperedges);
+    for (const HyperedgeID& he : edges()) {
+      HyperedgeID original_id = hypergraph_of_edge(he).originalEdgeId(he);
+      ASSERT(original_id < _edge_mapping.size());
+      _edge_mapping[original_id] = he;
+    }
+    utils::Timer::instance().stop_timer("initialize_he_mapping");
+  }
+
+  /*!
+   * Initializes the hypernodes of the hypergraph.
+   * Hypernodes are streamed into its corresponding numa hypergraphs (defined
+   * by the vertex to numa node mapping) and afterwards the incident nets data
+   * structure is initialized.
+   */
+  void initializeHypernodesSequential() {
+    // Verify that node mapping is valid
+    ASSERT(_hypergraphs.size() == 1);
+    ASSERT([&]() {
+          for (HypernodeID hn = 0; hn < _num_hypernodes; ++hn) {
+            if (_node_mapping[hn] >= _hypergraphs.size()) {
+              LOG << "Hypernode" << hn << "should be mapped to hypergraph on node"
+                  << _node_mapping[hn] << ", but there are only" << _hypergraphs.size()
+                  << "nodes";
+              return false;
+            }
+          }
+          return true;
+        } (), "Invalid node mapping");
+
+    utils::Timer::instance().start_timer("stream_hypernodes", "Stream Hypernodes");
+    size_t num_streaming_hypergraphs = _hypergraphs.size();
+    // Stream hypernodes into corresponding streaming hypergraph, where it
+    // is assigned to
+    for ( HypernodeID hn = 0; hn < _num_hypernodes; ++hn ) {
+      ASSERT(_node_mapping[hn] == 0);
+      _node_mapping[hn] = _hypergraphs[0].streamHypernode(hn, 1);
+    }
+    utils::Timer::instance().stop_timer("stream_hypernodes");
+
+    // Initialize hypernodes on each streaming hypergraph
+    // NOTE, that also involves streaming local incident nets to other
+    // streaming hypergraphs
+    utils::Timer::instance().start_timer("initialize_numa_hypernodes", "Initialize Numa Hypernodes");
+    _hypergraphs[0].initializeHypernodesSequential(_node_mapping);
+    utils::Timer::instance().stop_timer("initialize_numa_hypernodes");
+
+    // Verify that number of hypernodes is equal to number of hypernodes
+    // in streaming hypergraphs
+    ASSERT([&] {
+          HypernodeID actual_number_of_nodes = 0;
+          for (size_t node = 0; node < num_streaming_hypergraphs; ++node) {
+            actual_number_of_nodes += _hypergraphs[node].initialNumNodes();
+          }
+          if (actual_number_of_nodes == _num_hypernodes) {
+            return true;
+          } else {
+            LOG << V(actual_number_of_nodes) << V(_num_hypernodes);
+            for (size_t node = 0; node < num_streaming_hypergraphs; ++node) {
+              LOG << V(node) << V(_hypergraphs[node].initialNumNodes());
+            }
+            return false;
+          }
+        } (), "Invalid number hypernodes in streaming hypergraph");
 
     ASSERT([&] {
           // Internally verify that incident nets are constructed correctly
@@ -1884,12 +2296,11 @@ class Hypergraph {
   bool batch_uncontraction_precondition_assertions(const std::vector<Memento>& batch,
                                                    const kahypar::ds::FastResetFlagArray<>& batch_hypernodes) {
     ASSERT(_contraction_index.size() == _num_hypernodes);
-    HypernodeID last_contraction_index = _contraction_index[originalNodeID(batch[0].v)] + 1;
     std::set<HypernodeID> representatives;
-    for (const Memento& memento : batch) {
+    for (size_t i = 0; i < batch.size(); ++i) {
+      const Memento& memento = batch[i];
       const HypernodeID u = memento.u;
       const HypernodeID v = memento.v;
-      const HypernodeID contraction_index = _contraction_index[originalNodeID(v)];
 
       if (!nodeIsEnabled(u)) {
         LOG << "Representative is disabled"
@@ -1903,8 +2314,17 @@ class Hypergraph {
       }
 
       if (representatives.find(u) != representatives.end()) {
-        LOG << "Representatives are only allowed to occur once in a batch" << V(memento.u);
-        return false;
+        if ( i == 0 || batch[i - 1].u != u ) {
+          LOG << "If a representatives occurs more than once in the batch,"
+              << "than all mementos containing the representative must be in"
+              << "consecutive order in the batch" << V(memento.u);
+          return false;
+        } else if ( i == 0 || contractionIndex(batch[i - 1].v) <= contractionIndex(v) ) {
+          LOG << "If a representatives occurs more than once in the batch,"
+              << "than all its uncontractions in the batch must be sorted in"
+              << "uncontraction order";
+          return false;
+        }
       } else {
         representatives.insert(u);
       }
@@ -1920,15 +2340,6 @@ class Hypergraph {
         LOG << "Contraction partner is not marked in batch bitset" << V(memento.v);
         return false;
       }
-
-      if (contraction_index + 1 != last_contraction_index) {
-        LOG << "Batch does not contain uncontractions in the right order"
-            << "(possibly permutation or some mementos are missing)"
-            << V(contraction_index) << V(last_contraction_index);
-        return false;
-      }
-
-      last_contraction_index = contraction_index;
     }
     return true;
   }
@@ -2045,6 +2456,8 @@ class Hypergraph {
 
   // ! Number of hypernodes
   HypernodeID _num_hypernodes;
+  // ! Number of removed hypernodes
+  HypernodeID _num_removed_hypernodes;
   // ! Number of hyperedges
   HyperedgeID _num_hyperedges;
   // ! Number of pins
@@ -2054,6 +2467,8 @@ class Hypergraph {
   // ! Number of blocks
   PartitionID _k;
 
+  // ! Indicates, if a vertex is a high degree hypernode
+  parallel::scalable_vector<bool> _is_high_degree_vertex;
   // ! Number of hypernodes in a community
   parallel::scalable_vector<HypernodeID> _communities_num_hypernodes;
   // ! Number of pins in a community
@@ -2064,6 +2479,8 @@ class Hypergraph {
   std::vector<PartInfo> _part_info;
   // ! Thread local weight and size information for all blocks.
   ThreadLocalPartInfos _local_part_info;
+  // ! True, if cut hyperedges are initialized
+  bool _is_init_num_cut_hyperedges;
 
   // ! Contains for each hypernode that occurs as contraction partner
   // ! in the contraction hierarchy its position within this sequence.

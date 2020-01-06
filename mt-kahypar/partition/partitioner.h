@@ -32,7 +32,6 @@
 #include "mt-kahypar/io/partitioning_output.h"
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/factories.h"
-#include "mt-kahypar/partition/initial_partitioning/direct_initial_partitioner.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/partition/multilevel.h"
 #include "mt-kahypar/partition/preprocessing/hypergraph_sparsifier.h"
@@ -46,10 +45,10 @@ class Partitioner {
  private:
   static constexpr bool debug = false;
 
-  static constexpr double MIN_DEGREE_RANK = 0.0001;
-  static constexpr double MAX_DEGREE_RANK = 0.01;
-  static constexpr HypernodeID STDEV_MAX_DEGREE_THRESHOLD_FACTOR = 25;
-  static constexpr HypernodeID HIGH_DEGREE_VERTEX_THRESHOLD = 100;
+  static double MIN_DEGREE_RANK;
+  static double MAX_DEGREE_RANK;
+  static HypernodeID STDEV_MAX_DEGREE_THRESHOLD_FACTOR;
+  static HypernodeID HIGH_DEGREE_VERTEX_THRESHOLD;
 
  public:
   Partitioner() :
@@ -64,7 +63,7 @@ class Partitioner {
   inline void partition(Hypergraph& hypergraph, Context& context);
 
  private:
-  static inline void setupContext(const Hypergraph& hypergraph, Context& context);
+  static inline void setupContext(Hypergraph& hypergraph, Context& context);
 
   static inline void configurePreprocessing(const Hypergraph& hypergraph, Context& context);
 
@@ -79,24 +78,15 @@ class Partitioner {
   HypergraphSparsifier _hypergraph_sparsifier;
 };
 
-inline void Partitioner::setupContext(const Hypergraph& hypergraph, Context& context) {
-  if (context.initial_partitioning.mode == InitialPartitioningMode::direct) {
-    context.coarsening.contraction_limit =
-      context.coarsening.contraction_limit_multiplier * context.partition.k;
-  } else {
-    context.coarsening.contraction_limit =
-      2 * std::max(context.shared_memory.num_threads, (size_t)context.partition.k) *
-      context.coarsening.contraction_limit_multiplier;
-  }
+double Partitioner::MIN_DEGREE_RANK = 0.0001;
+double Partitioner::MAX_DEGREE_RANK = 0.01;
+HypernodeID Partitioner::STDEV_MAX_DEGREE_THRESHOLD_FACTOR = 25;
+HypernodeID Partitioner::HIGH_DEGREE_VERTEX_THRESHOLD = 100;
 
-  context.coarsening.hypernode_weight_fraction =
-    context.coarsening.max_allowed_weight_multiplier
-    / context.coarsening.contraction_limit;
-
-  context.coarsening.max_allowed_node_weight = ceil(context.coarsening.hypernode_weight_fraction
-                                                    * hypergraph.totalWeight());
+inline void Partitioner::setupContext(Hypergraph& hypergraph, Context& context) {
 
   context.setupPartWeights(hypergraph.totalWeight());
+  context.setupContractionLimit(hypergraph.totalWeight());
 
   if (context.coarsening.use_high_degree_vertex_threshold) {
     std::vector<HypernodeID> hn_degrees;
@@ -143,6 +133,10 @@ inline void Partitioner::setupContext(const Hypergraph& hypergraph, Context& con
         context.coarsening.high_degree_vertex_threshold =
           std::max(hn_degrees[MIN_DEGREE_RANK * hypergraph.initialNumNodes()],
             HIGH_DEGREE_VERTEX_THRESHOLD);
+    }
+
+    if ( context.coarsening.high_degree_vertex_threshold != std::numeric_limits<HypernodeID>::max() ) {
+      hypergraph.markAllHighDegreeVertices(context.coarsening.high_degree_vertex_threshold);
     }
   }
 
@@ -192,10 +186,10 @@ inline void Partitioner::preprocess(Hypergraph& hypergraph, const Context& conte
   utils::Timer::instance().start_timer("perform_community_detection", "Perform Community Detection");
   ds::Clustering communities(0);
   if (!context.preprocessing.use_community_structure_from_file) {
-    ds::AdjListGraph graph = ds::AdjListStarExpansion::constructGraph(hypergraph, context);
+    ds::AdjListGraph graph = ds::AdjListStarExpansion::constructGraph(hypergraph, context, true);
     communities = ParallelModularityLouvain::run(graph, context);   // TODO(lars): give switch for PLM/SLM
-    _hypergraph_sparsifier.assignAllDegreeZeroHypernodesToSameCommunity(hypergraph, communities);
     ds::AdjListStarExpansion::restrictClusteringToHypernodes(hypergraph, communities);
+    _hypergraph_sparsifier.assignAllDegreeZeroHypernodesToSameCommunity(hypergraph, communities);
   } else {
     io::readPartitionFile(context.partition.graph_community_filename, communities);
   }
@@ -290,7 +284,7 @@ inline void Partitioner::partition(Hypergraph& hypergraph, Context& context) {
   utils::Timer::instance().stop_timer("preprocessing");
 
   // ################## MULTILEVEL ##################
-  multilevel::partition(hypergraph, context, true);
+  multilevel::partition(hypergraph, context, true, TBBNumaArena::GLOBAL_TASK_GROUP);
 
   postprocess(hypergraph, context);
 

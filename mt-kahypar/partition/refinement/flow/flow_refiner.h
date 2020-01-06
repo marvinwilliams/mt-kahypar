@@ -63,7 +63,8 @@ class FlowRefinerT final : public IRefiner{
             _execution_policy.initialize(_hg, _current_num_nodes);
         }
 
-        bool refineImpl(const std::vector<HypernodeID>& refinement_nodes, kahypar::Metrics& best_metrics) override final {
+        bool refineImpl(const parallel::scalable_vector<HypernodeID>& refinement_nodes,
+                        kahypar::Metrics& best_metrics) override final {
             // flow refinement is not executed on all levels of the n-level hierarchy.
             // If flow should be executed on the current level is determined by the execution policy.
             ASSERT(refinement_nodes.size() % 2 == 0);
@@ -138,7 +139,7 @@ class FlowRefinerT final : public IRefiner{
                 );
                 //LOG << "ROUND done_______________________________________________________";
 
-                
+
                 _hg.updateGlobalPartInfos();
 
                 // TODO(reister): I agree with you that you cannot verify the metric inside the adaptive
@@ -146,10 +147,10 @@ class FlowRefinerT final : public IRefiner{
                 // (cut_flow_network_after - cut_flow_network_before and use an atomic to sum up the deltas
                 // globally) and compare here the metric before minus the delta with
                 // metrics::objective(_hg, _context.partition.objective) in an assertion.
-                
+
                 HyperedgeWeight current_metric = metrics::objective(_hg, _context.partition.objective);
                 double current_imbalance = metrics::imbalance(_hg, _context);
-                
+
                 //check if the metric improved as exspected
                 ASSERT(best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta
                         == current_metric,
@@ -158,7 +159,7 @@ class FlowRefinerT final : public IRefiner{
                         << V(best_metrics.getMetric(_context.partition.mode, _context.partition.objective))
                         << V(_round_delta)
                         << V(current_metric));
-                
+
                 //check if imbalance is feasable
                 ASSERT(current_imbalance <= _context.partition.epsilon,
                         "Imbalance got to bad!"
