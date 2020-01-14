@@ -66,7 +66,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
         // USE_HARDWARE_MOCK in definitions.h. Please, reconsider your code on all
         // places where you access an array with a vertex id and make sure that if
         // USE_HARDWARE_MOCK is enabled no segmentation fault occurs.
-        visited.set(hn, true);
+        visited.set(hg.originalNodeID(hn), true);
       }
     }
 
@@ -80,16 +80,16 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
       ++num_hypernodes_added;
 
       for (const HyperedgeID& he : hg.incidentEdges(hn)) {
-        if (!visited[num_hypernodes + he]) {
+        if (!visited[num_hypernodes + hg.originalEdgeID(he)]) {
           for (const HypernodeID& pin : hg.pins(he)) {
-            if (!visited[pin] && hg.partID(pin) == part &&
+            if (!visited[hg.originalNodeID(pin)] && hg.partID(pin) == part &&
                 queue_weight + hg.nodeWeight(pin) <= max_part_weight) {
               Q.push(pin);
               queue_weight += hg.nodeWeight(pin);
-              visited.set(pin, true);
+              visited.set(hg.originalNodeID(pin), true);
             }
           }
-          visited.set(num_hypernodes + he, true);
+          visited.set(num_hypernodes + hg.originalEdgeID(he), true);
         }
       }
     }
@@ -117,13 +117,13 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     for (const HyperedgeID he : cut_hes) {
       ASSERT(hg.connectivity(he) > 1, "Hyperedge is not a cut hyperedge!");
       for (const HypernodeID& pin : hg.pins(he)) {
-        if (!visited[pin]) {
+        if (!visited[hg.originalNodeID(pin)]) {
           if (hg.partID(pin) == block_0) {
             start_nodes_block_0.push_back(pin);
           } else if (hg.partID(pin) == block_1) {
             start_nodes_block_1.push_back(pin);
           }
-          visited.set(pin, true);
+          visited.set(hg.originalNodeID(pin), true);
         }
       }
     }
@@ -145,7 +145,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      visited);
     if (num_nodes_block_0 == hg.localPartSize(block_0)) {
       // prevent blocks from becoming empty
-      const HypernodeID last_hn_block_0 = *(flow_network.hypernodes().second - 1);
+      const HypernodeID last_hn_block_0 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));
       flow_network.removeHypernode(hg, last_hn_block_0);
     }
 
@@ -157,14 +157,15 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      visited);
     if (num_nodes_block_1 == hg.localPartSize(block_1)) {
       // prevent blocks from becoming empty
-      const HypernodeID last_hn_block_1 = *(flow_network.hypernodes().second - 1);
+      const HypernodeID last_hn_block_1 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));
       flow_network.removeHypernode(hg, last_hn_block_1);
     }
 
     ASSERT([&]() {
         HypernodeWeight weight_block_0 = 0;
         HypernodeWeight weight_block_1 = 0;
-        for (const HypernodeID& hn : flow_network.hypernodes()) {
+        for (const HypernodeID& ogHn : flow_network.hypernodes()) {
+          const HypernodeID& hn = hg.globalNodeID(ogHn);
           if (hg.partID(hn) == block_0) {
             weight_block_0 += hg.nodeWeight(hn);
           } else if (hg.partID(hn) == block_1) {

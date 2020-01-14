@@ -89,11 +89,11 @@ class MostBalancedMinimumCut {
 
     // Build mapping from contracted graph to flow network
     std::vector<std::vector<NodeID> > scc_to_flow_network(dag.numNodes(), std::vector<NodeID>());
-    for (const NodeID& u : residual_graph.nodes()) {
-      const NodeID flow_u = _graph_to_flow_network.get(u);
-      if (flow_network.isHypernode(flow_u)) {
-        scc_to_flow_network[contraction_mapping[u]].push_back(flow_u);
-        _scc_node_weight.update(contraction_mapping[u], hypergraph.nodeWeight(flow_u));
+    for (const NodeID& u_og : residual_graph.nodes()) {
+      const NodeID flow_u_og = _graph_to_flow_network.get(u_og);
+      if (flow_network.isHypernode(flow_u_og)) {
+        scc_to_flow_network[contraction_mapping[u_og]].push_back(flow_u_og);
+        _scc_node_weight.update(contraction_mapping[u_og], hypergraph.nodeWeight(hypergraph.globalNodeID(flow_u_og)));
       }
     }
 
@@ -159,15 +159,15 @@ class MostBalancedMinimumCut {
         std::vector<NodeID> topological_order(dag.numNodes(), 0);
         std::vector<NodeID> part_before(dag.numNodes(), block_0);
         topologicalSort(dag, in_degree, topological_order);
-        for (const NodeID& u : topological_order) {
-          for (const NodeID& v : scc_to_flow_network[u]) {
-            const PartitionID from = hypergraph.partID(v);
-            const PartitionID to = best_partition_id[u];
+        for (const NodeID& u_og : topological_order) {
+          for (const NodeID& v_og : scc_to_flow_network[u_og]) {
+            const PartitionID from = hypergraph.partID(hypergraph.globalNodeID(v_og));
+            const PartitionID to = best_partition_id[u_og];
             if (from != to) {
-              bool success = hypergraph.changeNodePart(v, from, to);
+              bool success = hypergraph.changeNodePart(hypergraph.globalNodeID(v_og), from, to);
               unused(success);
               ASSERT(success);
-              part_before[u] = from;
+              part_before[u_og] = from;
             }
           }
           // Check cut after assignment of an SCC
@@ -183,11 +183,11 @@ class MostBalancedMinimumCut {
 
         // Rollback hypernode assignment
         for (const NodeID& u : dag.nodes()) {
-          for (const NodeID& v : scc_to_flow_network[u]) {
-            const PartitionID from = hypergraph.partID(v);
+          for (const NodeID& v_og : scc_to_flow_network[u]) {
+            const PartitionID from = hypergraph.partID(hypergraph.globalNodeID(v_og));
             const PartitionID to = part_before[u];
             if (from != to) {
-              bool success = hypergraph.changeNodePart(v, from, to);
+              bool success = hypergraph.changeNodePart(hypergraph.globalNodeID(v_og), from, to);
               unused(success);
               ASSERT(success);
             }
@@ -208,11 +208,11 @@ class MostBalancedMinimumCut {
 
     // Assign most balanced minimum cut
     for (const NodeID& u : dag.nodes()) {
-      for (const NodeID& v : scc_to_flow_network[u]) {
-        const PartitionID from = hypergraph.partID(v);
+      for (const NodeID& v_og : scc_to_flow_network[u]) {
+        const PartitionID from = hypergraph.partID(hypergraph.globalNodeID(v_og));
         const PartitionID to = best_partition_id[u];
         if (from != to) {
-          bool success = hypergraph.changeNodePart(v, from, to);
+          bool success = hypergraph.changeNodePart(hypergraph.globalNodeID(v_og), from, to);
           unused(success);
           ASSERT(success);
         }
@@ -253,10 +253,12 @@ class MostBalancedMinimumCut {
     }
 
     while (!_Q.empty()) {
-      const NodeID u = _Q.front();
+      const NodeID u_og = _Q.front();
+      
       _Q.pop();
 
-      if (flow_network.interpreteHypernode(u)) {
+      if (flow_network.interpreteHypernode(u_og)) {
+        const HypernodeID u = hypergraph.globalNodeID(u_og);
         if (!sourceSet) {
           const PartitionID from = hypergraph.partID(u);
           if (from == block_0) {
@@ -265,10 +267,11 @@ class MostBalancedMinimumCut {
             ASSERT(success);
           }
         }
-      } else if (flow_network.interpreteHyperedge(u, sourceSet)) {
-        const HyperedgeID he = flow_network.mapToHyperedgeID(u);
+      } else if (flow_network.interpreteHyperedge(u_og, sourceSet)) {
+        const HyperedgeID he_og = flow_network.mapToHyperedgeID(u_og);
+        const HyperedgeID he = hypergraph.globalEdgeID(he_og);
         for (const HypernodeID& pin : hypergraph.pins(he)) {
-          if (flow_network.containsHypernode(pin)) {
+          if (flow_network.containsHypernode(hypergraph, pin)) {
             if (!sourceSet) {
               PartitionID from = hypergraph.partID(pin);
               if (from == block_0) {
@@ -277,21 +280,21 @@ class MostBalancedMinimumCut {
                 ASSERT(success);
               }
             }
-            if (flow_network.isRemovedHypernode(pin)) {
-              _visited.set(pin, true);
+            if (flow_network.isRemovedHypernode(hypergraph, pin)) {
+              _visited.set(hypergraph.originalNodeID(pin), true);
             }
           }
         }
       }
 
-      for (FlowEdge& e : flow_network.incidentEdges(u)) {
+      for (FlowEdge& e : flow_network.incidentEdges(u_og)) {
         const FlowEdge& reverse_edge = flow_network.reverseEdge(e);
-        const NodeID v = e.target;
-        if (!_visited[v]) {
+        const NodeID v_og = e.target;
+        if (!_visited[v_og]) {
           if ((sourceSet && flow_network.residualCapacity(e)) ||
               (!sourceSet && flow_network.residualCapacity(reverse_edge))) {
-            _Q.push(v);
-            _visited.set(v, true);
+            _Q.push(v_og);
+            _visited.set(v_og, true);
           }
         }
       }
@@ -331,12 +334,12 @@ class MostBalancedMinimumCut {
       }
     }
 
-    for (const HypernodeID& hn : flow_network.removedHypernodes()) {
-      if (!_visited[hn]) {
-        const NodeID hn_node = _flow_network_to_graph.get(hn);
-        for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
-          const NodeID in_he = _flow_network_to_graph.get(flow_network.mapToIncommingHyperedgeID(he));
-          const NodeID out_he = _flow_network_to_graph.get(flow_network.mapToOutgoingHyperedgeID(he));
+    for (const HypernodeID& hn_og : flow_network.removedHypernodes()) {
+      if (!_visited[hn_og]) {
+        const NodeID hn_node = _flow_network_to_graph.get(hn_og);
+        for (const HyperedgeID& he : hypergraph.incidentEdges(hypergraph.globalNodeID(hn_og))) {
+          const NodeID in_he = _flow_network_to_graph.get(flow_network.mapToIncommingHyperedgeID(hypergraph, he));
+          const NodeID out_he = _flow_network_to_graph.get(flow_network.mapToOutgoingHyperedgeID(hypergraph, he));
           if (in_he != Network::kInvalidNode) {
             Edge e;
             e.target_node = in_he;

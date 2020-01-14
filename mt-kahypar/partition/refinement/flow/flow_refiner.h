@@ -227,6 +227,7 @@ class FlowRefinerT final : public IRefiner{
                 CutBuildPolicy<TypeTraits>::buildFlowNetwork(_hg, _context, flow_network,
                                                 cut_hes, alpha, block_0, block_1,
                                                 visited);
+
                 const HyperedgeWeight cut_flow_network_before = flow_network.build(_hg, _context, block_0, block_1);
 
                 // Find minimum (S,T)-bipartition
@@ -268,9 +269,10 @@ class FlowRefinerT final : public IRefiner{
                 // Perform moves in quotient graph in order to update
                 // cut hyperedges between adjacent blocks.
                 if (current_improvement) {
-                    for (const HypernodeID& hn : flow_network.hypernodes()) {
+                    for (const HypernodeID& ogHn : flow_network.hypernodes()) {
+                        const HypernodeID& hn = _hg.globalNodeID(ogHn);
                         const PartitionID from = _hg.partID(hn);
-                        const PartitionID to = maximum_flow.getOriginalPartition(hn);
+                        const PartitionID to = maximum_flow.getOriginalPartition(ogHn);
                         if (from != to) {
                             quotientGraph.changeNodePart(hn, from, to);
                         }

@@ -240,14 +240,14 @@ class QuotientGraphBlockScheduler {
       const HyperedgeID he = _block_pair_cut_he[block0][block1][i];
       if (_hg.pinCountInPart(he, block0) == 0 ||
           _hg.pinCountInPart(he, block1) == 0 ||
-          visited[he]) {
+          visited[_hg.originalEdgeID(he)]) {
         std::swap(_block_pair_cut_he[block0][block1][i],
                   _block_pair_cut_he[block0][block1][N - 1]);
         _block_pair_cut_he[block0][block1].pop_back();
         --i;
         --N;
       }
-      visited.set(he, true);
+      visited.set(_hg.originalEdgeID(he), true);
     }
   }
 

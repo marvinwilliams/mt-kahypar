@@ -77,8 +77,9 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
     const PartitionID default_part =
       context.refinement.flow.use_most_balanced_minimum_cut ? block_0 : block_1;
-    for (const HypernodeID& hn : flow_network.hypernodes()) {
-      _original_part_id[hn] = hypergraph.partID(hn);
+    for (const HypernodeID& ogHn : flow_network.hypernodes()) {
+      const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
+      _original_part_id[ogHn] = hypergraph.partID(hn);
       moveHypernode(hypergraph, hn, default_part);
     }
 
@@ -94,17 +95,18 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
   }
 
   void rollback(HyperGraph& hypergraph, FlowNetwork& flow_network, const bool store_part_id = false) {
-    for (const HypernodeID& hn : flow_network.hypernodes()) {
+    for (const HypernodeID& ogHn : flow_network.hypernodes()) {
+      const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
       const PartitionID from = hypergraph.partID(hn);
-      moveHypernode(hypergraph, hn, _original_part_id[hn]);
+      moveHypernode(hypergraph, hn, _original_part_id[ogHn]);
       if (store_part_id) {
-        _original_part_id[hn] = from;
+        _original_part_id[ogHn] = from;
       }
     }
   }
 
-  PartitionID getOriginalPartition(const HypernodeID hn) const {
-    return _original_part_id[hn];
+  PartitionID getOriginalPartition(const HypernodeID hn_og) const {
+    return _original_part_id[hn_og];
   }
 
   template <bool assign_hypernodes = false>
@@ -124,28 +126,30 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
     }
 
     while (!_Q.empty()) {
-      NodeID u = _Q.front();
+      NodeID u_og = _Q.front();
       _Q.pop();
 
       if (assign_hypernodes) {
-        if (flow_network.interpreteHypernode(u)) {
-          moveHypernode(hypergraph, u, block);
-        } else if (flow_network.interpreteHyperedge(u)) {
-          const HyperedgeID he = flow_network.mapToHyperedgeID(u);
+        if (flow_network.interpreteHypernode(u_og)) {
+          
+          moveHypernode(hypergraph, u_og, block);
+        } else if (flow_network.interpreteHyperedge(u_og)) {
+          const HyperedgeID he_og = flow_network.mapToHyperedgeID(u_og);
+          const HyperedgeID he = hypergraph.globalNodeID(he_og);
           for (const HypernodeID& pin : hypergraph.pins(he)) {
-            if (flow_network.containsHypernode(pin)) {
+            if (flow_network.containsHypernode(hypergraph, pin)) {
               moveHypernode(hypergraph, pin, block);
             }
           }
         }
       }
 
-      if (flow_network.isSink(u)) {
+      if (flow_network.isIdSink(u_og)) {
         augmenting_path_exists = true;
         continue;
       }
 
-      for (ds::FlowEdge& e : flow_network.incidentEdges(u)) {
+      for (ds::FlowEdge& e : flow_network.incidentEdges(u_og)) {
         const NodeID v = e.target;
         if (!_visited[v] && flow_network.residualCapacity(e)) {
           _parent.set(v, &e);
@@ -164,7 +168,7 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
   FRIEND_TEST(AMaximumFlow, AugmentAlongPath);
 
   Flow augment(FlowNetwork& flow_network, const NodeID cur, const Flow min_flow = Network::kInfty) {
-    if (flow_network.isSource(cur) || min_flow == 0) {
+    if (flow_network.isGlobalIdSource(cur) || min_flow == 0) {
       return min_flow;
     } else {
       ds::FlowEdge* e = _parent.get(cur);
@@ -275,10 +279,10 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
     for (const NodeID& node : flow_network.nodes()) {
       const NodeID id = _flow_graph.add_node();
       _flow_network_mapping[node] = id;
-      if (flow_network.isSource(node)) {
+      if (flow_network.isGlobalIdSource(node)) {
         _flow_graph.add_tweights(id, infty, 0);
       }
-      if (flow_network.isSink(node)) {
+      if (flow_network.isGlobalIdSink(node)) {
         _flow_graph.add_tweights(id, 0, infty);
       }
     }
@@ -364,8 +368,8 @@ class IBFS : public MaximumFlow<TypeTraits, Network>{
 
     for (const NodeID& node : flow_network.nodes()) {
       _flow_graph.addNode(cur_id,
-                          flow_network.isSource(node) ? infty : 0,
-                          flow_network.isSink(node) ? infty : 0);
+                          flow_network.isIdSource(node) ? infty : 0,
+                          flow_network.isIdSink(node) ? infty : 0);
       _flow_network_mapping[node] = cur_id;
       cur_id++;
     }
