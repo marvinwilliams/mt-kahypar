@@ -59,7 +59,7 @@ class InitialPartitioningDataContainerT {
       return ( improved_metric && (is_other_feasible || improved_imbalance) ) ||
              ( equal_metric && improved_imbalance ) ||
              ( is_other_feasible && !is_feasible ) ||
-             ( improved_metric && !is_other_feasible && !is_feasible );
+             ( improved_imbalance && !is_other_feasible && !is_feasible );
     }
 
     std::string str() const {
@@ -194,7 +194,7 @@ class InitialPartitioningDataContainerT {
     _local_unassigned_hypernode_pointer(std::numeric_limits<size_t>::max())  {
     // Setup Label Propagation Refiner Config for Initial Partitioning
     _context.refinement.label_propagation.maximum_iterations = 3;
-    _context.refinement.label_propagation.part_weight_update_frequency = std::numeric_limits<size_t>::max();
+    _context.refinement.label_propagation.part_weight_update_factor = 1.0;
     _context.refinement.label_propagation.numa_aware = false;
     _context.refinement.label_propagation.localized = false;
     _context.refinement.label_propagation.execution_policy = ExecutionType::none;
@@ -249,7 +249,7 @@ class InitialPartitioningDataContainerT {
     unassigned_hypernode_pointer = unassigned_hypernodes.size();
   }
 
-  HypernodeID get_unassigned_hypernode() {
+  HypernodeID get_unassigned_hypernode(const PartitionID unassigned_block = kInvalidPartition) {
     const HyperGraph& hypergraph = _local_hg.local()._hypergraph;
     parallel::scalable_vector<HypernodeID>& unassigned_hypernodes =
       _local_unassigned_hypernodes.local();
@@ -260,7 +260,7 @@ class InitialPartitioningDataContainerT {
     while ( unassigned_hypernode_pointer > 0 ) {
       const HypernodeID current_hn = unassigned_hypernodes[0];
       // In case the current hypernode is unassigned we return it
-      if ( hypergraph.partID(current_hn) == kInvalidPartition ) {
+      if ( hypergraph.partID(current_hn) == unassigned_block ) {
         return current_hn;
       }
       // In case the hypernode on the first position is already assigned,

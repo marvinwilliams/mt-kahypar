@@ -77,13 +77,14 @@ static inline std::string serialize(const Hypergraph& hypergraph,
         << " rating_acceptance_policy=" << context.coarsening.rating.acceptance_policy
         << " initial_partitioning_mode=" << context.initial_partitioning.mode
         << " initial_partitioning_runs=" << context.initial_partitioning.runs
+        << " initial_partitioning_use_adaptive_epsilon=" << std::boolalpha << context.initial_partitioning.use_adaptive_epsilon
         << " initial_partitioning_lp_maximum_iterations=" << context.initial_partitioning.lp_maximum_iterations
         << " initial_partitioning_lp_initial_block_size=" << context.initial_partitioning.lp_initial_block_size
         << " use_batch_uncontractions=" << std::boolalpha << context.refinement.use_batch_uncontractions
         << " batch_size=" << context.refinement.batch_size
         << " lp_algorithm=" << context.refinement.label_propagation.algorithm
         << " lp_maximum_iterations=" << context.refinement.label_propagation.maximum_iterations
-        << " lp_part_weight_update_frequency=" << context.refinement.label_propagation.part_weight_update_frequency
+        << " lp_part_weight_update_factor=" << context.refinement.label_propagation.part_weight_update_factor
         << " lp_localized=" << std::boolalpha << context.refinement.label_propagation.localized
         << " lp_numa_aware=" << std::boolalpha << context.refinement.label_propagation.numa_aware
         << " lp_rebalancing=" << std::boolalpha << context.refinement.label_propagation.rebalancing
@@ -108,12 +109,12 @@ static inline std::string serialize(const Hypergraph& hypergraph,
     oss << " totalPartitionTime=" << elapsed_seconds.count();
 
     // Part Weights and Sizes
-    for (PartitionID i = 0; i < context.partition.k; ++i) {
+    /*for (PartitionID i = 0; i < context.partition.k; ++i) {
       oss << " partSize" << i << "=" << hypergraph.partSize(i);
     }
     for (PartitionID i = 0; i < context.partition.k; ++i) {
       oss << " partWeight" << i << "=" << hypergraph.partWeight(i);
-    }
+    }*/
 
     // Timings
     utils::Timer::instance(context.partition.detailed_timings).serialize(oss);

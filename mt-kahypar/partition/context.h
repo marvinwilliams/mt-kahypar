@@ -163,6 +163,7 @@ inline std::ostream & operator<< (std::ostream& str, const CoarseningParameters&
 struct InitialPartitioningParameters {
   InitialPartitioningMode mode = InitialPartitioningMode::UNDEFINED;
   size_t runs = 1;
+  bool use_adaptive_epsilon = false;
   size_t lp_maximum_iterations = 1;
   size_t lp_initial_block_size = 1;
 };
@@ -171,6 +172,7 @@ inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningPa
   str << "Initial Partitioning Parameters:" << std::endl;
   str << "  Initial Partitioning Mode:          " << params.mode << std::endl;
   str << "  Number of Runs:                     " << params.runs << std::endl;
+  str << "  Use Adaptive Epsilon:               " << std::boolalpha << params.use_adaptive_epsilon << std::endl;
   str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
   str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
   return str;
@@ -179,7 +181,7 @@ inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningPa
 struct LabelPropagationParameters {
   LabelPropagationAlgorithm algorithm = LabelPropagationAlgorithm::do_nothing;
   size_t maximum_iterations = 1;
-  size_t part_weight_update_frequency = 100;
+  double part_weight_update_factor = 0.01;
   bool localized = false;
   bool numa_aware = false;
   bool rebalancing = true;
@@ -193,7 +195,7 @@ inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParam
   str << "  Label Propagation Parameters:" << std::endl;
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Maximum Iterations:               " << params.maximum_iterations << std::endl;
-  str << "    Part Weight Update Frequency:     " << params.part_weight_update_frequency << std::endl;
+  str << "    Part Weight Update Factor:        " << params.part_weight_update_factor << std::endl;
   str << "    Localized:                        " << std::boolalpha << params.localized << std::endl;
   str << "    Numa Aware:                       " << std::boolalpha << params.numa_aware << std::endl;
   str << "    Rebalancing:                      " << std::boolalpha << params.rebalancing << std::endl;

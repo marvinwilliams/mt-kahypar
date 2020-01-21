@@ -245,6 +245,10 @@ po::options_description createInitialPartitioningOptionsDescription(Context& con
     po::value<size_t>(&context.initial_partitioning.runs)->value_name("<size_t>"),
     "Number of runs for initial partitioner \n"
     "(default: 1)")
+    ("i-use-adaptive-epsilon",
+    po::value<bool>(&context.initial_partitioning.use_adaptive_epsilon)->value_name("<bool>"),
+    "If true, adaptive epsilon is used during recursive initial partitioning \n"
+    "(default: false)")
     ("i-lp-maximum-iterations",
     po::value<size_t>(&context.initial_partitioning.lp_maximum_iterations)->value_name("<size_t>"),
     "Maximum number of iterations of label propagation initial partitioner \n"
@@ -281,9 +285,10 @@ po::options_description createRefinementOptionsDescription(Context& context, con
     po::value<size_t>(&context.refinement.label_propagation.maximum_iterations)->value_name("<size_t>"),
     "Maximum number of iterations over all nodes during label propagation\n"
     "(default 1)")
-    ("r-lp-part-weight-update-frequency",
-    po::value<size_t>(&context.refinement.label_propagation.part_weight_update_frequency)->value_name("<size_t>"),
+    ("r-lp-part-weight-update-factor",
+    po::value<double>(&context.refinement.label_propagation.part_weight_update_factor)->value_name("<double>"),
     "Determines after how many iterations the local part weights are updated\n"
+    "=> steps = min(100, max(5, current_num_nodes * part_weight_update_factor))\n"
     "(default 100)")
     ("r-lp-localized",
     po::value<bool>(&context.refinement.label_propagation.localized)->value_name("<bool>"),
