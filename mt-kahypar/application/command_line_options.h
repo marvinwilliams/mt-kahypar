@@ -342,7 +342,10 @@ po::options_description createRefinementOptionsDescription(Context& context, con
     ("r-flow-use-most-balanced-minimum-cut",
     po::value<bool>(&context.refinement.flow.use_most_balanced_minimum_cut)->value_name("<bool>"),
     "If true, most balanced minimum cut heuristic is used during flow refinement\n"
-    "(default false)");
+    "(default false)")
+    ("r-active-block-treshold", po::value<size_t>(&context.refinement.flow.active_block_treshold)->value_name("<size_t>"),
+    "Minimum number of active blocks to start a round of flow refinement.\n"
+    "(defualt 2)" );
   return options;
 }
 

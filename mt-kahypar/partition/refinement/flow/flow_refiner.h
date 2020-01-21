@@ -89,14 +89,13 @@ class FlowRefinerT final : public IRefiner{
 
             // Active Block Scheduling
             bool improvement = false;
-            bool active_block_exist = true;
+            size_t active_blocks = _context.partition.k;
             size_t current_round = 1;
 
             utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
-            while (active_block_exist) {
+            while (active_blocks >= _context.refinement.flow.active_block_treshold) {
                 scheduler.randomShuffleQoutientEdges();
                 auto edges = scheduler.getInitialParallelEdges();
-                active_block_exist = false;
                 _round_delta = 0;
                 //parallel here
                 // TODO(reister): this looks like the right parallel primitive to parallelize the flow
@@ -128,7 +127,6 @@ class FlowRefinerT final : public IRefiner{
                         if (improved) {
 
                             improvement = true;
-                            active_block_exist = true;
                             scheduler.setActiveBlock(block_0, true);
                             scheduler.setActiveBlock(block_1, true);
                             _num_improvements[block_0][block_1]++;
@@ -168,6 +166,9 @@ class FlowRefinerT final : public IRefiner{
                 //Update bestmetrics
                 best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
                 best_metrics.imbalance = current_imbalance;
+
+                //update number of active blocks
+                active_blocks = scheduler.getNumberOfActiveBlocks();
 
                 current_round++;
             }

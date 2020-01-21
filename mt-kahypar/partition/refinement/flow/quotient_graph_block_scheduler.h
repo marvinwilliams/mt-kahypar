@@ -174,18 +174,18 @@ class QuotientGraphBlockScheduler {
           cut_hyperedges.insert(he);
         }
         //TODO: Assertion fails very rarely, probably race condition?
-        /*
+        
         for (const HyperedgeID& he : _hg.edges()) {
           if (_hg.pinCountInPart(he, block0) > 0 &&
               _hg.pinCountInPart(he, block1) > 0) {
-            if (cut_hyperedges.find(he) == cut_hyperedges.end()) {
+            /*if (cut_hyperedges.find(he) == cut_hyperedges.end()) {
               LOG << V(_hg.pinCountInPart(he, block0));
               LOG << V(_hg.pinCountInPart(he, block1));
               LOG << V(_hg.initialNumNodes()) << V(_hg.currentNumNodes());
               LOG << V(he) << "should be inside the incidence set of"
                   << V(block0) << "and" << V(block1);
               return false;
-            }
+            }*/
           } else {
             if (cut_hyperedges.find(he) != cut_hyperedges.end()) {
               LOG << V(_hg.pinCountInPart(he, block0));
@@ -195,7 +195,7 @@ class QuotientGraphBlockScheduler {
               return false;
             }
           }
-        }*/
+        }
         return true;
       } (), "Cut hyperedge set between " << V(block0) << " and " << V(block1) << " is wrong!");
 
@@ -228,6 +228,16 @@ class QuotientGraphBlockScheduler {
 
   void setActiveBlock(size_t blockId, bool active){
     _active_blocks[blockId] = active;
+  }
+
+  size_t getNumberOfActiveBlocks(){
+    size_t active_blocks = 0;
+    for(auto active:_active_blocks){
+      if(active){
+        active_blocks++;
+      }
+    }
+    return active_blocks;
   }
 
  private:
