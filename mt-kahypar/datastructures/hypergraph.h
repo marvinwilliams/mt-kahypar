@@ -1021,7 +1021,12 @@ class Hypergraph {
   }
 
   void updateLocalPartInfos(PartitionID block_0, PartitionID block_1) {
+    #if USE_LOCAL_PART_WEIGHTS
     _local_part_info.local().snapshot(_local_part_info, block_0, block_1);
+    #else
+    unused(block_0);
+    unused(block_1);
+    #endif
   }
 
   // ! Updates the global block weights
@@ -1834,7 +1839,11 @@ class Hypergraph {
   }
 
   void printBlockInfos(int block) {
+    #if USE_LOCAL_PART_WEIGHTS
     _local_part_info.local().printBlockInfos(block, _local_part_info);
+    #else
+    unused(block);
+    #endif
   }
 
  private:

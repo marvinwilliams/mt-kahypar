@@ -111,10 +111,10 @@ class MostBalancedMinimumCut {
     // Find most balanced minimum cut
     std::vector<NodeID> topological_order(dag.numNodes(), 0);
     std::vector<PartitionID> best_partition_id(dag.numNodes(), block_0);
-    double best_imbalance = metrics::localImbalance(hypergraph, context);;
+    double best_imbalance = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);;
 
     DBG << "Start Most Balanced Minimum Cut (Bipartition = {" << block_0 << "," << block_1 << "}";
-    DBG << "Initial imbalance: " << V(metrics::localImbalance(hypergraph, context));
+    DBG << "Initial imbalance: " << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1));
 
     for (size_t i = 0; i < 20; ++i) {
       // Compute random topological order
@@ -122,21 +122,18 @@ class MostBalancedMinimumCut {
 
       // Sweep through topological order and find best imbalance
       std::vector<PartitionID> tmp_partition_id(dag.numNodes(), block_0);
-      double tmp_best_imbalance = metrics::localImbalance(hypergraph, context);
+      double tmp_best_imbalance = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
 
-      std::vector<HypernodeWeight> part_weight(context.partition.k, 0);
-      for (PartitionID part = 0; part < context.partition.k; ++part) {
-        part_weight[part] = hypergraph.localPartWeight(part);
-      }
+      std::vector<HypernodeWeight> part_weight(2, 0);
+      part_weight[0] = hypergraph.localPartWeight(block_0);
+      part_weight[1] = hypergraph.localPartWeight(block_1);
+  
       for (size_t idx = 0; idx < topological_order.size(); ++idx) {
         const NodeID u = topological_order[idx];
         tmp_partition_id[u] = block_1;
-        part_weight[block_0] -= _scc_node_weight.get(u);
-        part_weight[block_1] += _scc_node_weight.get(u);
-        double cur_imbalance = imbalance<true>(context, part_weight);
-        if (context.partition.k > 2) {
-          cur_imbalance = imbalance<false>(context, part_weight);
-        }
+        part_weight[0] -= _scc_node_weight.get(u);
+        part_weight[1] += _scc_node_weight.get(u);
+        double cur_imbalance = imbalance(context, part_weight);
 
         if (cur_imbalance > tmp_best_imbalance) {
           tmp_partition_id[u] = block_0;
@@ -155,7 +152,7 @@ class MostBalancedMinimumCut {
 
     ASSERT([&]() {
         //const HyperedgeWeight metric_before = metrics::objective(hypergraph, context.partition.objective);
-        const double imbalance_before = metrics::localImbalance(hypergraph, context);
+        const double imbalance_before = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
         std::vector<NodeID> topological_order(dag.numNodes(), 0);
         std::vector<NodeID> part_before(dag.numNodes(), block_0);
         topologicalSort(dag, in_degree, topological_order);
@@ -196,10 +193,10 @@ class MostBalancedMinimumCut {
 
         //const HyperedgeWeight metric = metrics::objective(hypergraph, context.partition.objective);
         //metric != metric_before ||
-        if (metrics::localImbalance(hypergraph, context) != imbalance_before) {
+        if (metrics::localBlockImbalance(hypergraph, context, block_0, block_1) != imbalance_before) {
           LOG << "Restoring original partition failed!";
           //LOG << V(metric_before) << V(metric);
-          LOG << V(imbalance_before) << V(metrics::localImbalance(hypergraph, context));
+          LOG << V(imbalance_before) << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1));
           return false;
         }
 
@@ -219,9 +216,9 @@ class MostBalancedMinimumCut {
       }
     }
 
-    ASSERT(best_imbalance == metrics::localImbalance(hypergraph, context),
+    ASSERT(best_imbalance == metrics::localBlockImbalance(hypergraph, context, block_0, block_1),
            "Best imbalance didn't match with current imbalance"
-           << V(best_imbalance) << V(metrics::localImbalance(hypergraph, context)));
+           << V(best_imbalance) << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1)));
   }
 
  private:
@@ -406,10 +403,7 @@ class MostBalancedMinimumCut {
     ASSERT(idx == g.numNodes(), "Topological sort failed!" << V(idx) << V(g.numNodes()));
   }
 
-
-  template <bool bipartition = true>
-  double imbalance(const Context& context, const std::vector<HypernodeWeight>& part_weight) {
-    if (bipartition) {
+  static inline double imbalance(const Context& context, const std::vector<HypernodeWeight>& part_weight) {
       const HypernodeWeight weight_part0 = part_weight[0];
       const HypernodeWeight weight_part1 = part_weight[1];
       const double imbalance_part0 = (weight_part0 /
@@ -417,17 +411,6 @@ class MostBalancedMinimumCut {
       const double imbalance_part1 = (weight_part1 /
                                       static_cast<double>(context.partition.perfect_balance_part_weights[1]));
       return std::max(imbalance_part0, imbalance_part1) - 1.0;
-    } else {
-      double max_balance = (part_weight[0] /
-                            static_cast<double>(context.partition.perfect_balance_part_weights[0]));
-      for (PartitionID i = 1; i < context.partition.k; ++i) {
-        const double balance_i =
-          (part_weight[i] /
-           static_cast<double>(context.partition.perfect_balance_part_weights[i]));
-        max_balance = std::max(max_balance, balance_i);
-      }
-      return max_balance - 1.0;
-    }
   }
 
   kahypar::ds::FastResetFlagArray<> _visited;
