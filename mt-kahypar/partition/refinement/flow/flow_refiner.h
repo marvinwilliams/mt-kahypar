@@ -263,14 +263,6 @@ class FlowRefinerT final : public IRefiner{
                     break;
                 }
 
-                // TODO(reister): I added this line to update the local part weights. However, it seems
-                // that the flow refiner produces imbalanced partitions. This should be a point we have to
-                // address.
-                //_hg.updateLocalPartInfos();
-                // would update the localPartInfos with the current state of other threads. The Threads can be in the middle of
-                // a flow_calculation and the Graph can be in an infeasable imbalance. I instead update only the two relevant
-                // blocks in the local part infos at the beginning of the parallel flow refinement.
-
             } while (alpha > 1.0);
 
             //atomic-add improvements to _round_delta

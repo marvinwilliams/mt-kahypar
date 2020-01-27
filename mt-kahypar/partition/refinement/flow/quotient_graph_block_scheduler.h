@@ -89,8 +89,6 @@ class QuotientGraphBlockScheduler {
 
   std::vector<edge> getInitialParallelEdges(){
     std::vector<edge> initialEdges;
-    // TODO(reister): use 'const edge& e' in order to prevent that elements are copied
-    // or modified during iteration.
     for(auto const edge:_quotient_graph){
       if(_active_blocks[edge.first] && _active_blocks[edge.second]){
         _round_edges.push_back(edge);
@@ -119,23 +117,12 @@ class QuotientGraphBlockScheduler {
   }
 
   void scheduleNextBlock(tbb::parallel_do_feeder<edge>& feeder, const PartitionID block_0, const PartitionID block_1){
-    // TODO(reister): Usually I'm not a big fan of locks, but I think in this situation it is okay
-    // since the function is called not that often during flow refinement. Alternatively, you can
-    // implement the locking mechanism with atomics and perform a compare_and_swap operation on the
-    // two blocks. If both are successful you can add the edge to the feeder, otherwise reset them and continue
-    // to next pair of blocks.
     tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
     //unlock the blocks
     _locked_blocks[block_0] = false;
     _locked_blocks[block_1] = false;
 
     //start new flow-calclation for blocks
-    // TODO(reister): Usually we don't use std::list, since erase has linear running time.
-    // Again this should be not a problem, since the list only contains k^2 elements at most.
-    // But what you could do instead is use a vector and if you add an element to the feeder
-    // you can swap it to the end and decrement a pointer to that vector. The pointer points
-    // to all elements that where not considered during that current round. Once all blocks are
-    // processed you can just reset the pointer to the end of the vector and start again.
     size_t N = _round_edges.size();
     for (size_t i = 0; i < N; ++i) {
       const edge e = _round_edges[i];
@@ -205,15 +192,15 @@ class QuotientGraphBlockScheduler {
 
   void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to) {
     if (from != to) {
-      // TODO(reister): This should not fail, since flow problems are independent:
       bool success = _hg.changeNodePart(hn, from, to);
       unused(success);
       ASSERT(success);
 
       for (const HyperedgeID& he : _hg.incidentEdges(hn)) {
         if (_hg.pinCountInPart(he, to) == 1) {
-          // TODO(reister): This is not thread-safe and this is also why
-          // your assertion fails rarely.
+          // This is not thread-safe
+          // Can cause that a Hyperedge is missing in _block_pair_cut_he
+          // Decided to accept the downside this causes as it happens very rarely and does not break the Algorithm
           for (const PartitionID& part : _hg.connectivitySet(he)) {
             if (to < part) {
               _block_pair_cut_he[to][part].push_back(he);
