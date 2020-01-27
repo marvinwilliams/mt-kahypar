@@ -94,16 +94,11 @@ class FlowRefinerT final : public IRefiner{
 
             utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
             while (active_blocks >= _context.refinement.flow.active_block_treshold) {
+
                 scheduler.randomShuffleQoutientEdges();
                 auto edges = scheduler.getInitialParallelEdges();
                 _round_delta = 0;
                 //parallel here
-                // TODO(reister): this looks like the right parallel primitive to parallelize the flow
-                // computations. However, we should think of a threshold to abort the parallel flow computations
-                // when the feeder does not contain as many edges to fully utilize the cores.
-                // Furthermore, we have to think of numa-awareness. One possible solution could be to schedule
-                // a pairwise flow-based refinement on the numa node which contains the most nodes of the two
-                // blocks.
                 tbb::parallel_do(edges,
                     [&](Edge e,
                         tbb::parallel_do_feeder<Edge>& feeder){
@@ -140,12 +135,6 @@ class FlowRefinerT final : public IRefiner{
 
                 _hg.updateGlobalPartInfos();
 
-                // TODO(reister): I agree with you that you cannot verify the metric inside the adaptive
-                // flow iterations, but what you can do is to sum up delta inside the flow iterations
-                // (cut_flow_network_after - cut_flow_network_before and use an atomic to sum up the deltas
-                // globally) and compare here the metric before minus the delta with
-                // metrics::objective(_hg, _context.partition.objective) in an assertion.
-
                 HyperedgeWeight current_metric = metrics::objective(_hg, _context.partition.objective);
                 double current_imbalance = metrics::imbalance(_hg, _context);
 
@@ -157,11 +146,6 @@ class FlowRefinerT final : public IRefiner{
                         << V(best_metrics.getMetric(_context.partition.mode, _context.partition.objective))
                         << V(_round_delta)
                         << V(current_metric));
-
-                //check if imbalance is feasable
-                ASSERT(current_imbalance <= _context.partition.epsilon,
-                        "Imbalance got to bad!"
-                        << V(current_imbalance));
 
                 //Update bestmetrics
                 best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
@@ -194,12 +178,6 @@ class FlowRefinerT final : public IRefiner{
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
                 const double old_imbalance = metrics::localBlockImbalance(_hg, _context, block_0, block_1);
-                //check if imbalance is feasable
-                ASSERT(old_imbalance <= _context.partition.epsilon,
-                        "Old local_imbalance got to bad!"
-                        << V(old_imbalance)
-                        << V(metrics::imbalance(_hg, _context))
-                        <<V(printPartWeights(block_0, block_1)));
 
                 // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
                 std::vector<HyperedgeID> cut_hes;
@@ -250,15 +228,11 @@ class FlowRefinerT final : public IRefiner{
                 const bool equal_metric = delta == 0;
                 const bool improved_metric = delta > 0;
                 const bool improved_imbalance = current_imbalance < old_imbalance;
-                const bool is_feasible_partition = current_imbalance <= _context.partition.epsilon;
+                const bool is_feasible_partition = current_imbalance <= std::max(old_imbalance, _context.partition.epsilon);
 
                 bool current_improvement = false;
                 if ((improved_metric && (is_feasible_partition || improved_imbalance)) ||
                     (equal_metric && improved_imbalance)) {
-                    //check if imbalance is feasable
-                    ASSERT(current_imbalance <= _context.partition.epsilon,
-                        "new local_imbalance got to bad!"
-                        << V(current_imbalance));
                     improvement = true;
                     current_improvement = true;
                     thread_local_delta += delta;
