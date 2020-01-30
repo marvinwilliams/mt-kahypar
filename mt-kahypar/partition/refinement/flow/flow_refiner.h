@@ -135,12 +135,11 @@ class FlowRefinerT final : public IRefiner{
 
                 _hg.updateGlobalPartInfos();
 
-                HyperedgeWeight current_metric = metrics::objective(_hg, _context.partition.objective);
+                HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
                 double current_imbalance = metrics::imbalance(_hg, _context);
 
                 //check if the metric improved as exspected
-                ASSERT(best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta
-                        == current_metric,
+                ASSERT(current_metric == metrics::objective(_hg, _context.partition.objective),
                         "Sum of deltas is not the global improvement!"
                         << V(_context.partition.objective)
                         << V(best_metrics.getMetric(_context.partition.mode, _context.partition.objective))
