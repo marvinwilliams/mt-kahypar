@@ -3,6 +3,7 @@
 
 #include "tbb/enumerable_thread_specific.h"
 #include "tbb/parallel_do.h"
+#include "tbb/task_group.h"
 
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/flow/quotient_graph_block_scheduler.h"
@@ -27,6 +28,7 @@ class FlowRefinerT final : public IRefiner{
         using GainCalculator = GainPolicy<HyperGraph>;
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
+        using scheduling_edge = std::pair<int, Edge>;
 
         using FlowNetwork = ds::FlowNetwork<TypeTraits>;
         using MaximumFlow = IBFS<TypeTraits, FlowNetwork>;
@@ -96,43 +98,29 @@ class FlowRefinerT final : public IRefiner{
             while (active_blocks >= _context.refinement.flow.active_block_treshold) {
 
                 scheduler.randomShuffleQoutientEdges();
-                auto edges = scheduler.getInitialParallelEdges();
+                auto scheduling_edges = scheduler.getInitialParallelEdges();
                 _round_delta = 0;
+
                 //parallel here
-                tbb::parallel_do(edges,
-                    [&](Edge e,
-                        tbb::parallel_do_feeder<Edge>& feeder){
-                        const PartitionID block_0 = e.first;
-                        const PartitionID block_1 = e.second;
-
-                        _hg.updateLocalPartInfos(block_0, block_1);
-
-                        //LOG<< V(sched_getcpu()) << "computing:" V(block_0) << "and" << V(block_1);
-
-                        // Heuristic: If a flow refinement never improved a bipartition,
-                        //            we ignore the refinement for these block in the
-                        //            second iteration of active block scheduling
-                        if (_context.refinement.flow.use_improvement_history &&
-                            current_round > 1 && _num_improvements[block_0][block_1] == 0) {
-                            scheduler.scheduleNextBlock(feeder, block_0, block_1);
-                            return;
-                        }
-
-                        const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler);
-                        if (improved) {
-
-                            improvement = true;
-                            scheduler.setActiveBlock(block_0, true);
-                            scheduler.setActiveBlock(block_1, true);
-                            _num_improvements[block_0][block_1]++;
-                        }
-
-                        scheduler.scheduleNextBlock(feeder, block_0, block_1);
-                    }
-                );
+                for(auto sched_edge:scheduling_edges){
+                    int numa_node = sched_edge.first;
+                    //LOG << "Scheduling on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
+                    TBB::instance().numa_task_arena(numa_node).execute([&, sched_edge] {
+                        TBB::instance().numa_task_group(0, numa_node).run([&, sched_edge] {
+                        //scheduler.get_task_group().run([&, sched_edge] {
+                            parallelFlowCalculation(sched_edge, current_round, improvement, scheduler);
+                        });
+                    });
+                }
+                
+                // can't just wait, because taskgroups enqueue into each other and can be empty at times.
+                // call wait anyway to not wait busy.
+                while(scheduler.getNumberOfActiveTasks() > 0){
+                    TBB::instance().wait(0);
+                }                
+                
+                //scheduler.get_task_group().wait();
                 //LOG << "ROUND done_______________________________________________________";
-
-
                 _hg.updateGlobalPartInfos();
 
                 HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
@@ -142,7 +130,7 @@ class FlowRefinerT final : public IRefiner{
                 ASSERT(current_metric == metrics::objective(_hg, _context.partition.objective),
                         "Sum of deltas is not the global improvement!"
                         << V(_context.partition.objective)
-                        << V(best_metrics.getMetric(_context.partition.mode, _context.partition.objective))
+                        << V(metrics::objective(_hg, _context.partition.objective))
                         << V(_round_delta)
                         << V(current_metric));
 
@@ -161,6 +149,63 @@ class FlowRefinerT final : public IRefiner{
             return improvement;
         }
 
+        void parallelFlowCalculation(scheduling_edge sched_edge,const size_t & current_round, bool & improvement,
+            QuotientGraphBlockScheduler<TypeTraits> & scheduler){
+            const PartitionID block_0 = sched_edge.second.first;
+            const PartitionID block_1 = sched_edge.second.second;
+
+            _hg.updateLocalPartInfos(block_0, block_1);
+
+            //LOG<< V(sched_getcpu()) << "computing:" V(block_0) << "and" << V(block_1);
+
+            // Heuristic: If a flow refinement never improved a bipartition,
+            //            we ignore the refinement for these block in the
+            //            second iteration of active block scheduling
+            if (_context.refinement.flow.use_improvement_history &&
+                current_round > 1 && _num_improvements[block_0][block_1] == 0) {
+                scheduleNextBlocks(sched_edge, current_round, improvement, scheduler);
+                //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
+                return;
+            }
+
+            const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler);
+            if (improved) {
+
+                improvement = true;
+                scheduler.setActiveBlock(block_0, true);
+                scheduler.setActiveBlock(block_1, true);
+                _num_improvements[block_0][block_1]++;
+            }
+
+            scheduleNextBlocks(sched_edge, current_round, improvement, scheduler);
+            //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
+        }
+
+        void scheduleNextBlocks(scheduling_edge old_sched_edge, const size_t & current_round, bool & improvement,
+            QuotientGraphBlockScheduler<TypeTraits> & scheduler){
+               auto new_sched_edges = scheduler.getNextBlockToSchedule(old_sched_edge);
+               for(auto sched_edge:new_sched_edges){
+                    int numa_node = sched_edge.first;
+
+                    //LOG << "Scheduling from inside on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second
+                    //<< " started by:[" << old_sched_edge.second.first << "," << old_sched_edge.second.second <<"]";
+                    if(numa_node == old_sched_edge.first){
+                        TBB::instance().numa_task_arena(numa_node).execute([&, sched_edge] {
+                            TBB::instance().numa_task_group(0, sched_edge.first).run([&, sched_edge] {
+                            //scheduler.get_task_group().run([&, sched_edge] {
+                                parallelFlowCalculation(sched_edge, current_round, improvement, scheduler);
+                            });
+                        });
+                    } else{
+                        TBB::instance().numa_task_arena(numa_node).enqueue([&, sched_edge] {
+                            TBB::instance().numa_task_group(0, sched_edge.first).run([&, sched_edge] {
+                            //scheduler.get_task_group().run([&, sched_edge] {
+                                parallelFlowCalculation(sched_edge, current_round, improvement, scheduler);
+                            });
+                        });
+                    }
+               }
+        }
 
         bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1,
          QuotientGraphBlockScheduler<TypeTraits> & quotientGraph){

@@ -908,6 +908,19 @@ class Hypergraph {
     return false;
   }
 
+  // Returns the NUMA-Node with the most Nodes from the two blocks
+  int get_numa_node_of_blockpair(PartitionID block_0, PartitionID block_1){
+    std::vector<size_t> nodes_on_numa(TBBNumaArena::instance().num_used_numa_nodes(), 0);
+
+    for (const HypernodeID& hn : nodes() ) {
+        if(partID(hn) == block_0 || partID(hn) == block_1){
+          int node = StreamingHypergraph::get_numa_node_of_vertex(hn);
+          nodes_on_numa[node] ++;
+        }
+    }
+    return distance(std::begin(nodes_on_numa), max_element(std::begin(nodes_on_numa), std::end(nodes_on_numa)));
+  }
+
   // ! Helper function to compute delta for cut-metric after changeNodePart
   static HyperedgeWeight cutDelta(const HyperedgeID,
                                   const HyperedgeWeight edge_weight,

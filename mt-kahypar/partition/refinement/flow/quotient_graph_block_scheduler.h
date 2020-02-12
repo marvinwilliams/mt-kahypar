@@ -37,14 +37,17 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/randomize.h"
+#include "mt-kahypar/partition/refinement/flow/flow_refiner.h"
 
 namespace mt_kahypar {
 
 template<typename TypeTraits>
 class QuotientGraphBlockScheduler {
   typedef std::pair<PartitionID, PartitionID> edge;
+  typedef std::pair<int, edge> scheduling_edge;
   using ConstIncidenceIterator = std::vector<edge>::const_iterator;
   using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
+  using TBB = typename TypeTraits::TBB;
 
  private:
   using HyperGraph = typename TypeTraits::HyperGraph;
@@ -61,7 +64,9 @@ class QuotientGraphBlockScheduler {
     _block_pair_cut_he(context.partition.k,
                        std::vector<std::vector<HyperedgeID> >(context.partition.k,
                                                               std::vector<HyperedgeID>())),
-    _schedule_mutex() { }
+    _schedule_mutex(),
+    //_task_group(),
+    _tasks_on_numa(TBB::instance().num_used_numa_nodes(), 0) { }
 
   QuotientGraphBlockScheduler(const QuotientGraphBlockScheduler&) = delete;
   QuotientGraphBlockScheduler(QuotientGraphBlockScheduler&&) = delete;
@@ -87,19 +92,21 @@ class QuotientGraphBlockScheduler {
     }
   }
 
-  std::vector<edge> getInitialParallelEdges(){
-    std::vector<edge> initialEdges;
+  std::vector<scheduling_edge> getInitialParallelEdges(){
+    std::vector<scheduling_edge> initialEdges;
     for(auto const edge:_quotient_graph){
       if(_active_blocks[edge.first] && _active_blocks[edge.second]){
-        _round_edges.push_back(edge);
+        scheduling_edge sched_edge = std::make_pair(_hg.get_numa_node_of_blockpair(edge.first, edge.second),edge);
+        _round_edges.push_back(sched_edge);
       }
     }
 
     size_t N = _round_edges.size();
     for (size_t i = 0; i < N; ++i) {
-      const edge e = _round_edges[i];
+      const edge e = _round_edges[i].second;
       if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
-        initialEdges.push_back(e);
+        initialEdges.push_back(_round_edges[i]);
+        _tasks_on_numa[_round_edges[i].first] ++;
         _locked_blocks[e.first] = true;
         _locked_blocks[e.second] = true;
 
@@ -116,20 +123,25 @@ class QuotientGraphBlockScheduler {
     return initialEdges;
   }
 
-  void scheduleNextBlock(tbb::parallel_do_feeder<edge>& feeder, const PartitionID block_0, const PartitionID block_1){
+  std::vector<scheduling_edge> getNextBlockToSchedule(const scheduling_edge old_sched_edge){
     tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
+
     //unlock the blocks
-    _locked_blocks[block_0] = false;
-    _locked_blocks[block_1] = false;
+    _locked_blocks[old_sched_edge.second.first] = false;
+    _locked_blocks[old_sched_edge.second.second] = false;
 
     //start new flow-calclation for blocks
+    std::vector<scheduling_edge> new_sched_edges;
     size_t N = _round_edges.size();
     for (size_t i = 0; i < N; ++i) {
-      const edge e = _round_edges[i];
+      auto sched_edge = _round_edges[i];
+      const edge e = sched_edge.second;
       if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
         _locked_blocks[e.first] = true;
         _locked_blocks[e.second] = true;
-        feeder.add(e);
+        _tasks_on_numa[sched_edge.first] ++;
+
+        new_sched_edges.push_back(sched_edge);
 
         std::swap(_round_edges[i], _round_edges[N - 1]);
         _round_edges.pop_back();
@@ -137,7 +149,21 @@ class QuotientGraphBlockScheduler {
         --N;
       }
     }
+    _tasks_on_numa[old_sched_edge.first] --;
+    return new_sched_edges;
   }
+
+  size_t getNumberOfActiveTasks(){
+    size_t tasks = 0;
+    for(auto numa:_tasks_on_numa){
+      tasks += numa;
+    }
+    return tasks;
+  }
+
+  /* tbb::task_group& get_task_group(){
+    return _task_group;
+  }*/
 
   void randomShuffleQoutientEdges() {
     utils::Randomize::instance().shuffleVector(_quotient_graph);
@@ -159,9 +185,7 @@ class QuotientGraphBlockScheduler {
             return false;
           }
           cut_hyperedges.insert(he);
-        }
-        //TODO: Assertion fails very rarely, probably race condition?
-        
+        }    
         for (const HyperedgeID& he : _hg.edges()) {
           if (_hg.pinCountInPart(he, block0) > 0 &&
               _hg.pinCountInPart(he, block1) > 0) {
@@ -252,14 +276,17 @@ class QuotientGraphBlockScheduler {
   const Context& _context;
   std::vector<edge> _quotient_graph;
   //holds all eges, that are executed in that round (both blocks are active)
-  std::vector<edge> _round_edges;
+  std::vector<scheduling_edge> _round_edges;
 
   std::vector<bool> _active_blocks;
   std::vector<bool> _locked_blocks;
+  
 
   // Contains the cut hyperedges for each pair of blocks.
   std::vector<std::vector<std::vector<HyperedgeID> > > _block_pair_cut_he;
 
   tbb::spin_mutex _schedule_mutex;
+  std::vector<size_t> _tasks_on_numa;
+  //tbb::task_group _task_group;
 };
 }  // namespace mt-kahypar
