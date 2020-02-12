@@ -95,7 +95,7 @@ class FlowRefinerT final : public IRefiner{
             size_t current_round = 1;
 
             utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
-            while (active_blocks >= _context.refinement.flow.active_block_treshold) {
+            while (active_blocks >= 2) {
 
                 scheduler.randomShuffleQoutientEdges();
                 auto scheduling_edges = scheduler.getInitialParallelEdges();
@@ -119,7 +119,6 @@ class FlowRefinerT final : public IRefiner{
                     TBB::instance().wait(0);
                 }                
                 
-                //scheduler.get_task_group().wait();
                 //LOG << "ROUND done_______________________________________________________";
                 _hg.updateGlobalPartInfos();
 

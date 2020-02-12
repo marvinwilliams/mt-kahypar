@@ -213,7 +213,6 @@ struct FlowParameters {
   double execution_policy_alpha = 2.0;
   bool use_most_balanced_minimum_cut = true;
   bool use_improvement_history = true;
-  size_t active_block_treshold = 2;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const FlowParameters& params) {
@@ -224,7 +223,6 @@ inline std::ostream & operator<< (std::ostream& str, const FlowParameters& param
   str << "    Execution Policy Alpha:           " << params.execution_policy_alpha << std::endl;
   str << "    Use Most Balanced Minimum Cut:    " << std::boolalpha << params.use_most_balanced_minimum_cut << std::endl;
   str << "    Use Improvement History:          " << std::boolalpha << params.use_improvement_history << std::endl;
-  str << "    Active Block Threshold:           " <<  params.active_block_treshold << std::endl;
   return str;
 }
 
