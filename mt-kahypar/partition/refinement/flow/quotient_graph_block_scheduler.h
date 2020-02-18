@@ -87,17 +87,28 @@ class QuotientGraphBlockScheduler {
         }
       }
     }
+
+   std::vector<std::vector<int>> nodes_per_numa(_context.partition.k,std::vector<int>(TBB::instance().num_used_numa_nodes(), 0));
+    for(const HypernodeID& hn:_hg.nodes()){
+      nodes_per_numa[_hg.partID(hn)][_hg.get_numa_node_of_vertex(hn)] ++;
+    }
+
+
     for (const edge& e : edge_list) {
-      _quotient_graph.push_back(e);
+      std::vector<size_t> block_nodes_per_numa(TBB::instance().num_used_numa_nodes(), 0);
+      for(int i = 0; i < TBB::instance().num_used_numa_nodes(); i++){
+        block_nodes_per_numa[i] = nodes_per_numa[e.first][i] + nodes_per_numa[e.second][i];
+      }
+      int numa_node = distance(std::begin(block_nodes_per_numa), max_element(std::begin(block_nodes_per_numa), std::end(block_nodes_per_numa)));
+      _quotient_graph.push_back(std::make_pair(numa_node, e));
     }
   }
 
   std::vector<scheduling_edge> getInitialParallelEdges(){
     std::vector<scheduling_edge> initialEdges;
     for(auto const edge:_quotient_graph){
-      if(_active_blocks[edge.first] && _active_blocks[edge.second]){
-        scheduling_edge sched_edge = std::make_pair(_hg.get_numa_node_of_blockpair(edge.first, edge.second),edge);
-        _round_edges.push_back(sched_edge);
+      if(_active_blocks[edge.second.first] && _active_blocks[edge.second.second]){
+        _round_edges.push_back(edge);
       }
     }
 
@@ -160,10 +171,6 @@ class QuotientGraphBlockScheduler {
     }
     return tasks;
   }
-
-  /* tbb::task_group& get_task_group(){
-    return _task_group;
-  }*/
 
   void randomShuffleQoutientEdges() {
     utils::Randomize::instance().shuffleVector(_quotient_graph);
@@ -274,7 +281,7 @@ class QuotientGraphBlockScheduler {
 
   HyperGraph& _hg;
   const Context& _context;
-  std::vector<edge> _quotient_graph;
+  std::vector<scheduling_edge> _quotient_graph;
   //holds all eges, that are executed in that round (both blocks are active)
   std::vector<scheduling_edge> _round_edges;
 
@@ -287,6 +294,5 @@ class QuotientGraphBlockScheduler {
 
   tbb::spin_mutex _schedule_mutex;
   std::vector<size_t> _tasks_on_numa;
-  //tbb::task_group _task_group;
 };
 }  // namespace mt-kahypar
