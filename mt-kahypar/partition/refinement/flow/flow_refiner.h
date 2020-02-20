@@ -12,6 +12,8 @@
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_array.h"
 
+#include "mt-kahypar/parallel/tbb_numa_arena.h"
+
 #include "mt-kahypar/datastructures/flow_network.h"
 
 namespace mt_kahypar {
@@ -28,7 +30,6 @@ class FlowRefinerT final : public IRefiner{
         using GainCalculator = GainPolicy<HyperGraph>;
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
-        using scheduling_edge = std::pair<int, Edge>;
 
         using FlowNetwork = ds::FlowNetwork<TypeTraits>;
         using MaximumFlow = IBFS<TypeTraits, FlowNetwork>;
@@ -46,7 +47,8 @@ class FlowRefinerT final : public IRefiner{
             _current_level(0),
             _execution_policy(context.refinement.flow.execution_policy_alpha),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
-            _round_delta(0) {
+            _round_delta(0),
+            _start_new_parallel_do(TBB::instance().num_used_numa_nodes()) {
                 initialize();
         }
 
@@ -102,22 +104,17 @@ class FlowRefinerT final : public IRefiner{
                 _round_delta = 0;
 
                 //parallel here
-                for(auto sched_edge:scheduling_edges){
-                    int numa_node = sched_edge.first;
-                    //LOG << "Scheduling on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
-                    TBB::instance().numa_task_arena(numa_node).execute([&, sched_edge] {
-                        TBB::instance().numa_task_group(0, numa_node).run([&, sched_edge] {
-                        //scheduler.get_task_group().run([&, sched_edge] {
-                            parallelFlowCalculation(sched_edge, current_round, improvement, scheduler);
+                TBB::instance().execute_parallel_on_all_numa_nodes(TBBNumaArena::GLOBAL_TASK_GROUP, [&](const int node) {
+                    tbb::parallel_do(scheduling_edges[node],
+                    [&](Edge e,
+                        tbb::parallel_do_feeder<Edge>& feeder){
+                            parallelFlowCalculation(e, node, current_round, improvement, scheduler, feeder);
                         });
-                    });
-                }
-                
-                // can't just wait, because taskgroups enqueue into each other and can be empty at times.
-                // call wait anyway to not wait busy.
+                });
+
                 while(scheduler.getNumberOfActiveTasks() > 0){
                     TBB::instance().wait(0);
-                }                
+                }              
                 
                 //LOG << "ROUND done_______________________________________________________";
                 _hg.updateGlobalPartInfos();
@@ -148,10 +145,10 @@ class FlowRefinerT final : public IRefiner{
             return improvement;
         }
 
-        void parallelFlowCalculation(scheduling_edge sched_edge,const size_t & current_round, bool & improvement,
-            QuotientGraphBlockScheduler<TypeTraits> & scheduler){
-            const PartitionID block_0 = sched_edge.second.first;
-            const PartitionID block_1 = sched_edge.second.second;
+        void parallelFlowCalculation(Edge edge,const int node, const size_t & current_round, bool & improvement,
+            QuotientGraphBlockScheduler<TypeTraits> & scheduler, tbb::parallel_do_feeder<Edge>& feeder){
+            const PartitionID block_0 = edge.first;
+            const PartitionID block_1 = edge.second;
 
             _hg.updateLocalPartInfos(block_0, block_1);
 
@@ -162,7 +159,7 @@ class FlowRefinerT final : public IRefiner{
             //            second iteration of active block scheduling
             if (_context.refinement.flow.use_improvement_history &&
                 current_round > 1 && _num_improvements[block_0][block_1] == 0) {
-                scheduleNextBlocks(sched_edge, current_round, improvement, scheduler);
+                scheduleNextBlocks(edge, node, current_round, improvement,scheduler, feeder);
                 //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
                 return;
             }
@@ -176,34 +173,28 @@ class FlowRefinerT final : public IRefiner{
                 _num_improvements[block_0][block_1]++;
             }
 
-            scheduleNextBlocks(sched_edge, current_round, improvement, scheduler);
+            scheduleNextBlocks(edge, node, current_round, improvement,scheduler, feeder);
             //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
         }
 
-        void scheduleNextBlocks(scheduling_edge old_sched_edge, const size_t & current_round, bool & improvement,
-            QuotientGraphBlockScheduler<TypeTraits> & scheduler){
-               auto new_sched_edges = scheduler.getNextBlockToSchedule(old_sched_edge);
-               for(auto sched_edge:new_sched_edges){
-                    int numa_node = sched_edge.first;
-
-                    //LOG << "Scheduling from inside on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second
-                    //<< " started by:[" << old_sched_edge.second.first << "," << old_sched_edge.second.second <<"]";
-                    if(numa_node == old_sched_edge.first){
-                        TBB::instance().numa_task_arena(numa_node).execute([&, sched_edge] {
-                            TBB::instance().numa_task_group(0, sched_edge.first).run([&, sched_edge] {
-                            //scheduler.get_task_group().run([&, sched_edge] {
-                                parallelFlowCalculation(sched_edge, current_round, improvement, scheduler);
-                            });
+        void scheduleNextBlocks(Edge old_edge, int node, const size_t & current_round, bool & improvement,
+            QuotientGraphBlockScheduler<TypeTraits> & scheduler, tbb::parallel_do_feeder<Edge>& feeder){
+            //start new tasks on this numa node
+            auto sched_edges = scheduler.scheduleNextBlocks(old_edge, node, feeder);
+            //start new parallel do on stalled numa nodes
+            for(const auto sched_edge:sched_edges){
+                _start_new_parallel_do[sched_edge.first] = std::vector<Edge>{sched_edge.second};
+                int numa_to_start = sched_edge.first;
+                TBB::instance().numa_task_arena(numa_to_start).execute([&] {
+                    TBB::instance().numa_task_group(TBBNumaArena::GLOBAL_TASK_GROUP, numa_to_start).run([&, numa_to_start] {
+                        tbb::parallel_do(_start_new_parallel_do[numa_to_start],
+                            [&](Edge e,
+                                tbb::parallel_do_feeder<Edge>& newfeeder){
+                                    parallelFlowCalculation(e, numa_to_start, current_round, improvement, scheduler, newfeeder);
                         });
-                    } else{
-                        TBB::instance().numa_task_arena(numa_node).enqueue([&, sched_edge] {
-                            TBB::instance().numa_task_group(0, sched_edge.first).run([&, sched_edge] {
-                            //scheduler.get_task_group().run([&, sched_edge] {
-                                parallelFlowCalculation(sched_edge, current_round, improvement, scheduler);
-                            });
-                        });
-                    }
-               }
+                    });
+                });   
+            }
         }
 
         bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1,
@@ -349,6 +340,7 @@ class FlowRefinerT final : public IRefiner{
     ExecutionPolicy _execution_policy;
     std::vector<std::vector<size_t> > _num_improvements;
     tbb::atomic<HyperedgeWeight> _round_delta;
+    std::vector<std::vector<Edge>> _start_new_parallel_do;
 };
 
 
