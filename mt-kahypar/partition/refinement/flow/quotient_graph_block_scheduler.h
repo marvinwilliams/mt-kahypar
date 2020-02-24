@@ -107,6 +107,7 @@ class QuotientGraphBlockScheduler {
   }
 
   std::vector<std::vector<edge>> getInitialParallelEdges(){
+    utils::Timer::instance().start_timer("initscheduling", "Initial Scheduling ");
     std::vector<std::vector<edge>> initialEdges(_num_numa_nodes);
 
     for (size_t i = 0; i < _num_numa_nodes; i++){
@@ -117,23 +118,34 @@ class QuotientGraphBlockScheduler {
       }
     }
     
-    //TODO: split work fairer among numa nodes
-    for (size_t numa = 0; numa < _num_numa_nodes; numa++){
-      size_t N = _round_edges[numa].size();
-      for (size_t i = 0; i < N; ++i) {
-        const edge e = _round_edges[numa][i];
-        if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
-          initialEdges[numa].push_back(_round_edges[numa][i]);
-          _tasks_on_numa[numa] ++;
-          _locked_blocks[e.first] = true;
-          _locked_blocks[e.second] = true;
+    //split work round-robin style among numa nodes
 
-          std::swap(_round_edges[numa][i], _round_edges[numa][N - 1]);
-          _round_edges[numa].pop_back();
-          --i;
-          --N;
+    //vector for right access after Edges get scheduled
+    std::vector<int> scheduled_on_numa(_num_numa_nodes, 0);
+    int i = 0;
+    bool numa_has_edges = true;
+    while(numa_has_edges){
+      numa_has_edges = false;
+      for (size_t numa = 0; numa < _num_numa_nodes; numa++){
+        size_t numa_i = i - scheduled_on_numa[numa];
+        if(numa_i < _round_edges[numa].size()){
+          numa_has_edges = true;
+          const edge e = _round_edges[numa][numa_i];
+          if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
+            initialEdges[numa].push_back(_round_edges[numa][numa_i]);
+            _tasks_on_numa[numa] ++;
+            scheduled_on_numa[numa]++;
+            _locked_blocks[e.first] = true;
+            _locked_blocks[e.second] = true;
+
+            //delete edge in round_edges
+            size_t N = _round_edges[numa].size();
+            std::swap(_round_edges[numa][numa_i], _round_edges[numa][N - 1]);
+            _round_edges[numa].pop_back();
+          }
         }
       }
+      i++;
     }
 
     //test if there is a NUMA node with no initial work but with work left in this round.
@@ -147,13 +159,14 @@ class QuotientGraphBlockScheduler {
     //reset active-array before each round
     //blocks are set active, if improvement was found
     _active_blocks.assign(_context.partition.k, false);
-
+    
+    utils::Timer::instance().stop_timer("initscheduling");
     return initialEdges;
   }
 
   std::vector<scheduling_edge> scheduleNextBlocks(const edge old_edge, const int node, tbb::parallel_do_feeder<edge>& feeder){
     tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
-
+    utils::Timer::instance().start_timer("schedule", "Scheduling Next Blocks ");
     //unlock the blocks
     _locked_blocks[old_edge.first] = false;
     _locked_blocks[old_edge.second] = false;
@@ -213,6 +226,7 @@ class QuotientGraphBlockScheduler {
     }
 
     _tasks_on_numa[node] --;
+    utils::Timer::instance().stop_timer("schedule");
     return sched_edges;
   }
 
