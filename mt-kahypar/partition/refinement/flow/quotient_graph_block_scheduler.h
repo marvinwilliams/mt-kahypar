@@ -159,14 +159,13 @@ class QuotientGraphBlockScheduler {
     //reset active-array before each round
     //blocks are set active, if improvement was found
     _active_blocks.assign(_context.partition.k, false);
-    
+
     utils::Timer::instance().stop_timer("initscheduling");
     return initialEdges;
   }
 
   std::vector<scheduling_edge> scheduleNextBlocks(const edge old_edge, const int node, tbb::parallel_do_feeder<edge>& feeder){
     tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
-    utils::Timer::instance().start_timer("schedule", "Scheduling Next Blocks ");
     //unlock the blocks
     _locked_blocks[old_edge.first] = false;
     _locked_blocks[old_edge.second] = false;
@@ -226,7 +225,6 @@ class QuotientGraphBlockScheduler {
     }
 
     _tasks_on_numa[node] --;
-    utils::Timer::instance().stop_timer("schedule");
     return sched_edges;
   }
 

@@ -179,6 +179,7 @@ class FlowRefinerT final : public IRefiner{
 
         void scheduleNextBlocks(Edge old_edge, int node, const size_t & current_round, bool & improvement,
             QuotientGraphBlockScheduler<TypeTraits> & scheduler, tbb::parallel_do_feeder<Edge>& feeder){
+            utils::Timer::instance().start_timer("schedule", "Scheduling Next Blocks ", true);
             //start new tasks on this numa node
             auto sched_edges = scheduler.scheduleNextBlocks(old_edge, node, feeder);
             //start new parallel do on stalled numa nodes
@@ -195,6 +196,7 @@ class FlowRefinerT final : public IRefiner{
                     });
                 });   
             }
+            utils::Timer::instance().stop_timer("schedule");
         }
 
         bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1,
