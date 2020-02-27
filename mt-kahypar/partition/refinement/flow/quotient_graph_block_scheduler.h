@@ -219,11 +219,35 @@ class QuotientGraphBlockScheduler {
     }
 
     // check if this is the last running task on the numa node and if there are still tasks
-    // left to do on the numa node.
+    // left to do on the numa node. Try to steal a task from another numa-node to keep running
+    // if not possible add this numa node to _empty_numas
     if(_tasks_on_numa[node] == 1 && _round_edges[node].size() > 0){
+      for (size_t numa = 0; numa < _num_numa_nodes; numa++){
+      size_t N = _round_edges[numa].size();
+        for (size_t i = 0; i < N; ++i) {
+          auto e = _round_edges[numa][i];
+          if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
+            _locked_blocks[e.first] = true;
+            _locked_blocks[e.second] = true;
+            _tasks_on_numa[node] ++;
+
+            //start new
+            feeder.add(e);
+
+            std::swap(_round_edges[numa][i], _round_edges[numa][N - 1]);
+            _round_edges[numa].pop_back();
+            --i;
+            --N;
+            // return if a task could be stolen 
+            _tasks_on_numa[node] --;
+            return sched_edges;
+          }
+        }
+      }
+      LOG << "numa got empty" << V(node);
       _empty_numas.push_back(node);
     }
-
+    
     _tasks_on_numa[node] --;
     return sched_edges;
   }
