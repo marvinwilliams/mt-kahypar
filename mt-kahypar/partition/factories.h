@@ -26,10 +26,9 @@
 #include "kahypar/meta/static_multi_dispatch_factory.h"
 #include "kahypar/meta/typelist.h"
 
-#include "mt-kahypar/partition/coarsening/community_coarsener.h"
+#include "mt-kahypar/partition/coarsening/multilevel_coarsener.h"
 #include "mt-kahypar/partition/coarsening/i_coarsener.h"
 #include "mt-kahypar/partition/coarsening/policies/rating_acceptance_policy.h"
-#include "mt-kahypar/partition/coarsening/policies/rating_community_policy.h"
 #include "mt-kahypar/partition/coarsening/policies/rating_heavy_node_penalty_policy.h"
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/initial_partitioning/i_initial_partitioner.h"
@@ -40,7 +39,6 @@
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
 #include "mt-kahypar/partition/refinement/flow/flow_refiner.h"
-#include "mt-kahypar/partition/refinement/policies/execution_policy.h"
 
 namespace mt_kahypar {
 using RedistributionFactory = kahypar::meta::Factory<CommunityAssignmentStrategy,
@@ -53,38 +51,25 @@ using BinPackingCommunityAssignmentDispatcher = kahypar::meta::StaticMultiDispat
 using CoarsenerFactory = kahypar::meta::Factory<CoarseningAlgorithm,
                                                 ICoarsener* (*)(Hypergraph&, const Context&, const TaskGroupID)>;
 
-using CommunityCoarsenerDispatcher = kahypar::meta::StaticMultiDispatchFactory<CommunityCoarsener,
-                                                                               ICoarsener,
-                                                                               kahypar::meta::Typelist<RatingScorePolicies,
-                                                                                                       HeavyNodePenaltyPolicies,
-                                                                                                       AcceptancePolicies,
-                                                                                                       ObjectivePolicyClasses> >;
+using MultilevelCoarsenerDispatcher = kahypar::meta::StaticMultiDispatchFactory<MultilevelCoarsener,
+                                                                                ICoarsener,
+                                                                                kahypar::meta::Typelist<RatingScorePolicies,
+                                                                                                        HeavyNodePenaltyPolicies,
+                                                                                                        AcceptancePolicies> >;
 
 using FlatInitialPartitionerFactory = kahypar::meta::Factory<InitialPartitioningAlgorithm,
                                                              tbb::task* (*)(tbb::task*, const InitialPartitioningAlgorithm, InitialPartitioningDataContainer&, const Context&)>;
 
 using InitialPartitionerFactory = kahypar::meta::Factory<InitialPartitioningMode,
-                                                         IInitialPartitioner* (*)(Hypergraph&, const Context&, const bool, const TaskGroupID)>;
+                                                         IInitialPartitioner* (*)(PartitionedHypergraph<>&, const Context&, const bool, const TaskGroupID)>;
 
 
 
 using LabelPropagationFactory = kahypar::meta::Factory<LabelPropagationAlgorithm,
-                                                       IRefiner* (*)(Hypergraph&, const Context&, const TaskGroupID)>;
-
-using LabelPropagationKm1Dispatcher = kahypar::meta::StaticMultiDispatchFactory<LabelPropagationKm1Refiner,
-                                                                                IRefiner,
-                                                                                kahypar::meta::Typelist<ExecutionPolicyClasses> >;
-
-using LabelPropagationCutDispatcher = kahypar::meta::StaticMultiDispatchFactory<LabelPropagationCutRefiner,
-                                                                                IRefiner,
-                                                                                kahypar::meta::Typelist<ExecutionPolicyClasses>>;
+                                                       IRefiner* (*)(PartitionedHypergraph<>&, const Context&, const TaskGroupID)>;
 
 using FlowFactory = kahypar::meta::Factory<FlowAlgorithm,
-                                           IRefiner* (*)(Hypergraph&, const Context&)>;
+                                           IRefiner* (*)(PartitionedHypergraph<>&, const Context&, const TaskGroupID)>;
 
-using FlowDispatcher = kahypar::meta::StaticMultiDispatchFactory<FlowRefiner,
-                                                                 IRefiner,
-                                                                 kahypar::meta::Typelist<ExecutionPolicyClasses>>;
-
-} //namespace mt-kahypar
+} // namespace mt-kahypar
 

@@ -107,7 +107,6 @@ class TBBNumaArena {
 
   tbb::task_group& numa_task_group(const TaskGroupID task_group_id, const int node) {
     std::shared_lock<std::shared_timed_mutex> read_lock(_task_group_read_write_mutex);
-    ASSERT(task_group_id < _groups.size());
     ASSERT(static_cast<size_t>(node) <= _groups[task_group_id].size());
     return _groups[task_group_id][node].task_group;
   }
@@ -143,7 +142,7 @@ class TBBNumaArena {
   template <typename F>
   void execute_parallel_on_all_numa_nodes(const TaskGroupID task_group_id, F&& func) {
     for (int node = 0; node < num_used_numa_nodes(); ++node) {
-      numa_task_arena(node).execute([&] {
+      numa_task_arena(node).execute([&, node] {
             numa_task_group(task_group_id, node).run([&, node] {
               func(node);
             });

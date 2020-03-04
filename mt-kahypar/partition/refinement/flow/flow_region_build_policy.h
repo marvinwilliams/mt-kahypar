@@ -37,7 +37,7 @@ template< typename TypeTraits>
 class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
 
   private:
-    using HyperGraph = typename TypeTraits::HyperGraph;
+    using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
 
 
  public:
@@ -91,7 +91,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
 template< typename TypeTraits>
 class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
   private:
-    using HyperGraph = typename TypeTraits::HyperGraph;
+    using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
  public:
   template <class Network = Mandatory>
   inline static void buildFlowNetwork(HyperGraph& hg,
@@ -123,18 +123,18 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     const HypernodeWeight max_part_weight_0 =
       std::max(((1.0 + std::min(alpha * context.partition.epsilon, 0.5))
                 * context.partition.perfect_balance_part_weights[1]
-                - hg.localPartWeight(block_1)), 0.0);
+                - hg.partWeight(block_1)), 0.0);
     const HypernodeWeight max_part_weight_1 =
       std::max(((1.0 + std::min(alpha * context.partition.epsilon, 0.5))
                 * context.partition.perfect_balance_part_weights[0]
-                - hg.localPartWeight(block_0)), 0.0);
+                - hg.partWeight(block_0)), 0.0);
 
     const HypernodeID num_nodes_block_0 = FlowRegionBuildPolicy<TypeTraits>::bfs(hg, flow_network,
                                                                      start_nodes_block_0,
                                                                      block_0,
                                                                      max_part_weight_0,
                                                                      visited);
-    if (num_nodes_block_0 == hg.localPartSize(block_0)) {
+    if (num_nodes_block_0 == hg.partSize(block_0)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_0 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));
       flow_network.removeHypernode(hg, last_hn_block_0);
@@ -146,7 +146,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      block_1,
                                                                      max_part_weight_1,
                                                                      visited);
-    if (num_nodes_block_1 == hg.localPartSize(block_1)) {
+    if (num_nodes_block_1 == hg.partSize(block_1)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_1 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));
       flow_network.removeHypernode(hg, last_hn_block_1);

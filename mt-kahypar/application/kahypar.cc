@@ -22,11 +22,13 @@
 
 #include "mt-kahypar/application/command_line_options.h"
 #include "mt-kahypar/definitions.h"
+#include "mt-kahypar/mt_kahypar.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/io/sql_plottools_serializer.h"
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/partitioner.h"
 
+#include "mt-kahypar/utils/profiler.h"
 #include "mt-kahypar/utils/randomize.h"
 #include "mt-kahypar/utils/timer.h"
 
@@ -49,23 +51,41 @@ int main(int argc, char* argv[]) {
   mt_kahypar::TBBNumaArena::instance(context.shared_memory.num_threads);
 
   // Read Hypergraph
-  mt_kahypar::Hypergraph hypergraph = mt_kahypar::io::readHypergraphFile(
-    context.partition.graph_filename, context.partition.k,
-    context.shared_memory.initial_hyperedge_distribution);
+  mt_kahypar::Hypergraph hypergraph = mt_kahypar::io::readHypergraphFile<
+    mt_kahypar::Hypergraph, mt_kahypar::HypergraphFactory>(
+      context.partition.graph_filename, mt_kahypar::TBBNumaArena::GLOBAL_TASK_GROUP);
+
+  if ( context.partition.enable_profiler ) {
+    mt_kahypar::utils::Profiler::instance(context.partition.snapshot_interval).start();
+  }
 
   // Partition Hypergraph
   mt_kahypar::HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
-  mt_kahypar::partition::Partitioner().partition(hypergraph, context);
+  mt_kahypar::PartitionedHypergraph<> partitioned_hypergraph =
+    mt_kahypar::partition::Partitioner(context).partition(hypergraph);
   mt_kahypar::HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
+
+  if ( context.partition.enable_profiler ) {
+    mt_kahypar::utils::Profiler::instance().stop();
+  }
 
   // Print Stats
   std::chrono::duration<double> elapsed_seconds(end - start);
-  mt_kahypar::io::printPartitioningResults(hypergraph, context, elapsed_seconds);
-  if ( context.partition.sp_process_output ) {
-    std::cout << mt_kahypar::io::serializer::serialize(hypergraph, context, elapsed_seconds) << std::endl;
+  mt_kahypar::io::printPartitioningResults(
+    partitioned_hypergraph, context, elapsed_seconds);
+
+  if ( context.partition.enable_profiler ) {
+    std::cout << mt_kahypar::utils::Profiler::instance() << std::endl;
   }
+
+  if ( context.partition.sp_process_output ) {
+    std::cout << mt_kahypar::io::serializer::serialize(
+      partitioned_hypergraph, context, elapsed_seconds) << std::endl;
+  }
+
   if (context.partition.write_partition_file) {
-    mt_kahypar::io::writePartitionFile(hypergraph, context.partition.graph_partition_filename);
+    mt_kahypar::io::writePartitionFile(
+      partitioned_hypergraph, context.partition.graph_partition_filename);
   }
 
   mt_kahypar::TBBNumaArena::instance().terminate();

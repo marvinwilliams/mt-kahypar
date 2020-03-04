@@ -30,11 +30,33 @@ class HeavyEdgeScore final : public kahypar::meta::PolicyBase {
  public:
   template <typename HyperGraph>
   KAHYPAR_ATTRIBUTE_ALWAYS_INLINE static inline RatingType score(const HyperGraph& hypergraph,
+                                                                 const HyperedgeID he) {
+    return static_cast<RatingType>(hypergraph.edgeWeight(he)) / (hypergraph.edgeSize(he) - 1);
+  }
+
+  template <typename HyperGraph>
+  KAHYPAR_ATTRIBUTE_ALWAYS_INLINE static inline RatingType score(const HyperGraph& hypergraph,
                                                                  const HyperedgeID he,
                                                                  const PartitionID community_id) {
     return static_cast<RatingType>(hypergraph.edgeWeight(he, community_id)) / (hypergraph.edgeSize(he) - 1);
   }
 };
 
-using RatingScorePolicies = kahypar::meta::Typelist<HeavyEdgeScore>;
+class SamenessScore final : public kahypar::meta::PolicyBase {
+ public:
+  template <typename HyperGraph>
+  KAHYPAR_ATTRIBUTE_ALWAYS_INLINE static inline RatingType score(const HyperGraph& hypergraph,
+                                                                 const HyperedgeID he) {
+    return static_cast<RatingType>(hypergraph.edgeWeight(he));
+  }
+
+  template <typename HyperGraph>
+  KAHYPAR_ATTRIBUTE_ALWAYS_INLINE static inline RatingType score(const HyperGraph& hypergraph,
+                                                                 const HyperedgeID he,
+                                                                 const PartitionID community_id) {
+    return static_cast<RatingType>(hypergraph.edgeWeight(he, community_id));
+  }
+};
+
+using RatingScorePolicies = kahypar::meta::Typelist<HeavyEdgeScore, SamenessScore>;
 }  // namespace mt_kahypar

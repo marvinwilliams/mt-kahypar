@@ -22,6 +22,7 @@
 
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/metrics.h"
+#include "mt-kahypar/utils/memory_tree.h"
 #include "mt-kahypar/utils/timer.h"
 
 namespace mt_kahypar {
@@ -150,7 +151,8 @@ static inline void printBanner(const Context& context) {
   }
 }
 
-inline void printHypergraphInfo(const Hypergraph& hypergraph, const std::string& name) {
+template<typename HyperGraph>
+inline void printHypergraphInfo(const HyperGraph& hypergraph, const std::string& name) {
   std::vector<HypernodeID> he_sizes;
   std::vector<HyperedgeWeight> he_weights;
   std::vector<HyperedgeID> hn_degrees;
@@ -210,7 +212,6 @@ inline void printHypergraphInfo(const Hypergraph& hypergraph, const std::string&
 
   LOG << "Hypergraph Information";
   LOG << "Name :" << name;
-  // LOG << "Type:" << hypergraph.typeAsString();
   LOG << "# HNs :" << num_hypernodes
       << "# HEs :" << num_hyperedges
       << "# pins:" << num_pins;
@@ -220,6 +221,13 @@ inline void printHypergraphInfo(const Hypergraph& hypergraph, const std::string&
     internal::createStats(he_weights, avg_he_weight, stdev_he_weight),
     internal::createStats(hn_degrees, avg_hn_degree, stdev_hn_degree),
     internal::createStats(hn_weights, avg_hn_weight, stdev_hn_weight));
+
+  // Print Memory Consumption
+  utils::MemoryTreeNode hypergraph_memory_consumption("Hypergraph", utils::OutputType::MEGABYTE);
+  hypergraph.memoryConsumption(&hypergraph_memory_consumption);
+  hypergraph_memory_consumption.finalize();
+  LOG << "\nHypergraph Memory Consumption";
+  LOG << hypergraph_memory_consumption;
 }
 
 inline void printCommunityInformation(const Hypergraph& hypergraph) {
@@ -268,10 +276,10 @@ inline void printCommunityInformation(const Hypergraph& hypergraph) {
     internal::createStats(community_degrees, avg_community_degree, stdev_community_degree));
 }
 
-inline void printPartSizesAndWeights(const Hypergraph& hypergraph, const Context& context) {
+inline void printPartSizesAndWeights(const PartitionedHypergraph<>& hypergraph, const Context& context) {
   HypernodeID max_part_size = 0;
   for (PartitionID i = 0; i != hypergraph.k(); ++i) {
-    max_part_size = std::max(max_part_size, hypergraph.partSize(i));
+    max_part_size = std::max(max_part_size, ID(hypergraph.partSize(i)));
   }
   const uint8_t part_digits = kahypar::math::digits(max_part_size);
   const uint8_t k_digits = kahypar::math::digits(hypergraph.k());
@@ -289,7 +297,7 @@ inline void printPartSizesAndWeights(const Hypergraph& hypergraph, const Context
   }
 }
 
-static inline void printPartitioningResults(const Hypergraph& hypergraph,
+static inline void printPartitioningResults(const PartitionedHypergraph<>& hypergraph,
                                             const Context& context,
                                             const std::string& description) {
   if (context.partition.verbose_output) {
@@ -351,19 +359,18 @@ static inline void printLocalSearchBanner(const Context& context) {
   }
 }
 
-inline void printObjectives(const Hypergraph& hypergraph,
+inline void printObjectives(const PartitionedHypergraph<>& hypergraph,
                             const Context& context,
                             const std::chrono::duration<double>& elapsed_seconds) {
   LOG << "Objectives:";
   LOG << " Hyperedge Cut  (minimize) =" << metrics::hyperedgeCut(hypergraph);
   LOG << " SOED           (minimize) =" << metrics::soed(hypergraph);
   LOG << " (k-1)          (minimize) =" << metrics::km1(hypergraph);
-  LOG << " Absorption     (maximize) =" << metrics::absorption(hypergraph);
   LOG << " Imbalance                 =" << metrics::imbalance(hypergraph, context);
   LOG << " Partitioning Time         =" << elapsed_seconds.count() << "s";
 }
 
-inline void printPartitioningResults(const Hypergraph& hypergraph,
+inline void printPartitioningResults(const PartitionedHypergraph<>& hypergraph,
                                      const Context& context,
                                      const std::chrono::duration<double>& elapsed_seconds) {
   unused(hypergraph);

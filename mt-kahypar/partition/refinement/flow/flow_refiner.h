@@ -18,16 +18,12 @@
 
 namespace mt_kahypar {
 
-template< typename TypeTraits,
-          typename ExecutionPolicy,
-          template<typename> class GainPolicy >
+template< typename TypeTraits >
 class FlowRefinerT final : public IRefiner{
     private:
-        using HyperGraph = typename TypeTraits::HyperGraph;
-        using StreamingHyperGraph = typename TypeTraits::StreamingHyperGraph;
+        using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
         using TBB = typename TypeTraits::TBB;
         using HwTopology = typename TypeTraits::HwTopology;
-        using GainCalculator = GainPolicy<HyperGraph>;
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
@@ -36,21 +32,32 @@ class FlowRefinerT final : public IRefiner{
         using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
         using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
 
+        struct FlowConfig {
+            explicit FlowConfig(HyperGraph& hg) :
+                hypergraph(hg),
+                flow_network(
+                   hypergraph.initialNumNodes(), hypergraph.initialNumEdges(),
+                   hypergraph.initialNumNodes() + 2 * hypergraph.initialNumEdges()),
+                maximum_flow(
+                   hypergraph.initialNumNodes() + 2 * hypergraph.initialNumEdges(),
+                   hypergraph.initialNumNodes()),
+                visited(hypergraph.initialNumNodes() + hypergraph.initialNumEdges()) { }
+
+            HyperGraph& hypergraph;
+            ThreadLocalFlowNetwork flow_network;
+            ThreadLocalMaximumFlow maximum_flow;
+            ThreadLocalFastResetFlagArray visited;
+        };
+
     public:
-        explicit FlowRefinerT(HyperGraph& hypergraph, const Context& context):
-            _hg(hypergraph),
+        explicit FlowRefinerT(HyperGraph&,
+                              const Context& context,
+                              const TaskGroupID task_group_id) :
             _context(context),
-            _flow_network(_hg.initialNumNodes(), _hg.initialNumEdges(), _hg.initialNumNodes() + 2 * _hg.initialNumEdges()),
-            _maximum_flow(_hg.initialNumNodes() + 2 * _hg.initialNumEdges(), _hg.initialNumNodes()),
-            _visited(_hg.initialNumNodes() + _hg.initialNumEdges()),
-            _current_num_nodes(0),
-            _current_level(0),
-            _execution_policy(context.refinement.flow.execution_policy_alpha),
+            _task_group_id(task_group_id),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
             _round_delta(0),
-            _start_new_parallel_do(TBB::instance().num_used_numa_nodes()) {
-                initialize();
-        }
+            _start_new_parallel_do(TBB::instance().num_used_numa_nodes()) { }
 
         FlowRefinerT(const FlowRefinerT&) = delete;
         FlowRefinerT(FlowRefinerT&&) = delete;
@@ -59,26 +66,13 @@ class FlowRefinerT final : public IRefiner{
         FlowRefinerT& operator= (FlowRefinerT&&) = delete;
 
     private:
-        void initialize() {
-            for ( const HypernodeID& hn : _hg.nodes() ) {
-                unused(hn);
-                ++_current_num_nodes;
-            }
-            _execution_policy.initialize(_hg, _current_num_nodes);
-        }
-
-        bool refineImpl(const parallel::scalable_vector<HypernodeID>& refinement_nodes,
+        bool refineImpl(HyperGraph& hypergraph,
+                        const parallel::scalable_vector<HypernodeID>&,
                         kahypar::Metrics& best_metrics) override final {
-            // flow refinement is not executed on all levels of the n-level hierarchy.
-            // If flow should be executed on the current level is determined by the execution policy.
-            ASSERT(refinement_nodes.size() % 2 == 0);
-            _current_level += refinement_nodes.size() / 2;
-            _current_num_nodes += refinement_nodes.size() / 2;
-            if ( !_execution_policy.execute(_current_level) ) {
-                return false;
-            }
 
             utils::Timer::instance().start_timer("flow", "Flow");
+
+            FlowConfig config(hypergraph);
 
             // Initialize Quotient Graph
             // 1.) Contains edges between each adjacent block of the partition
@@ -87,7 +81,7 @@ class FlowRefinerT final : public IRefiner{
             // NOTE(heuer): If anything goes wrong in integration experiments,
             //              this should be moved inside while loop.
             utils::Timer::instance().start_timer("build_quotient_graph", "Build Quotient Graph");
-            QuotientGraphBlockScheduler<TypeTraits> scheduler(_hg, _context);
+            QuotientGraphBlockScheduler<TypeTraits> scheduler(hypergraph, _context);
             scheduler.buildQuotientGraph();
             utils::Timer::instance().stop_timer("build_quotient_graph");
 
@@ -108,25 +102,26 @@ class FlowRefinerT final : public IRefiner{
                     tbb::parallel_do(scheduling_edges[node],
                     [&](Edge e,
                         tbb::parallel_do_feeder<Edge>& feeder){
-                            parallelFlowCalculation(e, node, current_round, improvement, scheduler, feeder);
+                            parallelFlowCalculation(
+                                config, e, node, current_round,
+                                improvement, scheduler, feeder);
                         });
                 });
 
                 while(scheduler.getNumberOfActiveTasks() > 0){
                     TBB::instance().wait(0);
-                }              
-                
+                }
+
                 //LOG << "ROUND done_______________________________________________________";
-                _hg.updateGlobalPartInfos();
 
                 HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
-                double current_imbalance = metrics::imbalance(_hg, _context);
+                double current_imbalance = metrics::imbalance(hypergraph, _context);
 
                 //check if the metric improved as exspected
-                ASSERT(current_metric == metrics::objective(_hg, _context.partition.objective),
+                ASSERT(current_metric == metrics::objective(hypergraph, _context.partition.objective),
                         "Sum of deltas is not the global improvement!"
                         << V(_context.partition.objective)
-                        << V(metrics::objective(_hg, _context.partition.objective))
+                        << V(metrics::objective(hypergraph, _context.partition.objective))
                         << V(_round_delta)
                         << V(current_metric));
 
@@ -145,12 +140,18 @@ class FlowRefinerT final : public IRefiner{
             return improvement;
         }
 
-        void parallelFlowCalculation(Edge edge,const int node, const size_t & current_round, bool & improvement,
-            QuotientGraphBlockScheduler<TypeTraits> & scheduler, tbb::parallel_do_feeder<Edge>& feeder){
+
+        void initializeImpl(HyperGraph&) override final { }
+
+        void parallelFlowCalculation(FlowConfig& config,
+                                     const Edge& edge,
+                                     const int node,
+                                     const size_t& current_round,
+                                     bool& improvement,
+                                     QuotientGraphBlockScheduler<TypeTraits>& scheduler,
+                                     tbb::parallel_do_feeder<Edge>& feeder) {
             const PartitionID block_0 = edge.first;
             const PartitionID block_1 = edge.second;
-
-            _hg.updateLocalPartInfos(block_0, block_1);
 
             //LOG<< V(sched_getcpu()) << "computing:" V(block_0) << "and" << V(block_1);
 
@@ -159,12 +160,14 @@ class FlowRefinerT final : public IRefiner{
             //            second iteration of active block scheduling
             if (_context.refinement.flow.use_improvement_history &&
                 current_round > 1 && _num_improvements[block_0][block_1] == 0) {
-                scheduleNextBlocks(edge, node, current_round, improvement,scheduler, feeder);
+                scheduleNextBlocks(
+                    config, edge, node, current_round,
+                    improvement,scheduler, feeder);
                 //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
                 return;
             }
 
-            const bool improved = executeAdaptiveFlow(block_0, block_1, scheduler);
+            const bool improved = executeAdaptiveFlow(config, block_0, block_1, scheduler);
             if (improved) {
 
                 improvement = true;
@@ -173,12 +176,19 @@ class FlowRefinerT final : public IRefiner{
                 _num_improvements[block_0][block_1]++;
             }
 
-            scheduleNextBlocks(edge, node, current_round, improvement,scheduler, feeder);
+            scheduleNextBlocks(
+                config, edge, node, current_round,
+                improvement,scheduler, feeder);
             //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
         }
 
-        void scheduleNextBlocks(Edge old_edge, int node, const size_t & current_round, bool & improvement,
-            QuotientGraphBlockScheduler<TypeTraits> & scheduler, tbb::parallel_do_feeder<Edge>& feeder){
+        void scheduleNextBlocks(FlowConfig& config,
+                                Edge old_edge,
+                                int node,
+                                const size_t & current_round,
+                                bool & improvement,
+                                QuotientGraphBlockScheduler<TypeTraits> & scheduler,
+                                tbb::parallel_do_feeder<Edge>& feeder) {
             utils::Timer::instance().start_timer("schedule", "Scheduling Next Blocks ", true);
             //start new tasks on this numa node
             auto sched_edges = scheduler.scheduleNextBlocks(old_edge, node, feeder);
@@ -191,35 +201,40 @@ class FlowRefinerT final : public IRefiner{
                         tbb::parallel_do(_start_new_parallel_do[numa_to_start],
                             [&](Edge e,
                                 tbb::parallel_do_feeder<Edge>& newfeeder){
-                                    parallelFlowCalculation(e, numa_to_start, current_round, improvement, scheduler, newfeeder);
+                                    parallelFlowCalculation(
+                                        config, e, numa_to_start, current_round,
+                                        improvement, scheduler, newfeeder);
                         });
                     });
-                });   
+                });
             }
             utils::Timer::instance().stop_timer("schedule");
         }
 
-        bool executeAdaptiveFlow(PartitionID block_0, PartitionID block_1,
-         QuotientGraphBlockScheduler<TypeTraits> & quotientGraph){
-
+        bool executeAdaptiveFlow(FlowConfig& config,
+                                const PartitionID block_0,
+                                const PartitionID block_1,
+                                QuotientGraphBlockScheduler<TypeTraits> & quotientGraph ) {
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
             HyperedgeWeight thread_local_delta = 0;
-            FlowNetwork& flow_network = _flow_network.local();
-            MaximumFlow& maximum_flow = _maximum_flow.local();
-            kahypar::ds::FastResetFlagArray<>& visited = _visited.local();
+            HyperGraph& hypergraph = config.hypergraph;
+            FlowNetwork& flow_network = config.flow_network.local();
+            MaximumFlow& maximum_flow = config.maximum_flow.local();
+            kahypar::ds::FastResetFlagArray<>& visited = config.visited.local();
 
 
             do {
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
-                const double old_imbalance = metrics::localBlockImbalance(_hg, _context, block_0, block_1);
+                const double old_imbalance = metrics::localBlockImbalance(
+                    hypergraph, _context, block_0, block_1);
 
                 // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
                 std::vector<HyperedgeID> cut_hes;
                 HyperedgeWeight cut_weight = 0;
                 for (const HyperedgeID& he : quotientGraph.blockPairCutHyperedges(block_0, block_1)) {
-                    cut_weight += _hg.edgeWeight(he);
+                    cut_weight += hypergraph.edgeWeight(he);
                     cut_hes.push_back(he);
                 }
 
@@ -227,7 +242,7 @@ class FlowRefinerT final : public IRefiner{
                 //            in the quotient graph with a small cut
                 //
                 // always use heuristic
-                if (cut_weight <= 10 && !isRefinementOnLastLevel()) {
+                if (cut_weight <= 10 ) {
                     break;
                 }
 
@@ -239,14 +254,19 @@ class FlowRefinerT final : public IRefiner{
                 utils::Randomize::instance().shuffleVector(cut_hes);
 
                 // Build Flow Problem
-                CutBuildPolicy<TypeTraits>::buildFlowNetwork(_hg, _context, flow_network,
-                                                cut_hes, alpha, block_0, block_1,
-                                                visited);
+                CutBuildPolicy<TypeTraits>::buildFlowNetwork(
+                    hypergraph, _context, flow_network,
+                    cut_hes, alpha, block_0, block_1,
+                    visited);
 
-                const HyperedgeWeight cut_flow_network_before = flow_network.build(_hg, _context, block_0, block_1);
+                const HyperedgeWeight cut_flow_network_before =
+                    flow_network.build(
+                        hypergraph, _context, block_0, block_1);
 
                 // Find minimum (S,T)-bipartition
-                const HyperedgeWeight cut_flow_network_after = maximum_flow.minimumSTCut(_hg, flow_network, _context, block_0, block_1);
+                const HyperedgeWeight cut_flow_network_after =
+                    maximum_flow.minimumSTCut(
+                        hypergraph, flow_network, _context, block_0, block_1);
 
                 // Maximum Flow algorithm returns infinity, if all
                 // hypernodes contained in the flow problem are either
@@ -260,7 +280,7 @@ class FlowRefinerT final : public IRefiner{
                         "Flow calculation should not increase cut!"
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
 
-                const double current_imbalance = metrics::localBlockImbalance(_hg, _context, block_0, block_1);
+                const double current_imbalance = metrics::localBlockImbalance(hypergraph, _context, block_0, block_1);
                 const bool equal_metric = delta == 0;
                 const bool improved_metric = delta > 0;
                 const bool improved_imbalance = current_imbalance < old_imbalance;
@@ -275,14 +295,14 @@ class FlowRefinerT final : public IRefiner{
                     alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
-                maximum_flow.rollback(_hg, flow_network, current_improvement);
+                maximum_flow.rollback(hypergraph, flow_network, current_improvement);
 
                 // Perform moves in quotient graph in order to update
                 // cut hyperedges between adjacent blocks.
                 if (current_improvement) {
                     for (const HypernodeID& ogHn : flow_network.hypernodes()) {
-                        const HypernodeID& hn = _hg.globalNodeID(ogHn);
-                        const PartitionID from = _hg.partID(hn);
+                        const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
+                        const PartitionID from = hypergraph.partID(hn);
                         const PartitionID to = maximum_flow.getOriginalPartition(ogHn);
                         if (from != to) {
                             quotientGraph.changeNodePart(hn, from, to);
@@ -309,45 +329,14 @@ class FlowRefinerT final : public IRefiner{
             return improvement;
         }
 
-        bool isRefinementOnLastLevel() {
-          return _current_num_nodes == _hg.initialNumNodes();
-        }
-
-        //debug only
-        int printPartWeights(PartitionID block_0, PartitionID block_1){
-                int localWeight = 0,gloablweight = 0;
-                for(int k = 0; k < _context.partition.k; k++){
-                    localWeight += _hg.localPartWeight(k);
-                    gloablweight += _hg.partWeight(k);
-                }
-                LOG << V(localWeight) << V(gloablweight);
-
-                LOG << V(block_0) << V(_hg.localPartSize(block_0)) << V(_hg.localPartWeight(block_0));
-                LOG << V(block_0) << V(_hg.partSize(block_0)) << V(_hg.partWeight(block_0));
-                _hg.printBlockInfos(block_0);
-
-                LOG << V(block_1) << V(_hg.localPartSize(block_1)) << V(_hg.localPartWeight(block_1));
-                LOG << V(block_1) << V(_hg.partSize(block_1)) << V(_hg.partWeight(block_1));
-                _hg.printBlockInfos(block_1);
-            return 0;
-        }
-
-    HyperGraph& _hg;
     const Context& _context;
-    ThreadLocalFlowNetwork _flow_network;
-    ThreadLocalMaximumFlow _maximum_flow;
-    ThreadLocalFastResetFlagArray _visited;
-    HypernodeID _current_num_nodes;
-    size_t _current_level;
-    ExecutionPolicy _execution_policy;
+    const TaskGroupID _task_group_id;
+
     std::vector<std::vector<size_t> > _num_improvements;
     tbb::atomic<HyperedgeWeight> _round_delta;
     std::vector<std::vector<Edge>> _start_new_parallel_do;
 };
 
-
-
-template< typename ExecutionPolicy = Mandatory >
-using FlowRefiner = FlowRefinerT<GlobalTypeTraits, ExecutionPolicy, Km1Policy>;
+using FlowRefiner = FlowRefinerT<GlobalTypeTraits>;
 
 } //namespace mt_kahypar

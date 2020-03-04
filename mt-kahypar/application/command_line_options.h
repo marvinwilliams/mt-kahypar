@@ -36,7 +36,6 @@
 #include <vector>
 
 #include "mt-kahypar/io/partitioning_output.h"
-#include "mt-kahypar/mt_kahypar.h"
 #include "mt-kahypar/partition/context.h"
 
 namespace po = boost::program_options;
@@ -110,7 +109,11 @@ po::options_description createGenericOptionsDescription(Context& context,
     ("show-detailed-timings", po::value<bool>(&context.partition.detailed_timings)->value_name("<bool>"),
     "If true, detailed timings overview is shown")
     ("enable-progress-bar", po::value<bool>(&context.partition.enable_progress_bar)->value_name("<bool>"),
-    "If true, than progress bar is shown during uncoarsening")
+    "If true, than progress bar is displayed")
+    ("enable-profiler", po::value<bool>(&context.partition.enable_profiler)->value_name("<bool>"),
+    "If true, than profiler is activated")
+    ("profiler-snapshot-interval", po::value<int>(&context.partition.snapshot_interval)->value_name("<int>"),
+    "Interval in milliseconds for which profiler makes a snapshot of system stats")
     ("time-limit", po::value<int>(&context.partition.time_limit)->value_name("<int>"),
     "Time limit in seconds")
     ("sp-process,s", po::value<bool>(&context.partition.sp_process_output)->value_name("<bool>"),
@@ -125,19 +128,9 @@ po::options_description createPreprocessingOptionsDescription(Context& context, 
     ("p-use-community-structure-from-file",
     po::value<bool>(&context.preprocessing.use_community_structure_from_file)->value_name("<bool>"),
     "If true, than community structure is read from file <path-to-hypergraph>/<hypergraph-name>.community")
-    ("p-community-load-balancing-strategy",
-    po::value<std::string>()->value_name("<string>")->notifier(
-      [&](const std::string& strategy) {
-      context.preprocessing.community_detection.load_balancing_strategy = communityLoadBalancingStrategyFromString(strategy);
-    }),
-    "Community load balancing strategies:\n"
-    "- size_constraint\n"
-    "- label_propagation\n"
-    "- none")
-    ("p-community-size-constraint-factor",
-    po::value<size_t>(&context.preprocessing.community_detection.size_constraint_factor)->value_name("<size_t>"),
-    "If load balancing strategy is 'size_constraint', than a community is not allowed to have an volume\n"
-    "greater than total_volume / ( size_constraint_factor * num_threads )")
+    ("p-enable-community-detection",
+    po::value<bool>(&context.preprocessing.use_community_detection)->value_name("<bool>"),
+    "If true, community detection is used as preprocessing step to guide contractions in coarsening phase")
     ("p-louvain-edge-weight-function",
     po::value<std::string>()->value_name("<string>")->notifier(
       [&](const std::string& type) {
@@ -155,8 +148,8 @@ po::options_description createPreprocessingOptionsDescription(Context& context, 
     po::value<long double>(&context.preprocessing.community_detection.min_eps_improvement)->value_name("<long double>"),
     "Minimum improvement of quality during a louvain pass which leads to further passes")
     ("p-enable-community-redistribution",
-    po::value<bool>(&context.preprocessing.community_redistribution.use_community_redistribution)->value_name("<bool>"),
-    "If true, hypergraph is redistributed based on community detection")
+    po::value<bool>(&context.preprocessing.use_community_redistribution)->value_name("<bool>"),
+    "If true, hypergraph is redistributed based on community information to numa nodes")
     ("p-community-redistribution-objective",
     po::value<std::string>()->value_name("<string>")->notifier(
       [&](const std::string& objective) {
@@ -185,21 +178,33 @@ po::options_description createCoarseningOptionsDescription(Context& context,
       context.coarsening.algorithm = mt_kahypar::coarseningAlgorithmFromString(ctype);
     }),
     "Coarsening Algorithm:\n"
-    " - community_coarsener")
+    " - community_coarsener\n"
+    " - multilevel_coarsener")
+    ("c-use-adaptive-max-node-weight",
+    po::value<bool>(&context.coarsening.use_adaptive_max_allowed_node_weight)->value_name("<bool>"),
+    "If true, than the maximum allowed node weight is adapted based on the reduction ratio\n"
+    "during multilevel coarsing")
+    ("c-adaptive-s",
+    po::value<double>(&context.coarsening.max_allowed_weight_fraction)->value_name("<double>"),
+    "The maximum allowed node weight is not allowed to become greater than\n"
+    "((1 + epsilon) * w(H)/k) / (adaptive_s), if adaptive maximum node weight is enabled\n")
+    ("c-adaptive-threshold",
+    po::value<double>(&context.coarsening.adaptive_node_weight_shrink_factor_threshold)->value_name("<double>"),
+    "The maximum allowed node weight is adapted, if the reduction ratio of vertices or pins\n"
+    "is lower than this threshold\n")
     ("c-s",
     po::value<double>(&context.coarsening.max_allowed_weight_multiplier)->value_name("<double>"),
     "The maximum weight of a vertex in the coarsest hypergraph H is:\n"
     "(s * w(H)) / (t * k)\n")
-    ("c-s-high-degree",
-    po::value<double>(&context.coarsening.max_allowed_high_degree_node_weight_multiplier)->value_name("<double>"),
-    "The maximum weight of a high degree vertex in the coarsest hypergraph H is:\n"
-    "(s * w(H)) / (t * k)\n")
     ("c-t",
     po::value<HypernodeID>(&context.coarsening.contraction_limit_multiplier)->value_name("<int>"),
     "Coarsening stops when there are no more than t * k hypernodes left")
-    ("c-use-high-degree-vertex-threshold",
-    po::value<bool>(&context.coarsening.use_high_degree_vertex_threshold)->value_name("<bool>"),
-    "If true, than all hypernodes with a degree greater than mean + 5 * stdev are skipped during coarsening")
+    ("c-min-shrink-factor",
+    po::value<double>(&context.coarsening.minimum_shrink_factor)->value_name("<double>"),
+    "Minimum factor a hypergraph must shrink in a multilevel pass")
+    ("c-max-shrink-factor",
+    po::value<double>(&context.coarsening.maximum_shrink_factor)->value_name("<double>"),
+    "Maximum factor a hypergraph can shrink in a multilevel pass")
     ("c-rating-score",
     po::value<std::string>()->value_name("<string>")->notifier(
       [&](const std::string& rating_score) {
@@ -226,6 +231,68 @@ po::options_description createCoarseningOptionsDescription(Context& context,
     "Acceptance/Tiebreaking criterion for contraction partners having the same score:\n"
     "- best\n"
     "- best_prefer_unmatched");
+  return options;
+}
+
+po::options_description createRefinementOptionsDescription(Context& context,
+                                                           const int num_columns,
+                                                           const bool initial_partitioning) {
+  po::options_description options("Refinement Options", num_columns);
+  options.add_options()
+    (( initial_partitioning ? "i-r-lp-type" : "r-lp-type"),
+    po::value<std::string>()->value_name("<string>")->notifier(
+      [&, initial_partitioning](const std::string& type) {
+      if ( initial_partitioning ) {
+        context.initial_partitioning.refinement.label_propagation.algorithm =
+          labelPropagationAlgorithmFromString(type);
+      } else {
+        context.refinement.label_propagation.algorithm =
+          labelPropagationAlgorithmFromString(type);
+      }
+    }),
+    "Label Propagation Algorithm:\n"
+    "- label_propagation_km1\n"
+    "- label_propagation_cut\n"
+    "- do_nothing")
+    (( initial_partitioning ? "i-r-lp-maximum-iterations" : "r-lp-maximum-iterations"),
+    po::value<size_t>((!initial_partitioning ? &context.refinement.label_propagation.maximum_iterations :
+      &context.initial_partitioning.refinement.label_propagation.maximum_iterations))->value_name("<size_t>"),
+    "Maximum number of iterations over all nodes during label propagation\n"
+    "(default 1)")
+    (( initial_partitioning ? "i-r-lp-rebalancing" : "r-lp-rebalancing"),
+    po::value<bool>((!initial_partitioning ? &context.refinement.label_propagation.rebalancing :
+      &context.initial_partitioning.refinement.label_propagation.rebalancing))->value_name("<bool>"),
+    "If true, zero gain moves are used to rebalance solution\n"
+    "(default true)")
+    (( initial_partitioning ? "i-r-lp-he-size-activation-threshold" : "r-lp-he-size-activation-threshold"),
+    po::value<size_t>((!initial_partitioning ? &context.refinement.label_propagation.hyperedge_size_activation_threshold :
+      &context.initial_partitioning.refinement.label_propagation.hyperedge_size_activation_threshold))->value_name("<size_t>"),
+    "If a vertex moves during LP only neighbors that are part of hyperedge with size less\n"
+    "this threshold are activated.");
+
+  if ( !initial_partitioning ) {
+    options.add_options()
+      ("r-lp-numa-aware",
+      po::value<bool>(&context.refinement.label_propagation.numa_aware)->value_name("<bool>"),
+      "If true, label propagation is executed numa friendly (which means that nodes are processed on its numa nodes)\n"
+      "(default false)")
+      ("r-flow-type",
+      po::value<std::string>()->value_name("<string>")->notifier(
+        [&](const std::string& type) {
+          context.refinement.flow.algorithm =
+            flowAlgorithmFromString(type);
+      }),
+      "Algorithm used for flow refinement:\n"
+      "- flow\n"
+      "- do_nothing")
+      ("r-flow-alpha",
+      po::value<double>(&context.refinement.flow.alpha)->value_name("<double>"),
+      "Controls the maximum size of a flow problem => alpha * epsilon * average block weight")
+      ("r-flow-use-most-balanced-minimum-cut",
+      po::value<bool>(&context.refinement.flow.use_most_balanced_minimum_cut)->value_name("<bool>"),
+      "If true, most balanced minimum cut heuristic is used during flow refinement\n"
+      "(default false)");
+  }
   return options;
 }
 
@@ -257,97 +324,7 @@ po::options_description createInitialPartitioningOptionsDescription(Context& con
     po::value<size_t>(&context.initial_partitioning.lp_initial_block_size)->value_name("<size_t>"),
     "Initial block size used for label propagation initial partitioner \n"
     "(default: 1)");
-  return options;
-}
-
-po::options_description createRefinementOptionsDescription(Context& context, const int num_columns) {
-  po::options_description options("Refinement Options", num_columns);
-  options.add_options()
-    ("r-use-batch-uncontractions",
-    po::value<bool>(&context.refinement.use_batch_uncontractions)->value_name("<bool>"),
-    "If true, contractions are reversed in parallel. The batch size is determined by r-batch-size.\n"
-    "(default false)")
-    ("r-batch-size",
-    po::value<size_t>(&context.refinement.batch_size)->value_name("<size_t>"),
-    "Determines how many contractions are reversed in parallel if batch uncontractions are used.\n"
-    "(default 1000)")
-    ("r-lp-type",
-    po::value<std::string>()->value_name("<string>")->notifier(
-      [&](const std::string& type) {
-        context.refinement.label_propagation.algorithm =
-          labelPropagationAlgorithmFromString(type);
-    }),
-    "Algorithm used for label propagation:\n"
-    "- label_propagation_km1\n"
-    "- label_propagation_cut\n"
-    "- do_nothing")
-    ("r-lp-maximum-iterations",
-    po::value<size_t>(&context.refinement.label_propagation.maximum_iterations)->value_name("<size_t>"),
-    "Maximum number of iterations over all nodes during label propagation\n"
-    "(default 1)")
-    ("r-lp-part-weight-update-factor",
-    po::value<double>(&context.refinement.label_propagation.part_weight_update_factor)->value_name("<double>"),
-    "Determines after how many iterations the local part weights are updated\n"
-    "=> steps = min(100, max(5, current_num_nodes * part_weight_update_factor))\n"
-    "(default 100)")
-    ("r-lp-localized",
-    po::value<bool>(&context.refinement.label_propagation.localized)->value_name("<bool>"),
-    "If true, label propagation is executed only on the previously uncontracted vertices)\n"
-    "(default false)")
-    ("r-lp-numa-aware",
-    po::value<bool>(&context.refinement.label_propagation.numa_aware)->value_name("<bool>"),
-    "If true, label propagation is executed numa friendly (which means that nodes are processed on its numa nodes)\n"
-    "(default false)")
-    ("r-lp-rebalancing",
-    po::value<bool>(&context.refinement.label_propagation.rebalancing)->value_name("<bool>"),
-    "If true, zero gain moves are used to rebalance solution\n"
-    "(default true)")
-    ("r-lp-execution-policy",
-    po::value<std::string>()->value_name("<string>")->notifier(
-      [&](const std::string& type) {
-        context.refinement.label_propagation.execution_policy =
-          executionTypeFromString(type);
-    }),
-    "Execution policy used for label propagation:\n"
-    "- exponential\n"
-    "- multilevel\n"
-    "- constant")
-    ("r-lp-execution-policy-alpha",
-    po::value<double>(&context.refinement.label_propagation.execution_policy_alpha)->value_name("<double>"),
-    "In case of execution policy 'exponential', LP is executed in each level which is a power of alpha\n"
-    "In case of execution policy 'multilevel', LP is executed on each level INITIAL_NUM_NODES / alpha ^ i\n"
-    "In case of execution policy 'constant', LP is executed on each level which is a multiple of alpha")
-    ("r-flow-type",
-    po::value<std::string>()->value_name("<string>")->notifier(
-      [&](const std::string& type) {
-        context.refinement.flow.algorithm =
-          flowAlgorithmFromString(type);
-    }),
-    "Algorithm used for flow refinement:\n"
-    "- flow\n"
-    "- do_nothing")
-    ("r-flow-alpha",
-    po::value<double>(&context.refinement.flow.alpha)->value_name("<double>"),
-    "Controls the maximum size of a flow problem => alpha * epsilon * average block weight")
-    ("r-flow-execution-policy",
-    po::value<std::string>()->value_name("<string>")->notifier(
-      [&](const std::string& type) {
-        context.refinement.flow.execution_policy =
-          executionTypeFromString(type);
-    }),
-    "Execution policy used for label propagation:\n"
-    "- exponential\n"
-    "- multilevel\n"
-    "- constant")
-    ("r-flow-execution-policy-alpha",
-    po::value<double>(&context.refinement.flow.execution_policy_alpha)->value_name("<double>"),
-    "In case of execution policy 'exponential', LP is executed in each level which is a power of alpha\n"
-    "In case of execution policy 'multilevel', LP is executed on each level INITIAL_NUM_NODES / alpha ^ i\n"
-    "In case of execution policy 'constant', LP is executed on each level which is a multiple of alpha")
-    ("r-flow-use-most-balanced-minimum-cut",
-    po::value<bool>(&context.refinement.flow.use_most_balanced_minimum_cut)->value_name("<bool>"),
-    "If true, most balanced minimum cut heuristic is used during flow refinement\n"
-    "(default false)");
+    options.add(createRefinementOptionsDescription(context, num_columns, true));
   return options;
 }
 
@@ -359,15 +336,10 @@ po::options_description createSharedMemoryOptionsDescription(Context& context,
     po::value<size_t>(&context.shared_memory.num_threads)->value_name("<size_t>"),
     "Number of threads used during shared memory hypergraph partitioning\n"
     "(default 1)")
-    ("s-initial-hyperedge-distribution",
-    po::value<std::string>()->value_name("<string>")->notifier(
-      [&](const std::string& strategy) {
-      context.shared_memory.initial_hyperedge_distribution = mt_kahypar::initialHyperedgeDistributionFromString(strategy);
-    }),
-    "Determines how hyperedges are distributed to numa nodes after reading hypergraph file: \n"
-    " - equally\n"
-    " - random\n"
-    " - all_on_one");
+    ("s-shuffle-block-size",
+    po::value<size_t>(&context.shared_memory.shuffle_block_size)->value_name("<size_t>"),
+    "If we perform a random shuffle in parallel, we perform a parallel for over blocks of size"
+    "'shuffle_block_size' and shuffle them sequential.");
 
   return shared_memory_options;
 }
@@ -405,7 +377,7 @@ void processCommandLineInput(Context& context, int argc, char* argv[]) {
   po::options_description initial_paritioning_options =
     createInitialPartitioningOptionsDescription(context, num_columns);
   po::options_description refinement_options =
-    createRefinementOptionsDescription(context, num_columns);
+    createRefinementOptionsDescription(context, num_columns, false);
   po::options_description shared_memory_options =
     createSharedMemoryOptionsDescription(context, num_columns);
 
@@ -481,7 +453,7 @@ void parseIniToContext(Context& context, const std::string& ini_filename) {
   po::options_description initial_paritioning_options =
     createInitialPartitioningOptionsDescription(context, num_columns);
   po::options_description refinement_options =
-    createRefinementOptionsDescription(context, num_columns);
+    createRefinementOptionsDescription(context, num_columns, false);
   po::options_description shared_memory_options =
     createSharedMemoryOptionsDescription(context, num_columns);
 

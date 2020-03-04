@@ -60,7 +60,7 @@ class FlowNetwork {
   using IncidenceIterator = std::vector<FlowEdge>::iterator;
   using NodeIterator = std::pair<const NodeID*, const NodeID*>;
   using HypernodeIterator = std::pair<const HypernodeID*, const HypernodeID*>;
-  using HyperGraph = typename TypeTraits::HyperGraph;
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
 
  public:
   static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
@@ -304,7 +304,7 @@ class FlowNetwork {
     return std::make_pair(_removed_hypernodes.begin(), _removed_hypernodes.end());
   }
 
-  
+
   bool isRemovedHypernode(HyperGraph& hypergraph, const HypernodeID hn) const {
     return _removed_hypernodes.contains(hypergraph.originalNodeID(hn));
   }
@@ -564,7 +564,7 @@ class FlowNetwork {
         u = pin;
       } else {
         v = pin;
-      } 
+      }
     }
 
     ASSERT(containsHypernode(hypergraph, u) || containsHypernode(hypergraph, v),

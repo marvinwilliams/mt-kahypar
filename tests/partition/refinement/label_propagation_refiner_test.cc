@@ -20,16 +20,14 @@
 
 #include "gmock/gmock.h"
 
+#include "tests/datastructures/hypergraph_fixtures.h"
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/initial_partitioning/flat/bfs_initial_partitioner.h"
 #include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
-#include "mt-kahypar/partition/refinement/policies/execution_policy.h"
 #include "mt-kahypar/partition/refinement/policies/gain_policy.h"
 #include "mt-kahypar/utils/randomize.h"
-
-#include "tests/datastructures/hypergraph_fixtures.h"
 
 using ::testing::Test;
 
@@ -40,7 +38,7 @@ struct TestConfig { };
 template <PartitionID k>
 struct TestConfig<k, kahypar::Objective::km1> {
   using TypeTraits = ds::TestTypeTraits<2>;
-  using Refiner = LabelPropagationRefinerT<TypeTraits, ExponentialExecutionPolicy, Km1Policy>;
+  using Refiner = LabelPropagationRefinerT<TypeTraits, Km1Policy>;
   static constexpr PartitionID K = k;
   static constexpr kahypar::Objective OBJECTIVE = kahypar::Objective::km1;
   static constexpr RefinementAlgorithm LP_ALGO = RefinementAlgorithm::label_propagation_km1;
@@ -49,7 +47,7 @@ struct TestConfig<k, kahypar::Objective::km1> {
 template <PartitionID k>
 struct TestConfig<k, kahypar::Objective::cut> {
   using TypeTraits = ds::TestTypeTraits<2>;
-  using Refiner = LabelPropagationRefinerT<TypeTraits, ExponentialExecutionPolicy, CutPolicy>;
+  using Refiner = LabelPropagationRefinerT<TypeTraits, CutPolicy>;
   static constexpr PartitionID K = k;
   static constexpr kahypar::Objective OBJECTIVE = kahypar::Objective::cut;
   static constexpr RefinementAlgorithm LP_ALGO = RefinementAlgorithm::label_propagation_cut;
@@ -60,7 +58,8 @@ class ALabelPropagationRefiner : public Test {
   using Refiner = typename Config::Refiner;
   using TypeTraits = typename Config::TypeTraits;
   using HyperGraph = typename TypeTraits::HyperGraph;
-  using StreamingHyperGraph = typename TypeTraits::StreamingHyperGraph;
+  using HyperGraphFactory = typename TypeTraits::HyperGraphFactory;
+  using PartitionedHyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using TBB = typename TypeTraits::TBB;
   using HwTopology = typename TypeTraits::HwTopology;
 
@@ -69,6 +68,7 @@ class ALabelPropagationRefiner : public Test {
  public:
   ALabelPropagationRefiner() :
     hypergraph(),
+    partitioned_hypergraph(),
     context(),
     refiner(nullptr),
     metrics() {
@@ -81,7 +81,7 @@ class ALabelPropagationRefiner : public Test {
     context.partition.verbose_output = false;
 
     // Preprocessing
-    context.preprocessing.community_redistribution.use_community_redistribution = true;
+    context.preprocessing.use_community_redistribution = true;
     context.preprocessing.community_redistribution.assignment_strategy = CommunityAssignmentStrategy::bin_packing;
     context.preprocessing.community_redistribution.assignment_objective = CommunityAssignmentObjective::pin_objective;
 
@@ -94,9 +94,7 @@ class ALabelPropagationRefiner : public Test {
 
     // Label Propagation
     context.refinement.label_propagation.algorithm = Config::LP_ALGO;
-    context.refinement.label_propagation.execution_policy = ExecutionType::exponential;
-    context.refinement.label_propagation.part_weight_update_factor = 0.001;
-    context.refinement.label_propagation.localized = false;
+    context.initial_partitioning.refinement.label_propagation.algorithm = Config::LP_ALGO;
     #ifdef KAHYPAR_TRAVIS_BUILD
     context.refinement.label_propagation.numa_aware = false;
     #else
@@ -104,16 +102,15 @@ class ALabelPropagationRefiner : public Test {
     #endif
 
     // Read hypergraph
-    hypergraph = io::readHypergraphFile<HyperGraph, StreamingHyperGraph, TBB, HwTopology>(
-      "../test_instances/unweighted_ibm01.hgr", context.partition.k, InitialHyperedgeDistribution::equally);
+    hypergraph = io::readHypergraphFile<HyperGraph, HyperGraphFactory>(
+      "../test_instances/unweighted_ibm01.hgr", TBB::GLOBAL_TASK_GROUP);
+    partitioned_hypergraph = PartitionedHyperGraph(
+      context.partition.k, TBB::GLOBAL_TASK_GROUP, hypergraph);
     context.setupPartWeights(hypergraph.totalWeight());
-    for ( const HypernodeID& hn : hypergraph.nodes() ) {
-      hypergraph.setCommunityID(hn, 0);
-    }
-    hypergraph.initializeCommunities();
     initialPartition();
 
-    refiner = std::make_unique<Refiner>(hypergraph, context, TBB::GLOBAL_TASK_GROUP);
+    refiner = std::make_unique<Refiner>(partitioned_hypergraph, context, TBB::GLOBAL_TASK_GROUP);
+    refiner->initialize(partitioned_hypergraph);
   }
 
   static void SetUpTestSuite() {
@@ -123,17 +120,18 @@ class ALabelPropagationRefiner : public Test {
   void initialPartition() {
     Context ip_context(context);
     ip_context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
-    InitialPartitioningDataContainerT<TypeTraits> ip_data(hypergraph, ip_context, TBB::GLOBAL_TASK_GROUP);
+    InitialPartitioningDataContainerT<TypeTraits> ip_data(partitioned_hypergraph, ip_context, TBB::GLOBAL_TASK_GROUP);
     BFSInitialPartitionerT<TypeTraits>& initial_partitioner = *new(tbb::task::allocate_root())
       BFSInitialPartitionerT<TypeTraits>(InitialPartitioningAlgorithm::bfs, ip_data, ip_context);
     tbb::task::spawn_root_and_wait(initial_partitioner);
     ip_data.apply();
-    metrics.km1 = metrics::km1(hypergraph);
-    metrics.cut = metrics::hyperedgeCut(hypergraph);
-    metrics.imbalance = metrics::imbalance(hypergraph, context);
+    metrics.km1 = metrics::km1(partitioned_hypergraph);
+    metrics.cut = metrics::hyperedgeCut(partitioned_hypergraph);
+    metrics.imbalance = metrics::imbalance(partitioned_hypergraph, context);
   }
 
   HyperGraph hypergraph;
+  PartitionedHyperGraph partitioned_hypergraph;
   Context context;
   std::unique_ptr<Refiner> refiner;
   kahypar::Metrics metrics;
@@ -154,24 +152,24 @@ typedef ::testing::Types<TestConfig<2, kahypar::Objective::cut>,
 TYPED_TEST_CASE(ALabelPropagationRefiner, TestConfigs);
 
 TYPED_TEST(ALabelPropagationRefiner, UpdatesImbalanceCorrectly) {
-  this->refiner->refine({ }, this->metrics);
-  ASSERT_DOUBLE_EQ(metrics::imbalance(this->hypergraph, this->context), this->metrics.imbalance);
+  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
+  ASSERT_DOUBLE_EQ(metrics::imbalance(this->partitioned_hypergraph, this->context), this->metrics.imbalance);
 }
 
 TYPED_TEST(ALabelPropagationRefiner, DoesNotViolateBalanceConstraint) {
-  this->refiner->refine({ }, this->metrics);
+  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
   ASSERT_LE(this->metrics.imbalance, this->context.partition.epsilon + EPS);
 }
 
 TYPED_TEST(ALabelPropagationRefiner, UpdatesMetricsCorrectly) {
-  this->refiner->refine({ }, this->metrics);
-  ASSERT_EQ(metrics::objective(this->hypergraph, this->context.partition.objective),
+  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
+  ASSERT_EQ(metrics::objective(this->partitioned_hypergraph, this->context.partition.objective),
             this->metrics.getMetric(kahypar::Mode::direct_kway, this->context.partition.objective));
 }
 
 TYPED_TEST(ALabelPropagationRefiner, DoesNotWorsenSolutionQuality) {
-  HyperedgeWeight objective_before = metrics::objective(this->hypergraph, this->context.partition.objective);
-  this->refiner->refine({ }, this->metrics);
+  HyperedgeWeight objective_before = metrics::objective(this->partitioned_hypergraph, this->context.partition.objective);
+  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
   ASSERT_LE(this->metrics.getMetric(kahypar::Mode::direct_kway, this->context.partition.objective), objective_before);
 }
 }  // namespace mt_kahypar

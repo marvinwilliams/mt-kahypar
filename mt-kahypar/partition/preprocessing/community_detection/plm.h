@@ -63,14 +63,6 @@ class PLM {
     totalVolume = G.totalVolume();
     volMultiplierDivByNodeVol = reciprocalTotalVolume;          // * resolutionGamma;
 
-    ArcWeight maxAllowedClusterVolume = totalVolume;
-    if (_context.preprocessing.community_detection.load_balancing_strategy ==
-        CommunityLoadBalancingStrategy::size_constraint) {
-      maxAllowedClusterVolume = std::ceil(maxAllowedClusterVolume /
-                                          ((double)(_context.preprocessing.community_detection.size_constraint_factor *
-                                                    _context.shared_memory.num_threads)));
-    }
-
     parallel::scalable_vector<NodeID> nodes(G.numNodes());
     for (NodeID u : G.nodes()) {
       nodes[u] = u;
@@ -94,7 +86,8 @@ class PLM {
       // parallel shuffle starts becoming competitive with sequential shuffle at four cores... :(
       // TODO implement block-based weak shuffling or use the pseudo-random online permutation approach
       utils::Timer::instance().start_timer("random_shuffle", "Random Shuffle");
-      utils::Randomize::instance().shuffleVector(nodes);
+      utils::Randomize::instance().localizedParallelShuffleVector(
+        nodes, 0UL, nodes.size(), _context.shared_memory.shuffle_block_size);
       utils::Timer::instance().stop_timer("random_shuffle");
 
       tbb::enumerable_thread_specific<size_t> ets_nodesMovedThisRound(0);
@@ -129,10 +122,6 @@ class PLM {
 
             const ArcWeight volTo = clusterVolumes[to],
               weightTo = incidentClusterWeights.get(to);
-
-            if (volU + volTo > maxAllowedClusterVolume) {
-              continue;
-            }
 
             // double gain = modularityGain(weightFrom, weightTo, volFrom, volTo, volU);
             double gain = modularityGain(weightTo, volTo, volMultiplier);

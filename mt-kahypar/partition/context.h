@@ -27,6 +27,7 @@
 
 namespace mt_kahypar {
 struct PartitioningParameters {
+  Paradigm paradigm = Paradigm::multilevel;
   kahypar::Mode mode = kahypar::Mode::UNDEFINED;
   kahypar::Objective objective = kahypar::Objective::UNDEFINED;
   double epsilon = std::numeric_limits<double>::max();
@@ -45,6 +46,9 @@ struct PartitioningParameters {
   bool sp_process_output = false;
   bool write_partition_file = false;
 
+  bool enable_profiler = false;
+  int snapshot_interval = std::numeric_limits<int>::max();
+
   std::string graph_filename { };
   std::string graph_partition_filename { };
   std::string graph_community_filename { };
@@ -55,6 +59,7 @@ inline std::ostream & operator<< (std::ostream& str, const PartitioningParameter
   str << "  Hypergraph:                         " << params.graph_filename << std::endl;
   str << "  Partition File:                     " << params.graph_partition_filename << std::endl;
   str << "  Community File:                     " << params.graph_community_filename << std::endl;
+  str << "  Paradigm:                           " << params.paradigm << std::endl;
   str << "  Mode:                               " << params.mode << std::endl;
   str << "  Objective:                          " << params.objective << std::endl;
   str << "  k:                                  " << params.k << std::endl;
@@ -66,8 +71,6 @@ inline std::ostream & operator<< (std::ostream& str, const PartitioningParameter
 }
 
 struct CommunityDetectionParameters {
-  CommunityLoadBalancingStrategy load_balancing_strategy = CommunityLoadBalancingStrategy::none;
-  size_t size_constraint_factor = 0;
   LouvainEdgeWeight edge_weight_function = LouvainEdgeWeight::UNDEFINED;
   uint32_t max_pass_iterations = std::numeric_limits<uint32_t>::max();
   long double min_eps_improvement = std::numeric_limits<long double>::max();
@@ -75,10 +78,6 @@ struct CommunityDetectionParameters {
 
 inline std::ostream & operator<< (std::ostream& str, const CommunityDetectionParameters& params) {
   str << "  Community Detection Parameters:" << std::endl;
-  str << "    Load Balancing Strategy:          " << params.load_balancing_strategy << std::endl;
-  if (params.load_balancing_strategy == CommunityLoadBalancingStrategy::size_constraint) {
-    str << "    Size Constraint Factor:           " << params.size_constraint_factor << std::endl;
-  }
   str << "    Edge Weight Function:             " << params.edge_weight_function << std::endl;
   str << "    Maximum Louvain-Pass Iterations:  " << params.max_pass_iterations << std::endl;
   str << "    Minimum Quality Improvement:      " << params.min_eps_improvement << std::endl;
@@ -86,20 +85,20 @@ inline std::ostream & operator<< (std::ostream& str, const CommunityDetectionPar
 }
 
 struct CommunityRedistributionParameters {
-  bool use_community_redistribution = false;
   CommunityAssignmentObjective assignment_objective = CommunityAssignmentObjective::UNDEFINED;
   CommunityAssignmentStrategy assignment_strategy = CommunityAssignmentStrategy::UNDEFINED;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const CommunityRedistributionParameters& params) {
   str << "  Community Detection Parameters:" << std::endl;
-  str << "    Use Community Redistribution:     " << std::boolalpha << params.use_community_redistribution << std::endl;
   str << "    Community Assignment Objective:   " << params.assignment_objective << std::endl;
   str << "    Community Assignment Strategy:    " << params.assignment_strategy << std::endl;
   return str;
 }
 
 struct PreprocessingParameters {
+  bool use_community_detection = false;
+  bool use_community_redistribution = false;
   bool use_community_structure_from_file = false;
   CommunityDetectionParameters community_detection = { };
   CommunityRedistributionParameters community_redistribution = { };
@@ -107,11 +106,15 @@ struct PreprocessingParameters {
 
 inline std::ostream & operator<< (std::ostream& str, const PreprocessingParameters& params) {
   str << "Preprocessing Parameters:" << std::endl;
+  str << "  Use Community Detection:            " << std::boolalpha << params.use_community_detection << std::endl;
+  str << "  Use Community Redistribution:       " << std::boolalpha << params.use_community_redistribution << std::endl;
   str << "  Use Community Structure from File:  " << std::boolalpha << params.use_community_structure_from_file << std::endl;
-  if (!params.use_community_structure_from_file) {
+  if (!params.use_community_structure_from_file && params.use_community_detection) {
     str << std::endl << params.community_detection;
   }
-  str << std::endl << params.community_redistribution;
+  if ( params.use_community_redistribution ) {
+    str << std::endl << params.community_redistribution;
+  }
   return str;
 }
 
@@ -133,84 +136,62 @@ struct CoarseningParameters {
   CoarseningAlgorithm algorithm = CoarseningAlgorithm::UNDEFINED;
   RatingParameters rating = { };
   HypernodeID contraction_limit_multiplier = std::numeric_limits<HypernodeID>::max();
+  bool use_adaptive_max_allowed_node_weight = false;
+  double max_allowed_weight_fraction = std::numeric_limits<double>::max();
+  double adaptive_node_weight_shrink_factor_threshold = std::numeric_limits<double>::max();
   double max_allowed_weight_multiplier = std::numeric_limits<double>::max();
-  double max_allowed_high_degree_node_weight_multiplier = std::numeric_limits<double>::max();
-  bool use_high_degree_vertex_threshold = false;
+  double minimum_shrink_factor = std::numeric_limits<double>::max();
+  double maximum_shrink_factor = std::numeric_limits<double>::max();
 
   // Those will be determined dynamically
   HypernodeWeight max_allowed_node_weight = 0;
-  HypernodeWeight max_allowed_high_degree_node_weight = 0;
   HypernodeID contraction_limit = 0;
-  HyperedgeID high_degree_vertex_threshold = std::numeric_limits<HyperedgeID>::max();
 };
 
 inline std::ostream & operator<< (std::ostream& str, const CoarseningParameters& params) {
   str << "Coarsening Parameters:" << std::endl;
   str << "  Algorithm:                          " << params.algorithm << std::endl;
-  str << "  max allowed weight multiplier:      " << params.max_allowed_weight_multiplier << std::endl;
-  str << "  max allowed high degree multiplier: " << params.max_allowed_high_degree_node_weight_multiplier << std::endl;
-  str << "  maximum allowed hypernode weight:   " << params.max_allowed_node_weight << std::endl;
-  str << "  maximum allowed high-degree weight: " << params.max_allowed_high_degree_node_weight << std::endl;
+  str << "  use adaptive max node weight:       " << std::boolalpha << params.use_adaptive_max_allowed_node_weight << std::endl;
+  if ( params.use_adaptive_max_allowed_node_weight ) {
+    str << "  max allowed weight fraction:        " << params.max_allowed_weight_fraction << std::endl;
+    str << "  adaptive node weight threshold:     " << params.adaptive_node_weight_shrink_factor_threshold << std::endl;
+    str << "  initial max hypernode weight:       " << params.max_allowed_node_weight << std::endl;
+  } else {
+    str << "  max allowed weight multiplier:      " << params.max_allowed_weight_multiplier << std::endl;
+    str << "  maximum allowed hypernode weight:   " << params.max_allowed_node_weight << std::endl;
+  }
   str << "  contraction limit multiplier:       " << params.contraction_limit_multiplier << std::endl;
   str << "  contraction limit:                  " << params.contraction_limit << std::endl;
-  if ( params.use_high_degree_vertex_threshold ) {
-    str << "  high degree vertex threshold:       " << params.high_degree_vertex_threshold << std::endl;
+  if ( params.algorithm == CoarseningAlgorithm::multilevel_coarsener ) {
+    str << "  minimum shrink factor:              " << params.minimum_shrink_factor << std::endl;
+    str << "  maximum shrink factor:              " << params.maximum_shrink_factor << std::endl;
   }
   str << std::endl << params.rating;
-  return str;
-}
-
-struct InitialPartitioningParameters {
-  InitialPartitioningMode mode = InitialPartitioningMode::UNDEFINED;
-  size_t runs = 1;
-  bool use_adaptive_epsilon = false;
-  size_t lp_maximum_iterations = 1;
-  size_t lp_initial_block_size = 1;
-};
-
-inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningParameters& params) {
-  str << "Initial Partitioning Parameters:" << std::endl;
-  str << "  Initial Partitioning Mode:          " << params.mode << std::endl;
-  str << "  Number of Runs:                     " << params.runs << std::endl;
-  str << "  Use Adaptive Epsilon:               " << std::boolalpha << params.use_adaptive_epsilon << std::endl;
-  str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
-  str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
   return str;
 }
 
 struct LabelPropagationParameters {
   LabelPropagationAlgorithm algorithm = LabelPropagationAlgorithm::do_nothing;
   size_t maximum_iterations = 1;
-  double part_weight_update_factor = 0.01;
-  bool localized = false;
   bool numa_aware = false;
   bool rebalancing = true;
-  ExecutionType execution_policy = ExecutionType::UNDEFINED;
-  double execution_policy_alpha = 2.0;
-  bool execute_always = false;
   bool execute_sequential = false;
+  size_t hyperedge_size_activation_threshold = std::numeric_limits<size_t>::max();
 };
 
 inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParameters& params) {
   str << "  Label Propagation Parameters:" << std::endl;
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Maximum Iterations:               " << params.maximum_iterations << std::endl;
-  str << "    Part Weight Update Factor:        " << params.part_weight_update_factor << std::endl;
-  str << "    Localized:                        " << std::boolalpha << params.localized << std::endl;
   str << "    Numa Aware:                       " << std::boolalpha << params.numa_aware << std::endl;
   str << "    Rebalancing:                      " << std::boolalpha << params.rebalancing << std::endl;
-  if ( !params.localized ) {
-    str << "    Execution Policy:                 " << params.execution_policy << std::endl;
-    str << "    Execution Policy Alpha:           " << params.execution_policy_alpha << std::endl;
-  }
+  str << "    HE Size Activation Threshold:     " << std::boolalpha << params.hyperedge_size_activation_threshold << std::endl;
   return str;
 }
 
 struct FlowParameters {
   FlowAlgorithm algorithm = FlowAlgorithm::do_nothing;
   double alpha = 16.0;
-  ExecutionType execution_policy = ExecutionType::UNDEFINED;
-  double execution_policy_alpha = 2.0;
   bool use_most_balanced_minimum_cut = true;
   bool use_improvement_history = true;
 };
@@ -219,8 +200,6 @@ inline std::ostream & operator<< (std::ostream& str, const FlowParameters& param
   str << "  Flow Parameters:" << std::endl;
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Alpha:                            " << params.alpha << std::endl;
-  str << "    Execution Policy:                 " << params.execution_policy << std::endl;
-  str << "    Execution Policy Alpha:           " << params.execution_policy_alpha << std::endl;
   str << "    Use Most Balanced Minimum Cut:    " << std::boolalpha << params.use_most_balanced_minimum_cut << std::endl;
   str << "    Use Improvement History:          " << std::boolalpha << params.use_improvement_history << std::endl;
   return str;
@@ -229,16 +208,10 @@ inline std::ostream & operator<< (std::ostream& str, const FlowParameters& param
 struct RefinementParameters {
   LabelPropagationParameters label_propagation {};
   FlowParameters flow {};
-  bool use_batch_uncontractions = true;
-  size_t batch_size = 1;
 };
 
 inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& params) {
   str << "Refinement Parameters:" << std::endl;
-  str << "  Use Batch Uncontractions:           " << std::boolalpha << params.use_batch_uncontractions << std::endl;
-  if (params.use_batch_uncontractions) {
-    str << "  Batch Size:                         " << params.batch_size << std::endl;
-  }
   if ( params.label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
     str << std::endl << params.label_propagation;
   }
@@ -248,15 +221,37 @@ inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& 
   return str;
 }
 
+struct InitialPartitioningParameters {
+  InitialPartitioningMode mode = InitialPartitioningMode::UNDEFINED;
+  size_t runs = 1;
+  bool use_adaptive_epsilon = false;
+  size_t lp_maximum_iterations = 1;
+  size_t lp_initial_block_size = 1;
+
+  RefinementParameters refinement = { };
+};
+
+inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningParameters& params) {
+  str << "Initial Partitioning Parameters:" << std::endl;
+  str << "  Initial Partitioning Mode:          " << params.mode << std::endl;
+  str << "  Number of Runs:                     " << params.runs << std::endl;
+  str << "  Use Adaptive Epsilon:               " << std::boolalpha << params.use_adaptive_epsilon << std::endl;
+  str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
+  str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
+  str << "\nInitial Partitioning ";
+  str << params.refinement << std::endl;
+  return str;
+}
+
 struct SharedMemoryParameters {
   size_t num_threads = 1;
-  InitialHyperedgeDistribution initial_hyperedge_distribution = InitialHyperedgeDistribution::UNDEFINED;
+  size_t shuffle_block_size = 2;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const SharedMemoryParameters& params) {
   str << "Shared Memory Parameters:             " << std::endl;
   str << "  Number of Threads:                  " << params.num_threads << std::endl;
-  str << "  Initial Hyperedge Distribution:     " << params.initial_hyperedge_distribution << std::endl;
+  str << "  Random Shuffle Block Size:          " << params.shuffle_block_size << std::endl;
   return str;
 }
 
@@ -318,17 +313,10 @@ class Context {
     double hypernode_weight_fraction =
       coarsening.max_allowed_weight_multiplier
       / coarsening.contraction_limit;
-    double high_degree_hypernode_weight_fraction =
-      coarsening.max_allowed_high_degree_node_weight_multiplier
-      / coarsening.contraction_limit;
     coarsening.max_allowed_node_weight =
       std::ceil(hypernode_weight_fraction * total_hypergraph_weight);
-    coarsening.max_allowed_high_degree_node_weight =
-      std::ceil(high_degree_hypernode_weight_fraction * total_hypergraph_weight);
     coarsening.max_allowed_node_weight =
       std::min(coarsening.max_allowed_node_weight, min_block_weight);
-    coarsening.max_allowed_high_degree_node_weight =
-      std::min(coarsening.max_allowed_high_degree_node_weight, min_block_weight);
   }
 
   void sanityCheck() {
@@ -350,11 +338,38 @@ class Context {
                   LabelPropagationAlgorithm::label_propagation_km1);
     }
 
-    if ( refinement.label_propagation.localized ) {
-      // If we use localized label propagation, we want to execute LP on each level
-      // only on the uncontracted hypernodes
-      refinement.label_propagation.execution_policy = ExecutionType::constant;
-      refinement.label_propagation.execution_policy_alpha = 1.0;
+    if (partition.objective == kahypar::Objective::cut &&
+        initial_partitioning.refinement.label_propagation.algorithm ==
+        LabelPropagationAlgorithm::label_propagation_km1) {
+      ALGO_SWITCH("Initial Partitioning Refinement algorithm"
+                    << initial_partitioning.refinement.label_propagation.algorithm
+                    << "only works for km1 metric."
+                    << "Do you want to use the cut version of the label propagation refiner (Y/N)?",
+                  "Partitioning with" << initial_partitioning.refinement.label_propagation.algorithm
+                    << "refiner in combination with cut metric is not possible!",
+                  initial_partitioning.refinement.label_propagation.algorithm,
+                  LabelPropagationAlgorithm::label_propagation_cut);
+    } else if (partition.objective == kahypar::Objective::km1 &&
+               initial_partitioning.refinement.label_propagation.algorithm ==
+               LabelPropagationAlgorithm::label_propagation_cut) {
+      ALGO_SWITCH("Initial Partitioning Refinement algorithm"
+                                         << initial_partitioning.refinement.label_propagation.algorithm
+                                         << "only works for cut metric."
+                                         << "Do you want to use the km1 version of the label propagation refiner (Y/N)?",
+                  "Partitioning with" << initial_partitioning.refinement.label_propagation.algorithm
+                                         << "refiner in combination with km1 metric is not possible!",
+                  initial_partitioning.refinement.label_propagation.algorithm,
+                  LabelPropagationAlgorithm::label_propagation_km1);
+    }
+
+    if ( !preprocessing.use_community_detection ) {
+      if ( preprocessing.use_community_redistribution ) {
+        ALGO_SWITCH("Community redistribution only works if community detection is enabled."
+                    << "Do you want to enable community detection (Y/N)?",
+                    "Community redistribution without community detection is not possible!",
+                    preprocessing.use_community_detection,
+                    true);
+      }
     }
   }
 };

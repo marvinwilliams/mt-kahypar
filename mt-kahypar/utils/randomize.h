@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "tbb/task_group.h"
+#include "tbb/parallel_for.h"
 
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
@@ -56,9 +57,7 @@ class Randomize {
     }
 
     bool flipCoin() {
-      bool coinFlip = _precomputed_flip_coins[_next_coin_flip++];
-      _next_coin_flip = (_next_coin_flip % PRECOMPUTED_FLIP_COINS);
-      return coinFlip;
+      return _precomputed_flip_coins[++_next_coin_flip % PRECOMPUTED_FLIP_COINS];
     }
 
     // returns uniformly random int from the interval [low, high]
@@ -81,7 +80,7 @@ class Randomize {
 
    private:
     void precompute_flip_coins() {
-      std::uniform_int_distribution<int> bool_dist;
+      std::uniform_int_distribution<int> bool_dist(0,1);
       for (size_t i = 0; i < PRECOMPUTED_FLIP_COINS; ++i) {
         _precomputed_flip_coins[i] = static_cast<bool>(bool_dist(_gen));
       }
@@ -143,14 +142,53 @@ class Randomize {
 
   template <typename T>
   void shuffleVector(std::vector<T>& vector, size_t i, size_t j, int cpu_id) {
+    ASSERT(i <= j && j <= vector.size());
     ASSERT(cpu_id < (int)std::thread::hardware_concurrency());
     std::shuffle(vector.begin() + i, vector.begin() + j, _rand[cpu_id].getGenerator());
   }
 
   template <typename T>
   void shuffleVector(parallel::scalable_vector<T>& vector, size_t i, size_t j, int cpu_id) {
+    ASSERT(i <= j && j <= vector.size());
     ASSERT(cpu_id < (int)std::thread::hardware_concurrency());
     std::shuffle(vector.begin() + i, vector.begin() + j, _rand[cpu_id].getGenerator());
+  }
+
+  template <typename T>
+  void parallelShuffleVector(parallel::scalable_vector<T>& vector, const size_t i, const size_t j) {
+    ASSERT(i <= j && j <= vector.size());
+    const size_t P = std::thread::hardware_concurrency();
+    const size_t N = j - i;
+    const size_t step = N / P;
+    tbb::parallel_for(0UL, P, [&](const size_t k) {
+      const size_t start = i + k * step;
+      const size_t end = i + (k == P - 1 ? N : (k + 1) * step);
+      const int cpu_id = sched_getcpu();
+      std::shuffle(vector.begin() + start, vector.begin() + end, _rand[cpu_id].getGenerator());
+    });
+  }
+
+  template <typename T>
+  void localizedShuffleVector(parallel::scalable_vector<T>& vector, const size_t i, const size_t j, const size_t block_size) {
+    ASSERT(i <= j && j <= vector.size());
+    const int cpu_id = sched_getcpu();
+    for ( size_t start = i; start < j; start += block_size ) {
+      const size_t end = std::min(start + block_size, j);
+      std::shuffle(vector.begin() + start, vector.begin() + end, _rand[cpu_id].getGenerator());
+    }
+  }
+
+  template <typename T>
+  void localizedParallelShuffleVector(parallel::scalable_vector<T>& vector, const size_t i, const size_t j, const size_t block_size) {
+    ASSERT(i <= j && j <= vector.size());
+    const size_t P = std::thread::hardware_concurrency();
+    const size_t N = j - i;
+    const size_t step = N / P;
+    tbb::parallel_for(0UL, P, [&](const size_t k) {
+      const size_t start = i + k * step;
+      const size_t end = i + (k == P - 1 ? N : (k + 1) * step);
+      localizedShuffleVector(vector, start, end, block_size);
+    });
   }
 
   // returns uniformly random int from the interval [low, high]

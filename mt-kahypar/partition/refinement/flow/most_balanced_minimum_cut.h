@@ -50,7 +50,7 @@ using kahypar::ds::Edge;
 template <typename TypeTraits, class Network = Mandatory>
 class MostBalancedMinimumCut {
  private:
-  using HyperGraph = typename TypeTraits::HyperGraph;
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
  public:
@@ -125,9 +125,9 @@ class MostBalancedMinimumCut {
       double tmp_best_imbalance = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
 
       std::vector<HypernodeWeight> part_weight(2, 0);
-      part_weight[0] = hypergraph.localPartWeight(block_0);
-      part_weight[1] = hypergraph.localPartWeight(block_1);
-  
+      part_weight[0] = hypergraph.partWeight(block_0);
+      part_weight[1] = hypergraph.partWeight(block_1);
+
       for (size_t idx = 0; idx < topological_order.size(); ++idx) {
         const NodeID u = topological_order[idx];
         tmp_partition_id[u] = block_1;
@@ -241,7 +241,7 @@ class MostBalancedMinimumCut {
    * @t_param sourceSet Indicates, if BFS start from source or sink set
    */
   template <bool sourceSet>
-  void markAllReachableNodesAsVisited(Hypergraph& hypergraph, FlowNetwork& flow_network,
+  void markAllReachableNodesAsVisited(HyperGraph& hypergraph, FlowNetwork& flow_network,
                                       const PartitionID block_0, const PartitionID block_1) {
     auto start_set_iterator = sourceSet ? flow_network.sources() : flow_network.sinks();
     for (const NodeID& node : start_set_iterator) {
@@ -251,7 +251,7 @@ class MostBalancedMinimumCut {
 
     while (!_Q.empty()) {
       const NodeID u_og = _Q.front();
-      
+
       _Q.pop();
 
       if (flow_network.interpreteHypernode(u_og)) {

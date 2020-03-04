@@ -37,14 +37,12 @@
   })
 
 namespace mt_kahypar {
-REGISTER_DISPATCHED_COARSENER(CoarseningAlgorithm::community_coarsener,
-                              CommunityCoarsenerDispatcher,
+REGISTER_DISPATCHED_COARSENER(CoarseningAlgorithm::multilevel_coarsener,
+                              MultilevelCoarsenerDispatcher,
                               kahypar::meta::PolicyRegistry<RatingFunction>::getInstance().getPolicy(
                                 context.coarsening.rating.rating_function),
                               kahypar::meta::PolicyRegistry<HeavyNodePenaltyPolicy>::getInstance().getPolicy(
                                 context.coarsening.rating.heavy_node_penalty_policy),
                               kahypar::meta::PolicyRegistry<AcceptancePolicy>::getInstance().getPolicy(
-                                context.coarsening.rating.acceptance_policy),
-                              kahypar::meta::PolicyRegistry<CommunityAssignmentObjective>::getInstance().getPolicy(
-                                context.preprocessing.community_redistribution.assignment_objective));
+                                context.coarsening.rating.acceptance_policy));
 }  // namespace mt_kahypar

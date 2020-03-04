@@ -50,7 +50,7 @@ class QuotientGraphBlockScheduler {
   using TBB = typename TypeTraits::TBB;
 
  private:
-  using HyperGraph = typename TypeTraits::HyperGraph;
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
 
  public:
   QuotientGraphBlockScheduler(HyperGraph& hypergraph, const Context& context) :
@@ -92,7 +92,7 @@ class QuotientGraphBlockScheduler {
 
    std::vector<std::vector<int>> nodes_per_numa(_context.partition.k,std::vector<int>(_num_numa_nodes, 0));
     for(const HypernodeID& hn:_hg.nodes()){
-      nodes_per_numa[_hg.partID(hn)][_hg.get_numa_node_of_vertex(hn)] ++;
+      nodes_per_numa[_hg.partID(hn)][common::get_numa_node_of_vertex(hn)] ++;
     }
 
 
@@ -117,7 +117,7 @@ class QuotientGraphBlockScheduler {
         }
       }
     }
-    
+
     //split work round-robin style among numa nodes
 
     //vector for right access after Edges get scheduled
@@ -238,7 +238,7 @@ class QuotientGraphBlockScheduler {
             _round_edges[numa].pop_back();
             --i;
             --N;
-            // return if a task could be stolen 
+            // return if a task could be stolen
             _tasks_on_numa[node] --;
             return sched_edges;
           }
@@ -247,7 +247,7 @@ class QuotientGraphBlockScheduler {
       LOG << "numa got empty" << V(node);
       _empty_numas.push_back(node);
     }
-    
+
     _tasks_on_numa[node] --;
     return sched_edges;
   }
@@ -263,12 +263,12 @@ class QuotientGraphBlockScheduler {
   void randomShuffleQoutientEdges() {
     for (size_t numa = 0; numa < _num_numa_nodes; numa++){
       utils::Randomize::instance().shuffleVector(_quotient_graph[numa]);
-    } 
+    }
   }
 
-  std::pair<ConstIncidenceIterator, ConstIncidenceIterator> qoutientGraphEdges() const {
+  /*std::pair<ConstIncidenceIterator, ConstIncidenceIterator> qoutientGraphEdges() const {
     return std::make_pair(_quotient_graph.cbegin(), _quotient_graph.cend());
-  }
+  }*/
 
   std::pair<ConstCutHyperedgeIterator, ConstCutHyperedgeIterator> blockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
     ASSERT(block0 < block1, V(block0) << " < " << V(block1));
@@ -282,7 +282,7 @@ class QuotientGraphBlockScheduler {
             return false;
           }
           cut_hyperedges.insert(he);
-        }    
+        }
         for (const HyperedgeID& he : _hg.edges()) {
           if (_hg.pinCountInPart(he, block0) > 0 &&
               _hg.pinCountInPart(he, block1) > 0) {
@@ -378,7 +378,7 @@ class QuotientGraphBlockScheduler {
 
   std::vector<bool> _active_blocks;
   std::vector<bool> _locked_blocks;
-  
+
 
   // Contains the cut hyperedges for each pair of blocks.
   std::vector<std::vector<std::vector<HyperedgeID> > > _block_pair_cut_he;

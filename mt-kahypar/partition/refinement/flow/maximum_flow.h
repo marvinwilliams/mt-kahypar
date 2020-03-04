@@ -46,7 +46,7 @@
 namespace mt_kahypar {
 template <typename TypeTraits, class Network = Mandatory>
 class MaximumFlow {
-using HyperGraph = typename TypeTraits::HyperGraph;
+using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
 using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
  public:
@@ -131,7 +131,7 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
       if (assign_hypernodes) {
         if (flow_network.interpreteHypernode(u_og)) {
-          
+
           moveHypernode(hypergraph, u_og, block);
         } else if (flow_network.interpreteHyperedge(u_og)) {
           const HyperedgeID he_og = flow_network.mapToHyperedgeID(u_og);
@@ -229,7 +229,7 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
   using Base = MaximumFlow<TypeTraits,Network>;
   using FlowGraph = maxflow::Graph<int, int, int>;
  private:
-  using HyperGraph = typename TypeTraits::HyperGraph;
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
  public:
@@ -317,7 +317,7 @@ class IBFS : public MaximumFlow<TypeTraits, Network>{
   using Base = MaximumFlow<TypeTraits, Network>;
   using FlowGraph = maxflow::IBFSGraph;
  private:
-  using HyperGraph = typename TypeTraits::HyperGraph;
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
  public:

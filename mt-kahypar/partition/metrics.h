@@ -39,10 +39,10 @@ static inline HyperedgeWeight remotePinCount(const HyperGraph& hypergraph) {
   int used_numa_nodes = TBBNumaArena::instance().num_used_numa_nodes();
   HyperedgeWeight remote_pin_count = 0;
   for (const HyperedgeID& he : hypergraph.edges()) {
-    int he_node = StreamingHypergraph::get_numa_node_of_hyperedge(he);
+    int he_node = common::get_numa_node_of_edge(he);
     std::vector<size_t> pin_count_on_node(used_numa_nodes, 0);
     for (const HypernodeID& pin : hypergraph.pins(he)) {
-      int hn_node = StreamingHypergraph::get_numa_node_of_vertex(pin);
+      int hn_node = common::get_numa_node_of_vertex(pin);
       ASSERT(hn_node < used_numa_nodes);
       ++pin_count_on_node[hn_node];
     }
@@ -92,21 +92,6 @@ static inline HyperedgeWeight soed(const HyperGraph& hypergraph) {
 }
 
 template <typename HyperGraph>
-static inline double absorption(const HyperGraph& hypergraph) {
-  double absorption_val = 0.0;
-  for (PartitionID part = 0; part < hypergraph.k(); ++part) {
-    for (const HyperedgeID& he : hypergraph.edges()) {
-      HypernodeID pin_count_in_part = hypergraph.pinCountInPart(he, part);
-      if (pin_count_in_part > 0 && hypergraph.edgeSize(he) > 1) {
-        absorption_val += static_cast<double>((pin_count_in_part - 1)) / (hypergraph.edgeSize(he) - 1)
-                          * hypergraph.edgeWeight(he);
-      }
-    }
-  }
-  return absorption_val;
-}
-
-template <typename HyperGraph>
 static inline HyperedgeWeight objective(const HyperGraph& hg, const kahypar::Objective& objective) {
   switch (objective) {
     case kahypar::Objective::cut: return hyperedgeCut(hg);
@@ -153,10 +138,10 @@ static inline double localImbalance(HyperGraph& hypergraph, const Context& conte
 template< typename HyperGraph >
 static inline double localBlockImbalance(HyperGraph& hypergraph, const Context& context, PartitionID block_0, PartitionID block_1) {
 
-  double balance_0 = (hypergraph.localPartWeight(block_0) /
+  double balance_0 = (hypergraph.partWeight(block_0) /
                         static_cast<double>(context.partition.perfect_balance_part_weights[block_0]));
-  
-  double balance_1 = (hypergraph.localPartWeight(block_1) /
+
+  double balance_1 = (hypergraph.partWeight(block_1) /
                         static_cast<double>(context.partition.perfect_balance_part_weights[block_1]));
 
   double max_balance = std::max(balance_0, balance_1);

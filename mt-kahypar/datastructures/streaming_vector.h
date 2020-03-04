@@ -67,43 +67,25 @@ class StreamingVector {
     _cpu_buffer[cpu_id].emplace_back(std::forward<Args>(args)...);
   }
 
-  parallel::scalable_vector<Value> copy() {
+  parallel::scalable_vector<Value> copy_sequential() {
     parallel::scalable_vector<Value> values;
-
-    size_t total_size = 0;
-    for (size_t i = 0; i < _cpu_buffer.size(); ++i) {
-      _prefix_sum[i] = total_size;
-      total_size += _cpu_buffer[i].size();
-    }
+    size_t total_size = init_prefix_sum();
     values.resize(total_size);
 
     for (int cpu_id = 0; cpu_id < (int)_cpu_buffer.size(); ++cpu_id) {
       memcpy_from_cpu_buffer_to_destination(values, cpu_id, _prefix_sum[cpu_id]);
     }
-
     return values;
   }
 
-  parallel::scalable_vector<Value> copy(tbb::task_arena& arena) {
+  parallel::scalable_vector<Value> copy_parallel() {
     parallel::scalable_vector<Value> values;
-
-    size_t total_size = 0;
-    for (size_t i = 0; i < _cpu_buffer.size(); ++i) {
-      _prefix_sum[i] = total_size;
-      total_size += _cpu_buffer[i].size();
-    }
+    size_t total_size = init_prefix_sum();
     values.resize(total_size);
 
-    tbb::task_group group;
-    arena.execute([&] {
-          for (int cpu_id = 0; cpu_id < (int)_cpu_buffer.size(); ++cpu_id) {
-            group.run([&, cpu_id] {
-              memcpy_from_cpu_buffer_to_destination(values, cpu_id, _prefix_sum[cpu_id]);
-            });
-          }
-        });
-    group.wait();
-
+    tbb::parallel_for(0, static_cast<int>(_cpu_buffer.size()), [&](const int cpu_id) {
+      memcpy_from_cpu_buffer_to_destination(values, cpu_id, _prefix_sum[cpu_id]);
+    });
     return values;
   }
 
@@ -135,15 +117,31 @@ class StreamingVector {
     return _prefix_sum[cpu_id];
   }
 
-  void clear() {
-    for (size_t i = 0; i < _cpu_buffer.size(); ++i) {
-      parallel::scalable_vector<Value> tmp_value;
-      _cpu_buffer[i] = std::move(tmp_value);
+  void clear_sequential() {
+    for ( int cpu_id = 0; cpu_id < static_cast<int>(_cpu_buffer.size()); ++cpu_id ) {
+      _cpu_buffer[cpu_id].clear();
     }
     _prefix_sum.assign(_cpu_buffer.size(), 0);
   }
 
+  void clear_parallel() {
+    tbb::parallel_for(0, static_cast<int>(_cpu_buffer.size()), [&](const int cpu_id) {
+      parallel::scalable_vector<Value> tmp_value;
+      _cpu_buffer[cpu_id] = std::move(tmp_value);
+    });
+    _prefix_sum.assign(_cpu_buffer.size(), 0);
+  }
+
  private:
+  size_t init_prefix_sum() {
+    size_t total_size = 0;
+    for (size_t i = 0; i < _cpu_buffer.size(); ++i) {
+      _prefix_sum[i] = total_size;
+      total_size += _cpu_buffer[i].size();
+    }
+    return total_size;
+  }
+
   void memcpy_from_cpu_buffer_to_destination(parallel::scalable_vector<Value>& destination,
                                              const int cpu_id,
                                              const size_t position) {
