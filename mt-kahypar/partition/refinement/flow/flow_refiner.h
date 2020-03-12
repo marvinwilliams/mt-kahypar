@@ -18,7 +18,7 @@
 
 namespace mt_kahypar {
 
-template< typename TypeTraits >
+template< typename TypeTraits, typename Scheduler>
 class FlowRefinerT final : public IRefiner{
     private:
         using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
@@ -81,7 +81,7 @@ class FlowRefinerT final : public IRefiner{
             // NOTE(heuer): If anything goes wrong in integration experiments,
             //              this should be moved inside while loop.
             utils::Timer::instance().start_timer("build_quotient_graph", "Build Quotient Graph");
-            QuotientGraphBlockScheduler<TypeTraits> scheduler(hypergraph, _context);
+            Scheduler scheduler(hypergraph, _context);
             scheduler.buildQuotientGraph();
             utils::Timer::instance().stop_timer("build_quotient_graph");
 
@@ -141,14 +141,16 @@ class FlowRefinerT final : public IRefiner{
         }
 
 
-        void initializeImpl(HyperGraph&) override final { }
+        void initializeImpl(HyperGraph&) override final { 
+            
+        }
 
         void parallelFlowCalculation(FlowConfig& config,
                                      const Edge& edge,
                                      const int node,
                                      const size_t& current_round,
                                      bool& improvement,
-                                     QuotientGraphBlockScheduler<TypeTraits>& scheduler,
+                                     Scheduler& scheduler,
                                      tbb::parallel_do_feeder<Edge>& feeder) {
             const PartitionID block_0 = edge.first;
             const PartitionID block_1 = edge.second;
@@ -169,7 +171,6 @@ class FlowRefinerT final : public IRefiner{
 
             const bool improved = executeAdaptiveFlow(config, block_0, block_1, scheduler);
             if (improved) {
-
                 improvement = true;
                 scheduler.setActiveBlock(block_0, true);
                 scheduler.setActiveBlock(block_1, true);
@@ -187,7 +188,7 @@ class FlowRefinerT final : public IRefiner{
                                 int node,
                                 const size_t & current_round,
                                 bool & improvement,
-                                QuotientGraphBlockScheduler<TypeTraits> & scheduler,
+                                Scheduler & scheduler,
                                 tbb::parallel_do_feeder<Edge>& feeder) {
             utils::Timer::instance().start_timer("schedule", "Scheduling Next Blocks ", true);
             //start new tasks on this numa node
@@ -214,7 +215,7 @@ class FlowRefinerT final : public IRefiner{
         bool executeAdaptiveFlow(FlowConfig& config,
                                 const PartitionID block_0,
                                 const PartitionID block_1,
-                                QuotientGraphBlockScheduler<TypeTraits> & quotientGraph ) {
+                                Scheduler & quotientGraph ) {
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
             HyperedgeWeight thread_local_delta = 0;
@@ -337,6 +338,7 @@ class FlowRefinerT final : public IRefiner{
     std::vector<std::vector<Edge>> _start_new_parallel_do;
 };
 
-using FlowRefiner = FlowRefinerT<GlobalTypeTraits>;
+using FlowRefinerMatch = FlowRefinerT<GlobalTypeTraits, MatchingScheduler<GlobalTypeTraits>>;
+using FlowRefinerOpt = FlowRefinerT<GlobalTypeTraits, OptScheduler<GlobalTypeTraits>>;
 
 } //namespace mt_kahypar

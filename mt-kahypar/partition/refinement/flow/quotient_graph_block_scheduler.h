@@ -39,24 +39,26 @@
 #include "mt-kahypar/utils/randomize.h"
 #include "mt-kahypar/partition/refinement/flow/flow_refiner.h"
 
-namespace mt_kahypar {
 
-template<typename TypeTraits>
-class QuotientGraphBlockScheduler {
-  typedef std::pair<PartitionID, PartitionID> edge;
-  typedef std::pair<int, edge> scheduling_edge;
-  using ConstIncidenceIterator = std::vector<edge>::const_iterator;
-  using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
-  using TBB = typename TypeTraits::TBB;
+
+namespace mt_kahypar {
+using edge = std::pair<PartitionID, PartitionID>;
+using scheduling_edge = std::pair<int, edge>;
+using ConstIncidenceIterator = std::vector<edge>::const_iterator;
+using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
+
+template <typename TypeTraits = Mandatory, 
+          typename Derived = Mandatory>
+class SchedulerBase {
 
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
 
  public:
-  QuotientGraphBlockScheduler(HyperGraph& hypergraph, const Context& context) :
+  SchedulerBase(HyperGraph& hypergraph, const Context& context) :
     _hg(hypergraph),
     _context(context),
-    _num_numa_nodes(TBB::instance().num_used_numa_nodes()),
+    _num_numa_nodes(TypeTraits::TBB::instance().num_used_numa_nodes()),
     _quotient_graph(_num_numa_nodes),
     _round_edges(_num_numa_nodes),
     _active_blocks(_context.partition.k, true),
@@ -66,14 +68,13 @@ class QuotientGraphBlockScheduler {
                        std::vector<std::vector<HyperedgeID> >(context.partition.k,
                                                               std::vector<HyperedgeID>())),
     _schedule_mutex(),
-    //_task_group(),
     _tasks_on_numa(_num_numa_nodes, 0),
     _empty_numas() { }
 
-  QuotientGraphBlockScheduler(const QuotientGraphBlockScheduler&) = delete;
-  QuotientGraphBlockScheduler(QuotientGraphBlockScheduler&&) = delete;
-  QuotientGraphBlockScheduler& operator= (const QuotientGraphBlockScheduler&) = delete;
-  QuotientGraphBlockScheduler& operator= (QuotientGraphBlockScheduler&&) = delete;
+  SchedulerBase(const SchedulerBase&) = delete;
+  SchedulerBase(SchedulerBase&&) = delete;
+  SchedulerBase& operator= (const SchedulerBase&) = delete;
+  SchedulerBase& operator= (SchedulerBase&&) = delete;
 
   void buildQuotientGraph() {
     std::set<edge> edge_list;
@@ -107,157 +108,23 @@ class QuotientGraphBlockScheduler {
   }
 
   std::vector<std::vector<edge>> getInitialParallelEdges(){
-    utils::Timer::instance().start_timer("initscheduling", "Initial Scheduling ");
-    std::vector<std::vector<edge>> initialEdges(_num_numa_nodes);
-
-    for (size_t i = 0; i < _num_numa_nodes; i++){
-      for(auto const edge:_quotient_graph[i]){
-        if(_active_blocks[edge.first] && _active_blocks[edge.second]){
-          _round_edges[i].push_back(edge);
+    //push edges from active blocks in _round_edges
+    for (size_t i = 0; i < this->_num_numa_nodes; i++){
+      for(auto const edge:this->_quotient_graph[i]){
+        if(this->_active_blocks[edge.first] && this->_active_blocks[edge.second]){
+          this->_round_edges[i].push_back(edge);
         }
       }
     }
-
-    //split work round-robin style among numa nodes
-
-    //vector for right access after Edges get scheduled
-    std::vector<int> scheduled_on_numa(_num_numa_nodes, 0);
-    int i = 0;
-    bool numa_has_edges = true;
-    while(numa_has_edges){
-      numa_has_edges = false;
-      for (size_t numa = 0; numa < _num_numa_nodes; numa++){
-        size_t numa_i = i - scheduled_on_numa[numa];
-        if(numa_i < _round_edges[numa].size()){
-          numa_has_edges = true;
-          const edge e = _round_edges[numa][numa_i];
-          if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
-            initialEdges[numa].push_back(_round_edges[numa][numa_i]);
-            _tasks_on_numa[numa] ++;
-            scheduled_on_numa[numa]++;
-            _locked_blocks[e.first] = true;
-            _locked_blocks[e.second] = true;
-
-            //delete edge in round_edges
-            size_t N = _round_edges[numa].size();
-            std::swap(_round_edges[numa][numa_i], _round_edges[numa][N - 1]);
-            _round_edges[numa].pop_back();
-          }
-        }
-      }
-      i++;
-    }
-
-    //test if there is a NUMA node with no initial work but with work left in this round.
-    //add to _empty_numas list to start new parallel do on them in schedulenextblock if possible
-    for (size_t numa = 0; numa < _num_numa_nodes; numa++){
-      if(initialEdges[numa].size() == 0 && _round_edges[numa].size() > 0){
-        _empty_numas.push_back(numa);
-      }
-    }
-
-    //reset active-array before each round
-    //blocks are set active, if improvement was found
-    _active_blocks.assign(_context.partition.k, false);
-
-    utils::Timer::instance().stop_timer("initscheduling");
-    return initialEdges;
+    return static_cast<Derived*>(this)->getInitialParallelEdgesImpl();
   }
 
   std::vector<scheduling_edge> scheduleNextBlocks(const edge old_edge, const int node, tbb::parallel_do_feeder<edge>& feeder){
-    tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
-    //unlock the blocks
-    _locked_blocks[old_edge.first] = false;
-    _locked_blocks[old_edge.second] = false;
-
-    //start new flow-calclation for blocks on the same numa node
-    size_t N = _round_edges[node].size();
-    for (size_t i = 0; i < N; ++i) {
-      auto e = _round_edges[node][i];
-      if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
-        _locked_blocks[e.first] = true;
-        _locked_blocks[e.second] = true;
-        _tasks_on_numa[node] ++;
-
-        //start new
-        feeder.add(e);
-
-        std::swap(_round_edges[node][i], _round_edges[node][N - 1]);
-        _round_edges[node].pop_back();
-        --i;
-        --N;
-      }
-    }
-
-    std::vector<scheduling_edge> sched_edges;
-    //build vector to start new parallel do's on empty numa nodes with work left
-    size_t numa_N = _empty_numas.size();
-    for (size_t j = 0; j < numa_N; j++){
-      int numa = _empty_numas[j];
-      size_t N = _round_edges[numa].size();
-      for (size_t i = 0; i < N; ++i) {
-        auto e = _round_edges[numa][i];
-        if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
-          _locked_blocks[e.first] = true;
-          _locked_blocks[e.second] = true;
-          _tasks_on_numa[numa] ++;
-
-          //add new sched_edge to start
-          sched_edges.push_back(std::make_pair(numa, e));
-
-          //remove round_edge
-          std::swap(_round_edges[numa][i], _round_edges[numa][N - 1]);
-          _round_edges[numa].pop_back();
-          i = N;
-          //remove numa from empty numas
-          std::swap(_empty_numas[j], _empty_numas[numa_N - 1]);
-          _empty_numas.pop_back();
-          --j;
-          --numa_N;
-        }
-      }
-    }
-
-    // check if this is the last running task on the numa node and if there are still tasks
-    // left to do on the numa node. Try to steal a task from another numa-node to keep running
-    // if not possible add this numa node to _empty_numas
-    if(_tasks_on_numa[node] == 1 && _round_edges[node].size() > 0){
-      for (size_t numa = 0; numa < _num_numa_nodes; numa++){
-      size_t N = _round_edges[numa].size();
-        for (size_t i = 0; i < N; ++i) {
-          auto e = _round_edges[numa][i];
-          if (!_locked_blocks[e.first] && !_locked_blocks[e.second]){
-            _locked_blocks[e.first] = true;
-            _locked_blocks[e.second] = true;
-            _tasks_on_numa[node] ++;
-
-            //start new
-            feeder.add(e);
-
-            std::swap(_round_edges[numa][i], _round_edges[numa][N - 1]);
-            _round_edges[numa].pop_back();
-            --i;
-            --N;
-            // return if a task could be stolen
-            _tasks_on_numa[node] --;
-            return sched_edges;
-          }
-        }
-      }
-      LOG << "numa got empty" << V(node);
-      _empty_numas.push_back(node);
-    }
-
-    _tasks_on_numa[node] --;
-    return sched_edges;
+    return static_cast<Derived*>(this)->scheduleNextBlocksImpl(old_edge, node, feeder);
   }
 
   size_t getNumberOfActiveTasks(){
-    size_t tasks = 0;
-    for(auto numa:_tasks_on_numa){
-      tasks += numa;
-    }
-    return tasks;
+    return static_cast<Derived*>(this)->getNumberOfActiveTasksImpl();
   }
 
   void randomShuffleQoutientEdges() {
@@ -348,7 +215,7 @@ class QuotientGraphBlockScheduler {
     return active_blocks;
   }
 
- private:
+ protected:
   static constexpr bool debug = false;
 
   void updateBlockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
@@ -369,6 +236,13 @@ class QuotientGraphBlockScheduler {
     }
   }
 
+  template<typename T>
+  void removeElement(size_t index, std::vector<T> &vector){
+    size_t N = vector.size();
+    std::swap(vector[index], vector[N - 1]);
+    vector.pop_back();
+  }
+
   HyperGraph& _hg;
   const Context& _context;
   const size_t _num_numa_nodes;
@@ -387,4 +261,254 @@ class QuotientGraphBlockScheduler {
   std::vector<size_t> _tasks_on_numa;
   std::vector<int> _empty_numas;
 };
+
+template <typename TypeTraits>
+class MatchingScheduler : public SchedulerBase<TypeTraits, MatchingScheduler<TypeTraits>> {
+  using Base = SchedulerBase<TypeTraits, MatchingScheduler<TypeTraits>>;
+  public:
+  //using base constructor
+  using Base::Base;
+  
+  std::vector<std::vector<edge>> getInitialParallelEdgesImpl(){
+    std::vector<std::vector<edge>> initialEdges(this->_num_numa_nodes);
+
+    //split work round-robin style among numa nodes
+
+    //vector for right access after Edges get scheduled
+    std::vector<int> scheduled_on_numa(this->_num_numa_nodes, 0);
+    int i = 0;
+    bool numa_has_edges = true;
+    while(numa_has_edges){
+      numa_has_edges = false;
+      for (size_t numa = 0; numa < this->_num_numa_nodes; numa++){
+        size_t numa_i = i - scheduled_on_numa[numa];
+        if(numa_i < this->_round_edges[numa].size()){
+          numa_has_edges = true;
+          const edge e = this->_round_edges[numa][numa_i];
+          if (!this->_locked_blocks[e.first] && !this->_locked_blocks[e.second]){
+            initialEdges[numa].push_back(this->_round_edges[numa][numa_i]);
+            this->_tasks_on_numa[numa] ++;
+            scheduled_on_numa[numa]++;
+            this->_locked_blocks[e.first] = true;
+            this->_locked_blocks[e.second] = true;
+
+            //delete edge in round_edges
+            size_t N = this->_round_edges[numa].size();
+            std::swap(this->_round_edges[numa][numa_i], this->_round_edges[numa][N - 1]);
+            this->_round_edges[numa].pop_back();
+          }
+        }
+      }
+      i++;
+    }
+
+    //test if there is a NUMA node with no initial work but with work left in this round.
+    //add to _empty_numas list to start new parallel do on them in schedulenextblock if possible
+    for (size_t numa = 0; numa < this->_num_numa_nodes; numa++){
+      if(initialEdges[numa].size() == 0 && this->_round_edges[numa].size() > 0){
+        this->_empty_numas.push_back(numa);
+      }
+    }
+
+    //reset active-array before each round
+    //blocks are set active, if improvement was found
+    this->_active_blocks.assign(this->_context.partition.k, false);
+
+    return initialEdges;
+  }
+
+  std::vector<scheduling_edge> scheduleNextBlocksImpl(const edge old_edge, const int node, tbb::parallel_do_feeder<edge>& feeder){
+    tbb::spin_mutex::scoped_lock lock{this->_schedule_mutex};
+    //unlock the blocks
+    this->_locked_blocks[old_edge.first] = false;
+    this->_locked_blocks[old_edge.second] = false;
+
+    //start new flow-calclation for blocks on the same numa node
+    size_t N = this->_round_edges[node].size();
+    for (size_t i = 0; i < N; ++i) {
+      auto e = this->_round_edges[node][i];
+      if (!this->_locked_blocks[e.first] && !this->_locked_blocks[e.second]){
+        this->_locked_blocks[e.first] = true;
+        this->_locked_blocks[e.second] = true;
+        this->_tasks_on_numa[node] ++;
+
+        //start new
+        feeder.add(e);
+
+        std::swap(this->_round_edges[node][i], this->_round_edges[node][N - 1]);
+        this->_round_edges[node].pop_back();
+        --i;
+        --N;
+      }
+    }
+
+    std::vector<scheduling_edge> sched_edges;
+    //build vector to start new parallel do's on empty numa nodes with work left
+    size_t numa_N = this->_empty_numas.size();
+    for (size_t j = 0; j < numa_N; j++){
+      int numa = this->_empty_numas[j];
+      size_t N = this->_round_edges[numa].size();
+      for (size_t i = 0; i < N; ++i) {
+        auto e = this->_round_edges[numa][i];
+        if (!this->_locked_blocks[e.first] && !this->_locked_blocks[e.second]){
+          this->_locked_blocks[e.first] = true;
+          this->_locked_blocks[e.second] = true;
+          this->_tasks_on_numa[numa] ++;
+
+          //add new sched_edge to start
+          sched_edges.push_back(std::make_pair(numa, e));
+
+          //remove round_edge
+          std::swap(this->_round_edges[numa][i], this->_round_edges[numa][N - 1]);
+          this->_round_edges[numa].pop_back();
+          i = N;
+          //remove numa from empty numas
+          std::swap(this->_empty_numas[j], this->_empty_numas[numa_N - 1]);
+          this->_empty_numas.pop_back();
+          --j;
+          --numa_N;
+        }
+      }
+    }
+
+    // check if this is the last running task on the numa node and if there are still tasks
+    // left to do on the numa node. Try to steal a task from another numa-node to keep running
+    // if not possible add this numa node to _empty_numas
+    if(this->_tasks_on_numa[node] == 1 && this->_round_edges[node].size() > 0){
+      for (size_t numa = 0; numa < this->_num_numa_nodes; numa++){
+      size_t N = this->_round_edges[numa].size();
+        for (size_t i = 0; i < N; ++i) {
+          auto e = this->_round_edges[numa][i];
+          if (!this->_locked_blocks[e.first] && !this->_locked_blocks[e.second]){
+            this->_locked_blocks[e.first] = true;
+            this->_locked_blocks[e.second] = true;
+            this->_tasks_on_numa[node] ++;
+
+            //start new
+            feeder.add(e);
+
+            std::swap(this->_round_edges[numa][i], this->_round_edges[numa][N - 1]);
+            this->_round_edges[numa].pop_back();
+            --i;
+            --N;
+            // return if a task could be stolen
+            this->_tasks_on_numa[node] --;
+            return sched_edges;
+          }
+        }
+      }
+      LOG << "numa got empty" << V(node);
+      this->_empty_numas.push_back(node);
+    }
+
+    this->_tasks_on_numa[node] --;
+    return sched_edges;
+  }
+
+  size_t getNumberOfActiveTasksImpl(){
+    size_t tasks = 0;
+    for(auto numa:this->_tasks_on_numa){
+      tasks += numa;
+    }
+    return tasks;
+  }
+
+};
+
+template <typename TypeTraits>
+class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> {
+  using Base = SchedulerBase<TypeTraits, OptScheduler<TypeTraits>>;
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+  using HwTopology = typename TypeTraits::HwTopology;
+  public:
+  OptScheduler(HyperGraph& hypergraph, const Context& context) :
+    Base(hypergraph, context),
+    _tasks_on_block(context.partition.k, 0) { }
+
+  std::vector<std::vector<edge>> getInitialParallelEdgesImpl(){
+    std::vector<std::vector<edge>> initial_edges (this->_num_numa_nodes);
+    for (size_t numa = 0; numa < this->_num_numa_nodes; numa++){
+      //TODO: also use Hyperthreads?
+      size_t num_cpus = HwTopology::instance().num_cores_on_numa_node(numa);
+      for (size_t i = 0; i < num_cpus; i++){
+        edge e = getMostIndependentEdge(numa);
+        if(e.first >= 0){
+          initial_edges[numa].push_back(e);
+        }
+      }
+    }
+    return initial_edges;
+  }
+
+  std::vector<scheduling_edge> scheduleNextBlocksImpl(const edge old_edge, const int node, tbb::parallel_do_feeder<edge>& feeder){
+    tbb::spin_mutex::scoped_lock lock{this->_schedule_mutex};
+
+    _tasks_on_block[old_edge.first] --;
+    _tasks_on_block[old_edge.second] --;
+
+    edge e = getMostIndependentEdge(node);
+    if(e.first >= 0)
+      feeder.add(e);
+    return std::vector<scheduling_edge>(0);
+  }
+
+  size_t getNumberOfActiveTasksImpl(){
+    size_t tasks = 0;
+    for(auto block:_tasks_on_block){
+      tasks += block;
+    }
+    return tasks;
+  }
+
+  private:
+  struct bestEdge{
+    edge e;
+    size_t numa;
+    size_t index;
+  };
+
+  edge getMostIndependentEdge(size_t own_numa){
+    bestEdge best_edge;
+    size_t independence = std::numeric_limits<size_t>::max();
+
+    //try to find edge from the same numa
+    for(size_t i = 0; i < this->_round_edges[own_numa].size(); i++){
+      edge e = this->_round_edges[own_numa][i];
+      size_t temp_independence = std::max(_tasks_on_block[e.first], _tasks_on_block[e.second]);
+      if(temp_independence < independence){
+        independence = temp_independence;
+        best_edge = bestEdge{e, own_numa, i};
+      } 
+    }
+    if(independence < std::numeric_limits<size_t>::max()){
+      _tasks_on_block[best_edge.e.first] ++;
+      _tasks_on_block[best_edge.e.second] ++;
+      this->removeElement(best_edge.index, this->_round_edges[best_edge.numa]);
+      return best_edge.e;
+    }
+
+    //search all numas
+    for (size_t numa = 0; numa < this->_num_numa_nodes; numa++){
+      for(size_t i = 0; i < this->_round_edges[numa].size(); i++){
+        edge e = this->_round_edges[numa][i];
+        size_t temp_independence = std::max(_tasks_on_block[e.first], _tasks_on_block[e.second]);
+        if(temp_independence < independence){
+          independence = temp_independence;
+          best_edge = bestEdge{e, numa, i};
+        } 
+      }
+    }
+    if(independence < std::numeric_limits<size_t>::max()){
+      _tasks_on_block[best_edge.e.first] ++;
+      _tasks_on_block[best_edge.e.second] ++;
+      this->removeElement(best_edge.index, this->_round_edges[best_edge.numa]);
+      return best_edge.e;
+    } else {
+      return std::make_pair(-1, -1);
+    }
+  }
+
+  std::vector<size_t> _tasks_on_block;
+};
+
 }  // namespace mt-kahypar

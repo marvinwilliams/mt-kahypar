@@ -109,7 +109,8 @@ enum class LabelPropagationAlgorithm : uint8_t {
 };
 
 enum class FlowAlgorithm : uint8_t {
-  flow,
+  flow_match,
+  flow_opt,
   do_nothing
 };
 
@@ -243,7 +244,8 @@ std::ostream & operator<< (std::ostream& os, const LabelPropagationAlgorithm& al
 
 std::ostream & operator<< (std::ostream& os, const FlowAlgorithm& algo) {
   switch (algo) {
-    case FlowAlgorithm::flow: return os << "flow";
+    case FlowAlgorithm::flow_match: return os << "flow_match";
+    case FlowAlgorithm::flow_opt: return os << "flow_opt";
     case FlowAlgorithm::do_nothing: return os << "do_nothing";
       // omit default case to trigger compiler warning for missing cases
   }
@@ -373,8 +375,10 @@ static LabelPropagationAlgorithm labelPropagationAlgorithmFromString(const std::
 }
 
 static FlowAlgorithm flowAlgorithmFromString(const std::string& type) {
-  if( type == "flow"){
-    return FlowAlgorithm::flow;
+  if (type == "flow_match") {
+    return FlowAlgorithm::flow_match;
+  } else if (type == "flow_opt") {
+    return FlowAlgorithm::flow_opt;
   } else if (type == "do_nothing") {
     return FlowAlgorithm::do_nothing;
   }
