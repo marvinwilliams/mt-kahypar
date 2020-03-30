@@ -68,9 +68,10 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
   virtual Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) = 0;
 
+  template<typename Scheduler>
   HyperedgeWeight minimumSTCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
                                const Context& context,
-                               const PartitionID block_0, const PartitionID block_1) {
+                               const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler) {
     if (flow_network.isTrivialFlow()) {
       return Network::kInfty;
     }
@@ -86,7 +87,7 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
     const HyperedgeWeight cut = maximumFlow(hypergraph, flow_network);
 
     if (context.refinement.flow.use_most_balanced_minimum_cut) {
-      _mbmc.mostBalancedMinimumCut(hypergraph, flow_network, context, block_0, block_1);
+      _mbmc.mostBalancedMinimumCut(hypergraph, flow_network, context, block_0, block_1, scheduler);
     } else {
       bfs<true>(hypergraph, flow_network, block_0);
     }

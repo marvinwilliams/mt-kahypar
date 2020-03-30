@@ -198,6 +198,21 @@ class FlowNetwork {
     return cut;
   }
 
+  std::vector<HypernodeWeight> get_aquired_part_weight(HyperGraph& hypergraph, size_t block_0,size_t block_1){
+      std::vector<HypernodeWeight> part_weight(2, 0);
+      for(auto hn: hypernodes()){
+      size_t block = hypergraph.partID(hn);
+      if(block == block_0){
+          part_weight[0] += hypergraph.nodeWeight(hn);
+      }else if(block == block_1){
+          part_weight[1] += hypergraph.nodeWeight(hn);
+      } else {
+          ASSERT(false, "hypernode does not belong to block0 or block1");
+      }
+      }
+      return part_weight;
+  }
+
   void addHypernode(HyperGraph& hypergraph, const HypernodeID hn) {
     ASSERT(!containsHypernode(hypergraph, hn), "HN " << hn << " already contained in flow problem!");
     _hypernodes.add(hypergraph.originalNodeID(hn));
@@ -248,7 +263,10 @@ class FlowNetwork {
   }
 
   template<typename Scheduler>
-  void releaseHyperNodes(Scheduler& scheduler){
+  void releaseHyperNodes(HyperGraph& hypergraph, Scheduler& scheduler, PartitionID block_0, PartitionID block_1){
+    std::vector<HypernodeWeight> aquired_part_weight = get_aquired_part_weight(hypergraph,block_0, block_1);
+    scheduler.release_block_weight(block_0, block_1, aquired_part_weight[0]);
+    scheduler.release_block_weight(block_1, block_0, aquired_part_weight[1]);
    for (const HypernodeID& hn : hypernodes()) {
      scheduler.releaseNode(hn);
    }  
@@ -545,7 +563,8 @@ class FlowNetwork {
       if ((pinsNotInFlowProblem(hypergraph, he, _cur_block0) > 0 &&
            pinsNotInFlowProblem(hypergraph, he, _cur_block1) > 0) ||
           (context.partition.objective == kahypar::Objective::cut &&
-           !isRemovableFromCut(hypergraph, he, _cur_block0, _cur_block1))) {
+           !isRemovableFromCut(hypergraph, he, _cur_block0, _cur_block1))||
+           context.refinement.flow.algorithm == FlowAlgorithm::flow_opt) {
         addEdge(u, v, hypergraph.edgeWeight(he));
       } else {
         if (pinsNotInFlowProblem(hypergraph, he, _cur_block0) > 0) {

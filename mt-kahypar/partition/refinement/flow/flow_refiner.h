@@ -95,6 +95,7 @@ class FlowRefinerT final : public IRefiner{
 
                 scheduler.randomShuffleQoutientEdges();
                 auto scheduling_edges = scheduler.getInitialParallelEdges();
+                scheduler.init_block_weights();
                 _round_delta = 0;
 
                 //parallel here
@@ -114,16 +115,17 @@ class FlowRefinerT final : public IRefiner{
 
                 //LOG << "ROUND done_______________________________________________________";
 
-                HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
+                HyperedgeWeight current_metric = metrics::objective(hypergraph, _context.partition.objective);
+                //best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
                 double current_imbalance = metrics::imbalance(hypergraph, _context);
 
                 //check if the metric improved as exspected
-                ASSERT(current_metric == metrics::objective(hypergraph, _context.partition.objective),
+                /*ASSERT(current_metric == metrics::objective(hypergraph, _context.partition.objective),
                         "Sum of deltas is not the global improvement!"
                         << V(_context.partition.objective)
                         << V(metrics::objective(hypergraph, _context.partition.objective))
                         << V(_round_delta)
-                        << V(current_metric));
+                        << V(current_metric));*/
 
                 //Update bestmetrics
                 best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
@@ -228,8 +230,8 @@ class FlowRefinerT final : public IRefiner{
             do {
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
-                const double old_imbalance = metrics::localBlockImbalance(
-                    hypergraph, _context, block_0, block_1);
+                //const double old_imbalance = metrics::localBlockImbalance(
+                //hypergraph, _context, block_0, block_1);
 
                 // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
                 std::vector<HyperedgeID> cut_hes;
@@ -267,13 +269,13 @@ class FlowRefinerT final : public IRefiner{
                 // Find minimum (S,T)-bipartition
                 const HyperedgeWeight cut_flow_network_after =
                     maximum_flow.minimumSTCut(
-                        hypergraph, flow_network, _context, block_0, block_1);
+                        hypergraph, flow_network, _context, block_0, block_1, scheduler);
 
                 // Maximum Flow algorithm returns infinity, if all
                 // hypernodes contained in the flow problem are either
                 // sources or sinks
                 if (cut_flow_network_after == FlowNetwork::kInfty) {
-                    flow_network.releaseHyperNodes(scheduler);
+                    flow_network.releaseHyperNodes(hypergraph, scheduler, block_0, block_1);
                     break;
                 }
 
@@ -282,15 +284,18 @@ class FlowRefinerT final : public IRefiner{
                         "Flow calculation should not increase cut!"
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
 
-                const double current_imbalance = metrics::localBlockImbalance(hypergraph, _context, block_0, block_1);
-                const bool equal_metric = delta == 0;
+                //const double current_imbalance = metrics::localBlockImbalance(hypergraph, _context, block_0, block_1);
+                std::vector<HypernodeWeight> aquired_part_weight = flow_network.get_aquired_part_weight(hypergraph, block_0, block_1);
+                double current_imbalance = metrics::localBlockImbalanceParallel(_context, block_0, block_1, scheduler,
+                    aquired_part_weight[0], aquired_part_weight[1]);
+
+                //const bool equal_metric = delta == 0;
                 const bool improved_metric = delta > 0;
-                const bool improved_imbalance = current_imbalance < old_imbalance;
-                const bool is_feasible_partition = current_imbalance <= std::max(old_imbalance, _context.partition.epsilon);
+                //const bool improved_imbalance = current_imbalance < old_imbalance;
+                const bool is_feasible_partition = current_imbalance <=  _context.partition.epsilon;
 
                 bool current_improvement = false;
-                if ((improved_metric && (is_feasible_partition || improved_imbalance)) ||
-                    (equal_metric && improved_imbalance)) {
+                if (improved_metric && is_feasible_partition) {
                     improvement = true;
                     current_improvement = true;
                     thread_local_delta += delta;
@@ -318,11 +323,11 @@ class FlowRefinerT final : public IRefiner{
                 //
                 // always use
                 if (!improvement && cut_flow_network_before == cut_flow_network_after) {
-                    flow_network.releaseHyperNodes(scheduler);
+                    flow_network.releaseHyperNodes(hypergraph, scheduler, block_0, block_1);
                     break;
                 }
 
-                flow_network.releaseHyperNodes(scheduler);
+                flow_network.releaseHyperNodes(hypergraph, scheduler, block_0, block_1);
                 
             } while (alpha > 1.0);
 

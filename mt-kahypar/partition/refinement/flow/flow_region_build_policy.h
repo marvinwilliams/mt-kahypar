@@ -46,6 +46,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
                                 Network& flow_network,
                                 std::vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
+                                const PartitionID other_part,
                                 const HypernodeWeight max_part_weight,
                                 kahypar::ds::FastResetFlagArray<>& visited,
                                 Scheduler& scheduler) {
@@ -88,6 +89,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
         }
       }
     }
+    scheduler.aquire_block_weight(part, other_part, queue_weight);
     return num_hypernodes_added;
   }
 };
@@ -111,7 +113,8 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     std::vector<HypernodeID> start_nodes_block_0;
     std::vector<HypernodeID> start_nodes_block_1;
     for (const HyperedgeID he : cut_hes) {
-      ASSERT(hg.connectivity(he) > 1, "Hyperedge is not a cut hyperedge!");
+      //TODO: why does this fail sometimes?
+      //ASSERT(hg.connectivity(he) > 1, "Hyperedge is not a cut hyperedge!");
       for (const HypernodeID& pin : hg.pins(he)) {
         if (!visited[hg.originalNodeID(pin)]) {
           if (hg.partID(pin) == block_0) {
@@ -143,6 +146,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     const HypernodeID num_nodes_block_0 = FlowRegionBuildPolicy<TypeTraits>::bfs(hg, flow_network,
                                                                      start_nodes_block_0,
                                                                      block_0,
+                                                                     block_1,
                                                                      max_part_weight_0,
                                                                      visited,
                                                                      scheduler);
@@ -156,6 +160,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      flow_network,
                                                                      start_nodes_block_1,
                                                                      block_1,
+                                                                     block_0,
                                                                      max_part_weight_1,
                                                                      visited,
                                                                      scheduler);

@@ -69,7 +69,8 @@ class SchedulerBase {
                                                               std::vector<HyperedgeID>())),
     _schedule_mutex(),
     _tasks_on_numa(_num_numa_nodes, 0),
-    _empty_numas() { }
+    _empty_numas(),
+    _block_weights(context.partition.k, std::vector<size_t>(context.partition.k, 0)) { }
 
   SchedulerBase(const SchedulerBase&) = delete;
   SchedulerBase(SchedulerBase&&) = delete;
@@ -227,6 +228,39 @@ class SchedulerBase {
     return active_blocks;
   }
 
+  //TODO: add read write lock or make sth atomic
+  void init_block_weights(){
+    for (int i = 0; i < _context.partition.k; i++){
+      for (int j = 0; j < _context.partition.k; j++){
+        if(j==i){
+          _block_weights[i][j] = _hg.partWeight(i);
+        }else{
+          _block_weights[i][j] = 0;
+        }
+      }
+    }
+  }
+
+  void aquire_block_weight(size_t block_to_aquire, size_t other_block, size_t amount){
+    _block_weights[block_to_aquire][other_block] = amount;
+    _block_weights[block_to_aquire][block_to_aquire] -= amount;
+  }
+
+  void release_block_weight(size_t block_to_release, size_t other_block, size_t amount){
+    _block_weights[block_to_release][other_block] = 0;
+    _block_weights[block_to_release][block_to_release] += amount;
+  }
+
+  size_t get_not_aquired_weight(PartitionID block, PartitionID other_block){
+    size_t weight = 0;
+    for (int i = 0; i < _context.partition.k; i++){
+      if(i != other_block){
+        weight += _block_weights[block][i];
+      }
+    }
+    return weight;
+  }
+
  protected:
   static constexpr bool debug = false;
 
@@ -272,6 +306,8 @@ class SchedulerBase {
   tbb::spin_mutex _schedule_mutex;
   std::vector<size_t> _tasks_on_numa;
   std::vector<int> _empty_numas;
+
+  std::vector<std::vector<size_t>> _block_weights;
 };
 
 template <typename TypeTraits>
@@ -459,6 +495,9 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
         }
       }
     }
+    //reset active-array before each round
+    //blocks are set active, if improvement was found
+    this->_active_blocks.assign(this->_context.partition.k, false);
     return initial_edges;
   }
 

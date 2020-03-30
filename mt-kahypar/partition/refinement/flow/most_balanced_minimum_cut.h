@@ -67,9 +67,10 @@ class MostBalancedMinimumCut {
   MostBalancedMinimumCut& operator= (const MostBalancedMinimumCut&) = delete;
   MostBalancedMinimumCut& operator= (MostBalancedMinimumCut&&) = delete;
 
+  template<typename Scheduler>
   void mostBalancedMinimumCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
                               const Context& context,
-                              const PartitionID block_0, const PartitionID block_1) {
+                              const PartitionID block_0, const PartitionID block_1, Scheduler& scheduler) {
     reset();
 
     // Mark all reachable nodes from source and sink set as invalid
@@ -111,10 +112,13 @@ class MostBalancedMinimumCut {
     // Find most balanced minimum cut
     std::vector<NodeID> topological_order(dag.numNodes(), 0);
     std::vector<PartitionID> best_partition_id(dag.numNodes(), block_0);
-    double best_imbalance = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);;
+    std::vector<HypernodeWeight> aquired_part_weight = flow_network.get_aquired_part_weight(hypergraph, block_0, block_1);
+    double best_imbalance = metrics::localBlockImbalanceParallel(context, block_0, block_1, scheduler,
+     aquired_part_weight[0], aquired_part_weight[1]);
 
     DBG << "Start Most Balanced Minimum Cut (Bipartition = {" << block_0 << "," << block_1 << "}";
-    DBG << "Initial imbalance: " << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1));
+    DBG << "Initial imbalance: " << V(metrics::localBlockImbalanceParallel(context, block_0,
+     block_1, scheduler, aquired_part_weight[0], aquired_part_weight[1]));
 
     for (size_t i = 0; i < 20; ++i) {
       // Compute random topological order
@@ -122,18 +126,16 @@ class MostBalancedMinimumCut {
 
       // Sweep through topological order and find best imbalance
       std::vector<PartitionID> tmp_partition_id(dag.numNodes(), block_0);
-      double tmp_best_imbalance = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
+      double tmp_best_imbalance = best_imbalance;//metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
 
-      std::vector<HypernodeWeight> part_weight(2, 0);
-      part_weight[0] = hypergraph.partWeight(block_0);
-      part_weight[1] = hypergraph.partWeight(block_1);
+      std::vector<HypernodeWeight> part_weight = aquired_part_weight;
 
       for (size_t idx = 0; idx < topological_order.size(); ++idx) {
         const NodeID u = topological_order[idx];
         tmp_partition_id[u] = block_1;
         part_weight[0] -= _scc_node_weight.get(u);
         part_weight[1] += _scc_node_weight.get(u);
-        double cur_imbalance = imbalance(context, part_weight);
+        double cur_imbalance = imbalance(context, part_weight, scheduler, block_0, block_1);
 
         if (cur_imbalance > tmp_best_imbalance) {
           tmp_partition_id[u] = block_0;
@@ -151,8 +153,10 @@ class MostBalancedMinimumCut {
     DBG << "Best imbalance: " << best_imbalance;
 
     ASSERT([&]() {
-        //const HyperedgeWeight metric_before = metrics::objective(hypergraph, context.partition.objective);
-        const double imbalance_before = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
+        std::vector<HypernodeWeight> assert_aquired_part_weight = flow_network.get_aquired_part_weight(hypergraph, block_0, block_1);
+        const double imbalance_before = metrics::localBlockImbalanceParallel(context, block_0, block_1, scheduler,
+                                                                      aquired_part_weight[0], aquired_part_weight[1]);
+        //const double imbalance_before = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
         std::vector<NodeID> topological_order(dag.numNodes(), 0);
         std::vector<NodeID> part_before(dag.numNodes(), block_0);
         topologicalSort(dag, in_degree, topological_order);
@@ -167,15 +171,6 @@ class MostBalancedMinimumCut {
               part_before[u_og] = from;
             }
           }
-          // Check cut after assignment of an SCC
-          // Should be the same as the starting cut
-          // !does not hold in parallel environment
-          /*const HyperedgeWeight metric_after = metrics::objective(hypergraph, context.partition.objective);
-          if (metric_after != metric_before) {
-            LOG << "Assignment of SCC leads to inconsistent hyperedge cut!";
-            LOG << V(metric_before) << V(metric_after);
-            return false;
-          }*/
         }
 
         // Rollback hypernode assignment
@@ -193,10 +188,11 @@ class MostBalancedMinimumCut {
 
         //const HyperedgeWeight metric = metrics::objective(hypergraph, context.partition.objective);
         //metric != metric_before ||
-        if (metrics::localBlockImbalance(hypergraph, context, block_0, block_1) != imbalance_before) {
+        if (metrics::localBlockImbalanceParallel(context, block_0, block_1, scheduler,
+                                                                      aquired_part_weight[0], aquired_part_weight[1]) 
+                                                                      != imbalance_before) {
           LOG << "Restoring original partition failed!";
           //LOG << V(metric_before) << V(metric);
-          LOG << V(imbalance_before) << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1));
           return false;
         }
 
@@ -216,9 +212,9 @@ class MostBalancedMinimumCut {
       }
     }
 
-    ASSERT(best_imbalance == metrics::localBlockImbalance(hypergraph, context, block_0, block_1),
+    /*ASSERT(best_imbalance == metrics::localBlockImbalance(hypergraph, context, block_0, block_1),
            "Best imbalance didn't match with current imbalance"
-           << V(best_imbalance) << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1)));
+           << V(best_imbalance) << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1)));*/
   }
 
  private:
@@ -230,7 +226,6 @@ class MostBalancedMinimumCut {
     _flow_network_to_graph.resetUsedEntries();
     _scc_node_weight.resetUsedEntries();
   }
-
 
   /**
    * Executes a BFS starting from the source (sourceSet = true)
@@ -403,12 +398,14 @@ class MostBalancedMinimumCut {
     ASSERT(idx == g.numNodes(), "Topological sort failed!" << V(idx) << V(g.numNodes()));
   }
 
-  static inline double imbalance(const Context& context, const std::vector<HypernodeWeight>& part_weight) {
+  template <typename Scheduler>
+  static inline double imbalance(const Context& context, const std::vector<HypernodeWeight>& part_weight,
+   Scheduler & scheduler, size_t block_0, size_t block_1) {
       const HypernodeWeight weight_part0 = part_weight[0];
       const HypernodeWeight weight_part1 = part_weight[1];
-      const double imbalance_part0 = (weight_part0 /
+      const double imbalance_part0 = ((scheduler.get_not_aquired_weight(block_0, block_1) + weight_part0) /
                                       static_cast<double>(context.partition.perfect_balance_part_weights[0]));
-      const double imbalance_part1 = (weight_part1 /
+      const double imbalance_part1 = ((scheduler.get_not_aquired_weight(block_1, block_0) + weight_part1) /
                                       static_cast<double>(context.partition.perfect_balance_part_weights[1]));
       return std::max(imbalance_part0, imbalance_part1) - 1.0;
   }
