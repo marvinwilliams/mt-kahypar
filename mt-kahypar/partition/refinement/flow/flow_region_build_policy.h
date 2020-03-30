@@ -41,13 +41,14 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
 
 
  public:
-  template <class Network = Mandatory>
+  template <class Network = Mandatory, typename Scheduler>
   static inline HypernodeID bfs(HyperGraph& hg,
                                 Network& flow_network,
                                 std::vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
                                 const HypernodeWeight max_part_weight,
-                                kahypar::ds::FastResetFlagArray<>& visited) {
+                                kahypar::ds::FastResetFlagArray<>& visited,
+                                Scheduler& scheduler) {
     visited.reset();
     utils::Randomize::instance().shuffleVector(start_nodes);
     std::queue<HypernodeID> Q;
@@ -56,8 +57,9 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
       if (queue_weight + hg.nodeWeight(hn) <= max_part_weight) {
         Q.push(hn);
         queue_weight += hg.nodeWeight(hn);
-
         visited.set(hg.originalNodeID(hn), true);
+      }else{
+        scheduler.releaseNode(hn);
       }
     }
 
@@ -75,8 +77,10 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
           for (const HypernodeID& pin : hg.pins(he)) {
             if (!visited[hg.originalNodeID(pin)] && hg.partID(pin) == part &&
                 queue_weight + hg.nodeWeight(pin) <= max_part_weight) {
-              Q.push(pin);
-              queue_weight += hg.nodeWeight(pin);
+              if(scheduler.tryAquireNode(pin)){
+                Q.push(pin);
+                queue_weight += hg.nodeWeight(pin);
+              }
               visited.set(hg.originalNodeID(pin), true);
             }
           }
@@ -93,7 +97,7 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
   private:
     using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
  public:
-  template <class Network = Mandatory>
+  template <class Network = Mandatory, typename Scheduler>
   inline static void buildFlowNetwork(HyperGraph& hg,
                                       const Context& context,
                                       Network& flow_network,
@@ -101,7 +105,8 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                       const double alpha,
                                       const PartitionID block_0,
                                       const PartitionID block_1,
-                                      kahypar::ds::FastResetFlagArray<>& visited) {
+                                      kahypar::ds::FastResetFlagArray<>& visited,
+                                      Scheduler & scheduler) {
     visited.reset();
     std::vector<HypernodeID> start_nodes_block_0;
     std::vector<HypernodeID> start_nodes_block_1;
@@ -110,9 +115,13 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
       for (const HypernodeID& pin : hg.pins(he)) {
         if (!visited[hg.originalNodeID(pin)]) {
           if (hg.partID(pin) == block_0) {
-            start_nodes_block_0.push_back(pin);
+            if(scheduler.tryAquireNode(pin)){
+              start_nodes_block_0.push_back(pin);
+            }
           } else if (hg.partID(pin) == block_1) {
-            start_nodes_block_1.push_back(pin);
+            if(scheduler.tryAquireNode(pin)){
+              start_nodes_block_1.push_back(pin);
+            }
           }
           visited.set(hg.originalNodeID(pin), true);
         }
@@ -120,6 +129,8 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
     }
     visited.reset();
 
+    //TODO: partWeight of blocks can be influenced by other flow calculations. 
+    // Use other metric or save and use them before a round?
     const HypernodeWeight max_part_weight_0 =
       std::max(((1.0 + std::min(alpha * context.partition.epsilon, 0.5))
                 * context.partition.perfect_balance_part_weights[1]
@@ -133,7 +144,8 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      start_nodes_block_0,
                                                                      block_0,
                                                                      max_part_weight_0,
-                                                                     visited);
+                                                                     visited,
+                                                                     scheduler);
     if (num_nodes_block_0 == hg.partSize(block_0)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_0 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));
@@ -145,7 +157,8 @@ class CutBuildPolicy : public FlowRegionBuildPolicy<TypeTraits> {
                                                                      start_nodes_block_1,
                                                                      block_1,
                                                                      max_part_weight_1,
-                                                                     visited);
+                                                                     visited,
+                                                                     scheduler);
     if (num_nodes_block_1 == hg.partSize(block_1)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_1 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));

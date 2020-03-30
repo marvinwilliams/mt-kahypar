@@ -215,7 +215,7 @@ class FlowRefinerT final : public IRefiner{
         bool executeAdaptiveFlow(FlowConfig& config,
                                 const PartitionID block_0,
                                 const PartitionID block_1,
-                                Scheduler & quotientGraph ) {
+                                Scheduler & scheduler ) {
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
             HyperedgeWeight thread_local_delta = 0;
@@ -234,7 +234,7 @@ class FlowRefinerT final : public IRefiner{
                 // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
                 std::vector<HyperedgeID> cut_hes;
                 HyperedgeWeight cut_weight = 0;
-                for (const HyperedgeID& he : quotientGraph.blockPairCutHyperedges(block_0, block_1)) {
+                for (const HyperedgeID& he : scheduler.blockPairCutHyperedges(block_0, block_1)) {
                     cut_weight += hypergraph.edgeWeight(he);
                     cut_hes.push_back(he);
                 }
@@ -258,7 +258,7 @@ class FlowRefinerT final : public IRefiner{
                 CutBuildPolicy<TypeTraits>::buildFlowNetwork(
                     hypergraph, _context, flow_network,
                     cut_hes, alpha, block_0, block_1,
-                    visited);
+                    visited, scheduler);
 
                 const HyperedgeWeight cut_flow_network_before =
                     flow_network.build(
@@ -273,6 +273,7 @@ class FlowRefinerT final : public IRefiner{
                 // hypernodes contained in the flow problem are either
                 // sources or sinks
                 if (cut_flow_network_after == FlowNetwork::kInfty) {
+                    flow_network.releaseHyperNodes(scheduler);
                     break;
                 }
 
@@ -306,7 +307,7 @@ class FlowRefinerT final : public IRefiner{
                         const PartitionID from = hypergraph.partID(hn);
                         const PartitionID to = maximum_flow.getOriginalPartition(ogHn);
                         if (from != to) {
-                            quotientGraph.changeNodePart(hn, from, to);
+                            scheduler.changeNodePart(hn, from, to);
                         }
                     }
                 }
@@ -317,9 +318,12 @@ class FlowRefinerT final : public IRefiner{
                 //
                 // always use
                 if (!improvement && cut_flow_network_before == cut_flow_network_after) {
+                    flow_network.releaseHyperNodes(scheduler);
                     break;
                 }
 
+                flow_network.releaseHyperNodes(scheduler);
+                
             } while (alpha > 1.0);
 
             //atomic-add improvements to _round_delta

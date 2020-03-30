@@ -247,6 +247,13 @@ class FlowNetwork {
     _visited.reset();
   }
 
+  template<typename Scheduler>
+  void releaseHyperNodes(Scheduler& scheduler){
+   for (const HypernodeID& hn : hypernodes()) {
+     scheduler.releaseNode(hn);
+   }  
+  }
+
   bool isTrivialFlow() const {
     const size_t num_hyperedges_s_t = _sources.size() + _sinks.size();
     return num_hyperedges_s_t == 2 * _num_hyperedges;
@@ -448,11 +455,13 @@ class FlowNetwork {
             //   in the flow problem, we add the outgoing hyperedge
             //   node as sink
             if (pins_not_u_block0 > 0) {
-              ASSERT(containsNodeId(mapToIncommingHyperedgeID(hypergraph, he)), "Source is not contained in flow problem!");
+              ASSERT(containsNodeId(mapToIncommingHyperedgeID(hypergraph, he)), "Source is not contained in flow problem!"<< V(pins_not_u_block0)
+              << V(pins_not_u_block1)<< V(pins_u_block0)<< V(pins_u_block1));
               addSourceWithId(mapToIncommingHyperedgeID(hypergraph, he));
             }
             if (pins_not_u_block1 > 0) {
-              ASSERT(containsNodeId(mapToOutgoingHyperedgeID(hypergraph, he)), "Sink is not contained in flow problem!");
+              ASSERT(containsNodeId(mapToOutgoingHyperedgeID(hypergraph, he)), "Sink is not contained in flow problem!"<< V(pins_not_u_block0)
+              << V(pins_not_u_block1)<< V(pins_u_block0)<< V(pins_u_block1));
               addSinkWithId(mapToOutgoingHyperedgeID(hypergraph, he));
             }
           }

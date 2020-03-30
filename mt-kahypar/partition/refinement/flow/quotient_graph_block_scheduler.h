@@ -127,11 +127,21 @@ class SchedulerBase {
     return static_cast<Derived*>(this)->getNumberOfActiveTasksImpl();
   }
 
+  bool tryAquireNode(HypernodeID node){
+    return static_cast<Derived*>(this)->tryAquireNodeImpl(node);
+  }
+
+  void releaseNode(HypernodeID node){
+    static_cast<Derived*>(this)->releaseNodeImpl(node);
+  }
+
   void randomShuffleQoutientEdges() {
     for (size_t numa = 0; numa < _num_numa_nodes; numa++){
       utils::Randomize::instance().shuffleVector(_quotient_graph[numa]);
     }
   }
+
+  
 
   /*std::pair<ConstIncidenceIterator, ConstIncidenceIterator> qoutientGraphEdges() const {
     return std::make_pair(_quotient_graph.cbegin(), _quotient_graph.cend());
@@ -162,13 +172,15 @@ class SchedulerBase {
               return false;
             }*/
           } else {
+            // other threads can move pins after the update
+            /*
             if (cut_hyperedges.find(he) != cut_hyperedges.end()) {
               LOG << V(_hg.pinCountInPart(he, block0));
               LOG << V(_hg.pinCountInPart(he, block1));
               LOG << V(he) << "shouldn't be inside the incidence set of"
                   << V(block0) << "and" << V(block1);
               return false;
-            }
+            }*/
           }
         }
         return true;
@@ -413,6 +425,15 @@ class MatchingScheduler : public SchedulerBase<TypeTraits, MatchingScheduler<Typ
     return tasks;
   }
 
+  bool tryAquireNodeImpl(HypernodeID node){
+    unused(node);
+    return true;
+  }
+
+  void releaseNodeImpl(HypernodeID node){
+    unused(node);
+  }
+
 };
 
 template <typename TypeTraits>
@@ -423,7 +444,8 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
   public:
   OptScheduler(HyperGraph& hypergraph, const Context& context) :
     Base(hypergraph, context),
-    _tasks_on_block(context.partition.k, 0) { }
+    _tasks_on_block(context.partition.k, 0),
+    _node_lock(hypergraph.initialNumNodes(), false){ }
 
   std::vector<std::vector<edge>> getInitialParallelEdgesImpl(){
     std::vector<std::vector<edge>> initial_edges (this->_num_numa_nodes);
@@ -458,6 +480,16 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
       tasks += block;
     }
     return tasks;
+  }
+
+  bool tryAquireNodeImpl(HypernodeID node){
+    bool already_aquired = _node_lock[node].compare_and_swap(true, false);
+    return !already_aquired;
+  }
+
+  void releaseNodeImpl(HypernodeID node){
+    ASSERT(_node_lock[node] == true, "Tryed to release Node that is not aquired!");
+    _node_lock[node] = false;
   }
 
   private:
@@ -509,6 +541,7 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
   }
 
   std::vector<size_t> _tasks_on_block;
+  std::vector<tbb::atomic<bool>> _node_lock;
 };
 
 }  // namespace mt-kahypar
