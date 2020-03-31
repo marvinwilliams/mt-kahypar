@@ -29,6 +29,7 @@
 #include <vector>
 #include <list>
 #include <tbb/spin_mutex.h>
+#include <tbb/spin_rw_mutex.h>
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 #include "external_tools/kahypar/kahypar/datastructure/sparse_set.h"
@@ -70,7 +71,8 @@ class SchedulerBase {
     _schedule_mutex(),
     _tasks_on_numa(_num_numa_nodes, 0),
     _empty_numas(),
-    _block_weights(context.partition.k, std::vector<size_t>(context.partition.k, 0)) { }
+    _block_weights(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+    _rw_locks(context.partition.k) { }
 
   SchedulerBase(const SchedulerBase&) = delete;
   SchedulerBase(SchedulerBase&&) = delete;
@@ -242,16 +244,22 @@ class SchedulerBase {
   }
 
   void aquire_block_weight(size_t block_to_aquire, size_t other_block, size_t amount){
+    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block_to_aquire], true};
+
     _block_weights[block_to_aquire][other_block] = amount;
     _block_weights[block_to_aquire][block_to_aquire] -= amount;
   }
 
   void release_block_weight(size_t block_to_release, size_t other_block, size_t amount){
+    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block_to_release], true};
+
     _block_weights[block_to_release][other_block] = 0;
     _block_weights[block_to_release][block_to_release] += amount;
   }
 
   size_t get_not_aquired_weight(PartitionID block, PartitionID other_block){
+    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block], false};
+
     size_t weight = 0;
     for (int i = 0; i < _context.partition.k; i++){
       if(i != other_block){
@@ -308,6 +316,7 @@ class SchedulerBase {
   std::vector<int> _empty_numas;
 
   std::vector<std::vector<size_t>> _block_weights;
+  std::vector<tbb::spin_rw_mutex> _rw_locks;
 };
 
 template <typename TypeTraits>
