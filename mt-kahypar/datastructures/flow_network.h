@@ -53,7 +53,7 @@ struct FlowEdge {
   }
 };
 
-template <typename TypeTraits>
+template <typename TypeTraits, typename Scheduler>
 class FlowNetwork {
   using AdjacentList = std::vector<std::vector<FlowEdge> >;
   using ConstIncidenceIterator = std::vector<FlowEdge>::const_iterator;
@@ -87,7 +87,9 @@ class FlowNetwork {
     _contains_graph_hyperedges(initial_num_nodes),
     _flow_graph(size, std::vector<FlowEdge>()),
     _visited(size),
-    _he_visited(initial_num_edges) { }
+    _he_visited(initial_num_edges),
+    _contains_aquired_node(initial_num_edges) {
+    }
 
   ~FlowNetwork() = default;
 
@@ -121,25 +123,35 @@ class FlowNetwork {
 
   // ################### Flow Network Construction ###################
 
-  void buildFlowGraph(HyperGraph& hypergraph, const Context& context) {
+  void buildFlowGraph(HyperGraph& hypergraph, const Context& context, const PartitionID block_0, Scheduler & scheduler) {
     _visited.reset();
     for (const HypernodeID& ogHn : hypernodes()) {
       const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
       for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
         if (!_visited[hypergraph.originalEdgeID(he)]) {
-          if (isHyperedgeOfSize(hypergraph, he, 1)) {
-            addHyperedge(hypergraph, context, he);
-            addPin(hypergraph, he, hn);
-            _contains_graph_hyperedges.set(ogHn, true);
-          } else if (hypergraph.edgeSize(he) == 2) {
-            // Treat hyperedges of size 2 as graph edges
-            // => remove hyperedge nodes in flow network
-            addGraphEdge(hypergraph, he);
-          } else {
-            // Add a directed flow edge between the incomming
-            // and outgoing hyperedge node of he with
-            // capacity w(he)
-            addHyperedge(hypergraph, context, he);
+          //fix all pins of he's, that contain an already aquired pin
+          for (const HypernodeID& pin : hypergraph.pins(he)) {
+            if (!_hypernodes.contains(hypergraph.originalNodeID(pin)) && scheduler.isAquired(pin)) {
+              _contains_aquired_node.set(he, true);
+              fixNodes(hypergraph, he, block_0);
+              break;
+            }
+          }
+          if(!_contains_aquired_node[he]){
+            if (isHyperedgeOfSize(hypergraph, he, 1)) {
+              addHyperedge(hypergraph, context, he);
+              addPin(hypergraph, he, hn);
+              _contains_graph_hyperedges.set(ogHn, true);
+            } else if (hypergraph.edgeSize(he) == 2) {
+              // Treat hyperedges of size 2 as graph edges
+              // => remove hyperedge nodes in flow network
+              addGraphEdge(hypergraph, he);
+            } else {
+              // Add a directed flow edge between the incomming
+              // and outgoing hyperedge node of he with
+              // capacity w(he)
+              addHyperedge(hypergraph, context, he);
+            }
           }
 
           _visited.set(hypergraph.originalEdgeID(he), true);
@@ -151,7 +163,7 @@ class FlowNetwork {
       if (interpreteHyperedge(node, false)) {
         const HyperedgeID he_og = mapToHyperedgeID(node);
         const HyperedgeID he = hypergraph.globalEdgeID(he_og);
-        if (hypergraph.edgeSize(he) != 2 && !isHyperedgeOfSize(hypergraph, he, 1)) {
+        if (hypergraph.edgeSize(he) != 2 && !isHyperedgeOfSize(hypergraph, he, 1) && !_contains_aquired_node[he]) {
           // If degree of hypernode 'pin' is smaller than 3
           // add clique between all incident hyperedges of pin.
           // Otherwise connect pin with hyperedge in flow network.
@@ -159,7 +171,7 @@ class FlowNetwork {
           for (const HypernodeID& pin : hypergraph.pins(he)) {
             if (_hypernodes.contains(hypergraph.originalNodeID(pin))) {
               if (!_contains_graph_hyperedges[hypergraph.originalNodeID(pin)] &&
-                  hypergraph.nodeDegree(pin) <= 3) {
+                  hypergraph.nodeDegree(pin) <= 3 && !containsNodeGlobalId(hypergraph, pin)) {
                 ASSERT(!containsNodeGlobalId(hypergraph, pin), "Pin " << pin << " of HE " << he
                                                   << " is already contained in flow problem!");
                 addClique(hypergraph, he, pin);
@@ -176,8 +188,36 @@ class FlowNetwork {
     }
   }
 
-  HyperedgeWeight build(HyperGraph& hypergraph, const Context& context, const PartitionID block_0, const PartitionID block_1) {
-    buildFlowGraph(hypergraph, context);
+  void fixNodes(HyperGraph& hypergraph, HyperedgeID he, const PartitionID block_0){
+    const size_t pins_u_block0 = _pins_block0.get(hypergraph.originalEdgeID(he));
+    const size_t pins_u_block1 = _pins_block1.get(hypergraph.originalEdgeID(he));
+
+    const NodeID u = mapToIncommingHyperedgeID(hypergraph, he);
+    const NodeID v = mapToOutgoingHyperedgeID(hypergraph, he);
+
+    if(pins_u_block0 > 0){
+      addNodeId(u);
+      addSourceWithId(u);
+    }
+    if(pins_u_block1 > 0){
+      addNodeId(v);
+      addSinkWithId(v);
+    }
+
+    for (const HypernodeID& pin : hypergraph.pins(he)) {
+      if (_hypernodes.contains(hypergraph.originalNodeID(pin))) {
+        if(hypergraph.partID(pin) == block_0){
+          addEdge(u, pin, kInfty);
+        }else{
+          addEdge(pin, v, kInfty);
+        }
+      }
+    }
+  }
+
+  HyperedgeWeight build(HyperGraph& hypergraph, const Context& context, const PartitionID block_0,
+    const PartitionID block_1, Scheduler & scheduler) {
+    buildFlowGraph(hypergraph, context, block_0, scheduler);
 
     ASSERT([&]() {
           for (const HypernodeID& ogHn : hypernodes()) {
@@ -260,10 +300,10 @@ class FlowNetwork {
     _cur_block1 = block1;
     _contains_graph_hyperedges.reset();
     _visited.reset();
+    _contains_aquired_node.reset();
   }
 
-  template<typename Scheduler>
-  void releaseHyperNodes(HyperGraph& hypergraph, Scheduler& scheduler, PartitionID block_0, PartitionID block_1){
+  void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
     std::vector<HypernodeWeight> aquired_part_weight = get_aquired_part_weight(hypergraph,block_0, block_1);
     scheduler.release_block_weight(block_0, block_1, aquired_part_weight[0]);
     scheduler.release_block_weight(block_1, block_0, aquired_part_weight[1]);
@@ -445,7 +485,7 @@ class FlowNetwork {
     for (const HypernodeID& ogHn : hypernodes()) {
       const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
       for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
-        if (!_visited[hypergraph.originalEdgeID(he)]) {
+        if (!_visited[hypergraph.originalEdgeID(he)] && !_contains_aquired_node[he]) {
           const size_t pins_u_block0 = _pins_block0.get(hypergraph.originalEdgeID(he));
           const size_t pins_u_block1 = _pins_block1.get(hypergraph.originalEdgeID(he));
           const size_t pins_not_u_block0 = hypergraph.pinCountInPart(he, block_0) - pins_u_block0;
@@ -672,6 +712,7 @@ class FlowNetwork {
 
   kahypar::ds::FastResetFlagArray<> _visited;
   kahypar::ds::FastResetFlagArray<> _he_visited;
+  kahypar::ds::FastResetFlagArray<> _contains_aquired_node;
 };
 
 

@@ -44,10 +44,10 @@
 #include "mt-kahypar/partition/refinement/flow/most_balanced_minimum_cut.h"
 
 namespace mt_kahypar {
-template <typename TypeTraits, class Network = Mandatory>
+template <typename TypeTraits, typename Scheduler, class Network = Mandatory>
 class MaximumFlow {
 using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-using FlowNetwork = ds::FlowNetwork<TypeTraits>;
+using FlowNetwork = ds::FlowNetwork<TypeTraits, Scheduler>;
 
  public:
   MaximumFlow(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
@@ -68,7 +68,6 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
 
   virtual Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) = 0;
 
-  template<typename Scheduler>
   HyperedgeWeight minimumSTCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
                                const Context& context,
                                const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler) {
@@ -220,18 +219,18 @@ using FlowNetwork = ds::FlowNetwork<TypeTraits>;
   kahypar::ds::FastResetFlagArray<> _visited;
   std::queue<NodeID> _Q;
 
-  MostBalancedMinimumCut<TypeTraits, Network> _mbmc;
+  MostBalancedMinimumCut<TypeTraits, Scheduler, Network> _mbmc;
 
   std::vector<PartitionID> _original_part_id;
 };
 
-template <typename TypeTraits, class Network = Mandatory>
-class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
-  using Base = MaximumFlow<TypeTraits,Network>;
+template <typename TypeTraits, typename Scheduler, class Network = Mandatory>
+class BoykovKolmogorov : public MaximumFlow<TypeTraits, Scheduler, Network>{
+  using Base = MaximumFlow<TypeTraits, Scheduler, Network>;
   using FlowGraph = maxflow::Graph<int, int, int>;
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using FlowNetwork = ds::FlowNetwork<TypeTraits>;
+  using FlowNetwork = ds::FlowNetwork<TypeTraits, Scheduler>;
 
  public:
   BoykovKolmogorov(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
@@ -313,13 +312,13 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, Network>{
 };
 
 
-template <typename TypeTraits, class Network = Mandatory>
-class IBFS : public MaximumFlow<TypeTraits, Network>{
-  using Base = MaximumFlow<TypeTraits, Network>;
+template <typename TypeTraits, typename Scheduler, class Network = Mandatory>
+class IBFS : public MaximumFlow<TypeTraits, Scheduler, Network>{
+  using Base = MaximumFlow<TypeTraits, Scheduler, Network>;
   using FlowGraph = maxflow::IBFSGraph;
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using FlowNetwork = ds::FlowNetwork<TypeTraits>;
+  using FlowNetwork = ds::FlowNetwork<TypeTraits, Scheduler>;
 
  public:
   IBFS(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :

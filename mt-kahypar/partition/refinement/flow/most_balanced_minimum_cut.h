@@ -47,11 +47,11 @@ namespace mt_kahypar {
 using kahypar::ds::Graph;
 using kahypar::ds::Edge;
 
-template <typename TypeTraits, class Network = Mandatory>
+template <typename TypeTraits, typename Scheduler, class Network = Mandatory>
 class MostBalancedMinimumCut {
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using FlowNetwork = ds::FlowNetwork<TypeTraits>;
+  using FlowNetwork = ds::FlowNetwork<TypeTraits, Scheduler>;
 
  public:
   MostBalancedMinimumCut(const size_t initial_size) :
@@ -67,7 +67,6 @@ class MostBalancedMinimumCut {
   MostBalancedMinimumCut& operator= (const MostBalancedMinimumCut&) = delete;
   MostBalancedMinimumCut& operator= (MostBalancedMinimumCut&&) = delete;
 
-  template<typename Scheduler>
   void mostBalancedMinimumCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
                               const Context& context,
                               const PartitionID block_0, const PartitionID block_1, Scheduler& scheduler) {
@@ -398,7 +397,6 @@ class MostBalancedMinimumCut {
     ASSERT(idx == g.numNodes(), "Topological sort failed!" << V(idx) << V(g.numNodes()));
   }
 
-  template <typename Scheduler>
   static inline double imbalance(const Context& context, const std::vector<HypernodeWeight>& part_weight,
    Scheduler & scheduler, size_t block_0, size_t block_1) {
       const HypernodeWeight weight_part0 = part_weight[0];

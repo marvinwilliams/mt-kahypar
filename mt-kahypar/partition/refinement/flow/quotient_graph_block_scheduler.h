@@ -134,6 +134,10 @@ class SchedulerBase {
     return static_cast<Derived*>(this)->tryAquireNodeImpl(node);
   }
 
+  bool isAquired(HypernodeID node){
+    return static_cast<Derived*>(this)->isAquiredImpl(node);
+  }
+
   void releaseNode(HypernodeID node){
     static_cast<Derived*>(this)->releaseNodeImpl(node);
   }
@@ -475,6 +479,11 @@ class MatchingScheduler : public SchedulerBase<TypeTraits, MatchingScheduler<Typ
     return true;
   }
 
+  bool isAquiredImpl(HypernodeID node){
+    unused(node);
+    return false;
+  }
+
   void releaseNodeImpl(HypernodeID node){
     unused(node);
   }
@@ -533,6 +542,10 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
   bool tryAquireNodeImpl(HypernodeID node){
     bool already_aquired = _node_lock[node].compare_and_swap(true, false);
     return !already_aquired;
+  }
+
+  bool isAquiredImpl(HypernodeID node){
+    return _node_lock[node];
   }
 
   void releaseNodeImpl(HypernodeID node){

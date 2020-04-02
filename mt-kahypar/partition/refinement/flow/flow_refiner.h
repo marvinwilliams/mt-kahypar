@@ -27,8 +27,8 @@ class FlowRefinerT final : public IRefiner{
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
-        using FlowNetwork = ds::FlowNetwork<TypeTraits>;
-        using MaximumFlow = IBFS<TypeTraits, FlowNetwork>;
+        using FlowNetwork = ds::FlowNetwork<TypeTraits, Scheduler>;
+        using MaximumFlow = IBFS<TypeTraits, Scheduler, FlowNetwork>;
         using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
         using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
 
@@ -115,17 +115,16 @@ class FlowRefinerT final : public IRefiner{
 
                 //LOG << "ROUND done_______________________________________________________";
 
-                HyperedgeWeight current_metric = metrics::objective(hypergraph, _context.partition.objective);
-                //best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
+                HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
                 double current_imbalance = metrics::imbalance(hypergraph, _context);
 
                 //check if the metric improved as exspected
-                /*ASSERT(current_metric == metrics::objective(hypergraph, _context.partition.objective),
+                ASSERT(current_metric == metrics::objective(hypergraph, _context.partition.objective),
                         "Sum of deltas is not the global improvement!"
                         << V(_context.partition.objective)
                         << V(metrics::objective(hypergraph, _context.partition.objective))
                         << V(_round_delta)
-                        << V(current_metric));*/
+                        << V(current_metric));
 
                 //Update bestmetrics
                 best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
@@ -264,7 +263,7 @@ class FlowRefinerT final : public IRefiner{
 
                 const HyperedgeWeight cut_flow_network_before =
                     flow_network.build(
-                        hypergraph, _context, block_0, block_1);
+                        hypergraph, _context, block_0, block_1, scheduler);
 
                 // Find minimum (S,T)-bipartition
                 const HyperedgeWeight cut_flow_network_after =
@@ -275,7 +274,7 @@ class FlowRefinerT final : public IRefiner{
                 // hypernodes contained in the flow problem are either
                 // sources or sinks
                 if (cut_flow_network_after == FlowNetwork::kInfty) {
-                    flow_network.releaseHyperNodes(hypergraph, scheduler, block_0, block_1);
+                    flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
                     break;
                 }
 
@@ -323,11 +322,11 @@ class FlowRefinerT final : public IRefiner{
                 //
                 // always use
                 if (!improvement && cut_flow_network_before == cut_flow_network_after) {
-                    flow_network.releaseHyperNodes(hypergraph, scheduler, block_0, block_1);
+                    flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
                     break;
                 }
 
-                flow_network.releaseHyperNodes(hypergraph, scheduler, block_0, block_1);
+                flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
                 
             } while (alpha > 1.0);
 
