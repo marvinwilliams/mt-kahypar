@@ -18,17 +18,18 @@
 
 namespace mt_kahypar {
 
-template< typename TypeTraits, typename Scheduler>
+template< typename TypeTraits, typename FlowTypeTraits>
 class FlowRefinerT final : public IRefiner{
     private:
         using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
         using TBB = typename TypeTraits::TBB;
         using HwTopology = typename TypeTraits::HwTopology;
+        using Scheduler = typename FlowTypeTraits::Scheduler;
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
-        using FlowNetwork = ds::FlowNetwork<TypeTraits, Scheduler>;
-        using MaximumFlow = IBFS<TypeTraits, Scheduler, FlowNetwork>;
+        using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowTypeTraits>;
+        using MaximumFlow = IBFS<TypeTraits, FlowTypeTraits, FlowNetwork>;
         using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
         using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
 
@@ -346,7 +347,15 @@ class FlowRefinerT final : public IRefiner{
     std::vector<std::vector<Edge>> _start_new_parallel_do;
 };
 
-using FlowRefinerMatch = FlowRefinerT<GlobalTypeTraits, MatchingScheduler<GlobalTypeTraits>>;
-using FlowRefinerOpt = FlowRefinerT<GlobalTypeTraits, OptScheduler<GlobalTypeTraits>>;
+struct FlowMatchingTypeTraits{
+    using Scheduler = MatchingScheduler<GlobalTypeTraits>;
+};
+
+struct FlowOptTypeTraits{
+    using Scheduler = OptScheduler<GlobalTypeTraits>;
+};
+
+using FlowRefinerMatch = FlowRefinerT<GlobalTypeTraits, FlowMatchingTypeTraits>;
+using FlowRefinerOpt = FlowRefinerT<GlobalTypeTraits, FlowOptTypeTraits>;
 
 } //namespace mt_kahypar

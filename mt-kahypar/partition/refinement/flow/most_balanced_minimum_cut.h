@@ -47,11 +47,13 @@ namespace mt_kahypar {
 using kahypar::ds::Graph;
 using kahypar::ds::Edge;
 
-template <typename TypeTraits, typename Scheduler, class Network = Mandatory>
+template <typename TypeTraits, typename FlowTypeTraits, class Network = Mandatory>
 class MostBalancedMinimumCut {
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using FlowNetwork = ds::FlowNetwork<TypeTraits, Scheduler>;
+  using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowTypeTraits>;
+  using Scheduler = typename FlowTypeTraits::Scheduler;
+
 
  public:
   MostBalancedMinimumCut(const size_t initial_size) :

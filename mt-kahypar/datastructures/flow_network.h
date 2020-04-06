@@ -53,7 +53,7 @@ struct FlowEdge {
   }
 };
 
-template <typename TypeTraits, typename Scheduler>
+template <typename TypeTraits, typename FlowTypeTraits>
 class FlowNetwork {
   using AdjacentList = std::vector<std::vector<FlowEdge> >;
   using ConstIncidenceIterator = std::vector<FlowEdge>::const_iterator;
@@ -61,6 +61,7 @@ class FlowNetwork {
   using NodeIterator = std::pair<const NodeID*, const NodeID*>;
   using HypernodeIterator = std::pair<const HypernodeID*, const HypernodeID*>;
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+  using Scheduler = typename FlowTypeTraits::Scheduler;
 
  public:
   static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
