@@ -70,9 +70,7 @@ class SchedulerBase {
                                                               std::vector<HyperedgeID>())),
     _schedule_mutex(),
     _tasks_on_numa(_num_numa_nodes, 0),
-    _empty_numas(),
-    _block_weights(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
-    _rw_locks(context.partition.k) { }
+    _empty_numas() { }
 
   SchedulerBase(const SchedulerBase&) = delete;
   SchedulerBase(SchedulerBase&&) = delete;
@@ -234,43 +232,8 @@ class SchedulerBase {
     return active_blocks;
   }
 
-  //TODO: add read write lock or make sth atomic
   void init_block_weights(){
-    for (int i = 0; i < _context.partition.k; i++){
-      for (int j = 0; j < _context.partition.k; j++){
-        if(j==i){
-          _block_weights[i][j] = _hg.partWeight(i);
-        }else{
-          _block_weights[i][j] = 0;
-        }
-      }
-    }
-  }
-
-  void aquire_block_weight(size_t block_to_aquire, size_t other_block, size_t amount){
-    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block_to_aquire], true};
-
-    _block_weights[block_to_aquire][other_block] = amount;
-    _block_weights[block_to_aquire][block_to_aquire] -= amount;
-  }
-
-  void release_block_weight(size_t block_to_release, size_t other_block, size_t amount){
-    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block_to_release], true};
-
-    _block_weights[block_to_release][other_block] = 0;
-    _block_weights[block_to_release][block_to_release] += amount;
-  }
-
-  size_t get_not_aquired_weight(PartitionID block, PartitionID other_block){
-    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block], false};
-
-    size_t weight = 0;
-    for (int i = 0; i < _context.partition.k; i++){
-      if(i != other_block){
-        weight += _block_weights[block][i];
-      }
-    }
-    return weight;
+    static_cast<Derived*>(this)->init_block_weightsImpl();
   }
 
  protected:
@@ -318,9 +281,6 @@ class SchedulerBase {
   tbb::spin_mutex _schedule_mutex;
   std::vector<size_t> _tasks_on_numa;
   std::vector<int> _empty_numas;
-
-  std::vector<std::vector<size_t>> _block_weights;
-  std::vector<tbb::spin_rw_mutex> _rw_locks;
 };
 
 template <typename TypeTraits>
@@ -488,6 +448,15 @@ class MatchingScheduler : public SchedulerBase<TypeTraits, MatchingScheduler<Typ
     unused(node);
   }
 
+  void init_block_weightsImpl(){
+  }
+
+  size_t get_not_aquired_weight(PartitionID block, PartitionID other_block){
+    unused(block);
+    unused(other_block);
+    return 0;
+  }
+
 };
 
 template <typename TypeTraits>
@@ -499,7 +468,9 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
   OptScheduler(HyperGraph& hypergraph, const Context& context) :
     Base(hypergraph, context),
     _tasks_on_block(context.partition.k, 0),
-    _node_lock(hypergraph.initialNumNodes(), false){ }
+    _node_lock(hypergraph.initialNumNodes(), false),
+    _block_weights(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+    _rw_locks(context.partition.k){ }
 
   std::vector<std::vector<edge>> getInitialParallelEdgesImpl(){
     std::vector<std::vector<edge>> initial_edges (this->_num_numa_nodes);
@@ -553,6 +524,44 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
     _node_lock[node] = false;
   }
 
+  void init_block_weightsImpl(){
+    for (int i = 0; i < this->_context.partition.k; i++){
+      for (int j = 0; j < this->_context.partition.k; j++){
+        if(j==i){
+          this->_block_weights[i][j] = this->_hg.partWeight(i);
+        }else{
+          this->_block_weights[i][j] = 0;
+        }
+      }
+    }
+  }
+
+  void aquire_block_weight(size_t block_to_aquire, size_t other_block, size_t amount){
+    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block_to_aquire], true};
+
+    _block_weights[block_to_aquire][other_block] = amount;
+    _block_weights[block_to_aquire][block_to_aquire] -= amount;
+  }
+
+  void release_block_weight(size_t block_to_release, size_t other_block, size_t amount){
+    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block_to_release], true};
+
+    _block_weights[block_to_release][other_block] = 0;
+    _block_weights[block_to_release][block_to_release] += amount;
+  }
+
+  size_t get_not_aquired_weight(PartitionID block, PartitionID other_block){
+    tbb::spin_rw_mutex::scoped_lock lock{_rw_locks[block], false};
+
+    size_t weight = 0;
+    for (int i = 0; i < this->_context.partition.k; i++){
+      if(i != other_block){
+        weight += _block_weights[block][i];
+      }
+    }
+    return weight;
+  }
+
   private:
   struct bestEdge{
     edge e;
@@ -603,6 +612,8 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
 
   std::vector<size_t> _tasks_on_block;
   std::vector<tbb::atomic<bool>> _node_lock;
+  std::vector<std::vector<size_t>> _block_weights;
+  std::vector<tbb::spin_rw_mutex> _rw_locks;
 };
 
 }  // namespace mt-kahypar

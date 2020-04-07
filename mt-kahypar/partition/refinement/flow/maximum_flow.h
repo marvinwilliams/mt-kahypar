@@ -44,11 +44,12 @@
 #include "mt-kahypar/partition/refinement/flow/most_balanced_minimum_cut.h"
 
 namespace mt_kahypar {
-template <typename TypeTraits, typename FlowTypeTraits, class Network = Mandatory>
+template <typename TypeTraits, typename FlowTypeTraits>
 class MaximumFlow {
 using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowTypeTraits>;
+using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 using Scheduler = typename FlowTypeTraits::Scheduler;
+using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
 
  public:
   MaximumFlow(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
@@ -73,7 +74,7 @@ using Scheduler = typename FlowTypeTraits::Scheduler;
                                const Context& context,
                                const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler) {
     if (flow_network.isTrivialFlow()) {
-      return Network::kInfty;
+      return FlowNetwork::kInfty;
     }
 
     const PartitionID default_part =
@@ -168,7 +169,7 @@ using Scheduler = typename FlowTypeTraits::Scheduler;
   template <typename T>
   FRIEND_TEST(AMaximumFlow, AugmentAlongPath);
 
-  Flow augment(FlowNetwork& flow_network, const NodeID cur, const Flow min_flow = Network::kInfty) {
+  Flow augment(FlowNetwork& flow_network, const NodeID cur, const Flow min_flow = FlowNetwork::kInfty) {
     if (flow_network.isGlobalIdSource(cur) || min_flow == 0) {
       return min_flow;
     } else {
@@ -181,11 +182,11 @@ using Scheduler = typename FlowTypeTraits::Scheduler;
           flow_network.increaseFlow(*e, f);
           Flow residual_forward_after = flow_network.residualCapacity(*e);
           Flow residual_backward_after = flow_network.residualCapacity(flow_network.reverseEdge(*e));
-          if (residual_forward_before != Network::kInfty && residual_forward_before != residual_forward_after + f) {
+          if (residual_forward_before != FlowNetwork::kInfty && residual_forward_before != residual_forward_after + f) {
             LOG << "Residual capacity should be " << (residual_forward_before - f) << "!";
             return false;
           }
-          if (residual_backward_before != Network::kInfty && residual_backward_before != residual_backward_after - f) {
+          if (residual_backward_before != FlowNetwork::kInfty && residual_backward_before != residual_backward_after - f) {
             LOG << "Residual capacity should be " << (residual_backward_before + f) << "!";
             return false;
           }
@@ -220,18 +221,18 @@ using Scheduler = typename FlowTypeTraits::Scheduler;
   kahypar::ds::FastResetFlagArray<> _visited;
   std::queue<NodeID> _Q;
 
-  MostBalancedMinimumCut<TypeTraits, FlowTypeTraits, Network> _mbmc;
+  MostBalancedMinimumCut _mbmc;
 
   std::vector<PartitionID> _original_part_id;
 };
 
-template <typename TypeTraits, typename FlowTypeTraits, class Network = Mandatory>
-class BoykovKolmogorov : public MaximumFlow<TypeTraits, FlowTypeTraits, Network>{
-  using Base = MaximumFlow<TypeTraits, FlowTypeTraits, Network>;
+template <typename TypeTraits, typename FlowTypeTraits>
+class BoykovKolmogorov : public MaximumFlow<TypeTraits, FlowTypeTraits>{
+  using Base = MaximumFlow<TypeTraits, FlowTypeTraits>;
   using FlowGraph = maxflow::Graph<int, int, int>;
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowTypeTraits>;
+  using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 
  public:
   BoykovKolmogorov(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
@@ -313,13 +314,13 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, FlowTypeTraits, Network>
 };
 
 
-template <typename TypeTraits, typename FlowTypeTraits, class Network = Mandatory>
-class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits, Network>{
-  using Base = MaximumFlow<TypeTraits, FlowTypeTraits, Network>;
+template <typename TypeTraits, typename FlowTypeTraits>
+class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits>{
+  using Base = MaximumFlow<TypeTraits, FlowTypeTraits>;
   using FlowGraph = maxflow::IBFSGraph;
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowTypeTraits>;
+  using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 
 
  public:

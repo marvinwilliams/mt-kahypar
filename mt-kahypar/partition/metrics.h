@@ -158,8 +158,7 @@ Scheduler & scheduler, HypernodeWeight aquired_block_weight_part_0, HypernodeWei
   double balance_1 = ((scheduler.get_not_aquired_weight(block_1, block_0) + aquired_block_weight_part_1) /
                         static_cast<double>(context.partition.perfect_balance_part_weights[block_1]));
 
-  double max_balance = std::max(balance_0, balance_1);
-  return max_balance - 1.0;
+  return std::max(balance_0, balance_1) - 1.0;
 }
 
 template< typename HyperGraph >

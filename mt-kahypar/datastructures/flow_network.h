@@ -305,12 +305,10 @@ class FlowNetwork {
   }
 
   void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
-    std::vector<HypernodeWeight> aquired_part_weight = get_aquired_part_weight(hypergraph,block_0, block_1);
-    scheduler.release_block_weight(block_0, block_1, aquired_part_weight[0]);
-    scheduler.release_block_weight(block_1, block_0, aquired_part_weight[1]);
-   for (const HypernodeID& hn : hypernodes()) {
-     scheduler.releaseNode(hn);
-   }  
+    unused(hypergraph);
+    unused(block_0);
+    unused(block_1);
+    unused(scheduler);
   }
 
   bool isTrivialFlow() const {
@@ -716,6 +714,24 @@ class FlowNetwork {
   kahypar::ds::FastResetFlagArray<> _contains_aquired_node;
 };
 
+template <typename TypeTraits, typename FlowTypeTraits>
+class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
+  using Base = FlowNetwork<TypeTraits,FlowTypeTraits>;
+  using Base::Base;
+
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+  using Scheduler = typename FlowTypeTraits::Scheduler;
+
+  public:
+    void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+      std::vector<HypernodeWeight> aquired_part_weight = this->get_aquired_part_weight(hypergraph,block_0, block_1);
+      scheduler.release_block_weight(block_0, block_1, aquired_part_weight[0]);
+      scheduler.release_block_weight(block_1, block_0, aquired_part_weight[1]);
+      for (const HypernodeID& hn : this->hypernodes()) {
+        scheduler.releaseNode(hn);
+      }  
+    }
+};
 
 }  // namespace ds
 }  // namespace mt-kahypar

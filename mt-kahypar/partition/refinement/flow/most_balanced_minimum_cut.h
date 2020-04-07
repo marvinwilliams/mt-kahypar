@@ -47,19 +47,20 @@ namespace mt_kahypar {
 using kahypar::ds::Graph;
 using kahypar::ds::Edge;
 
-template <typename TypeTraits, typename FlowTypeTraits, class Network = Mandatory>
+template <typename TypeTraits, typename FlowTypeTraits>
 class MostBalancedMinimumCut {
  private:
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowTypeTraits>;
+  using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
   using Scheduler = typename FlowTypeTraits::Scheduler;
+  using Derived = typename FlowTypeTraits::MostBalancedMinimumCut;
 
 
  public:
   MostBalancedMinimumCut(const size_t initial_size) :
     _visited(initial_size),
-    _graph_to_flow_network(initial_size, Network::kInvalidNode),
-    _flow_network_to_graph(initial_size, Network::kInvalidNode),
+    _graph_to_flow_network(initial_size, FlowNetwork::kInvalidNode),
+    _flow_network_to_graph(initial_size, FlowNetwork::kInvalidNode),
     _scc_node_weight(initial_size, 0),
     _Q(),
     _sccs(initial_size) { }
@@ -114,12 +115,10 @@ class MostBalancedMinimumCut {
     std::vector<NodeID> topological_order(dag.numNodes(), 0);
     std::vector<PartitionID> best_partition_id(dag.numNodes(), block_0);
     std::vector<HypernodeWeight> aquired_part_weight = flow_network.get_aquired_part_weight(hypergraph, block_0, block_1);
-    double best_imbalance = metrics::localBlockImbalanceParallel(context, block_0, block_1, scheduler,
-     aquired_part_weight[0], aquired_part_weight[1]);
+    double best_imbalance = Derived::imbalance(hypergraph, context, aquired_part_weight, scheduler, block_0, block_1);
 
     DBG << "Start Most Balanced Minimum Cut (Bipartition = {" << block_0 << "," << block_1 << "}";
-    DBG << "Initial imbalance: " << V(metrics::localBlockImbalanceParallel(context, block_0,
-     block_1, scheduler, aquired_part_weight[0], aquired_part_weight[1]));
+    DBG << "Initial imbalance: " << V(Derived::imbalance(hypergraph, context, aquired_part_weight, scheduler, block_0, block_1));
 
     for (size_t i = 0; i < 20; ++i) {
       // Compute random topological order
@@ -136,7 +135,7 @@ class MostBalancedMinimumCut {
         tmp_partition_id[u] = block_1;
         part_weight[0] -= _scc_node_weight.get(u);
         part_weight[1] += _scc_node_weight.get(u);
-        double cur_imbalance = imbalance(context, part_weight, scheduler, block_0, block_1);
+        double cur_imbalance = Derived::imbalance(hypergraph, context, part_weight, scheduler, block_0, block_1);
 
         if (cur_imbalance > tmp_best_imbalance) {
           tmp_partition_id[u] = block_0;
@@ -155,9 +154,8 @@ class MostBalancedMinimumCut {
 
     ASSERT([&]() {
         std::vector<HypernodeWeight> assert_aquired_part_weight = flow_network.get_aquired_part_weight(hypergraph, block_0, block_1);
-        const double imbalance_before = metrics::localBlockImbalanceParallel(context, block_0, block_1, scheduler,
-                                                                      aquired_part_weight[0], aquired_part_weight[1]);
-        //const double imbalance_before = metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
+        const double imbalance_before = Derived::imbalance(hypergraph, context, aquired_part_weight, scheduler, block_0, block_1);
+
         std::vector<NodeID> topological_order(dag.numNodes(), 0);
         std::vector<NodeID> part_before(dag.numNodes(), block_0);
         topologicalSort(dag, in_degree, topological_order);
@@ -189,9 +187,7 @@ class MostBalancedMinimumCut {
 
         //const HyperedgeWeight metric = metrics::objective(hypergraph, context.partition.objective);
         //metric != metric_before ||
-        if (metrics::localBlockImbalanceParallel(context, block_0, block_1, scheduler,
-                                                                      aquired_part_weight[0], aquired_part_weight[1]) 
-                                                                      != imbalance_before) {
+        if (Derived::imbalance(hypergraph, context, aquired_part_weight, scheduler, block_0, block_1) != imbalance_before) {
           LOG << "Restoring original partition failed!";
           //LOG << V(metric_before) << V(metric);
           return false;
@@ -216,6 +212,12 @@ class MostBalancedMinimumCut {
     /*ASSERT(best_imbalance == metrics::localBlockImbalance(hypergraph, context, block_0, block_1),
            "Best imbalance didn't match with current imbalance"
            << V(best_imbalance) << V(metrics::localBlockImbalance(hypergraph, context, block_0, block_1)));*/
+  }
+
+
+  protected:
+  std::vector<HypernodeWeight> get_aquired_part_weight(HyperGraph& hypergraph, size_t block_0,size_t block_1, FlowNetwork& flow_network){
+    return static_cast<Derived*>(this)->get_aquired_part_weight_impl(hypergraph,block_0, block_1, flow_network);
   }
 
  private:
@@ -333,13 +335,13 @@ class MostBalancedMinimumCut {
         for (const HyperedgeID& he : hypergraph.incidentEdges(hypergraph.globalNodeID(hn_og))) {
           const NodeID in_he = _flow_network_to_graph.get(flow_network.mapToIncommingHyperedgeID(hypergraph, he));
           const NodeID out_he = _flow_network_to_graph.get(flow_network.mapToOutgoingHyperedgeID(hypergraph, he));
-          if (in_he != Network::kInvalidNode) {
+          if (in_he != FlowNetwork::kInvalidNode) {
             Edge e;
             e.target_node = in_he;
             e.weight = 1.0;
             adj_list[hn_node].push_back(e);
           }
-          if (out_he != Network::kInvalidNode) {
+          if (out_he != FlowNetwork::kInvalidNode) {
             Edge e;
             e.target_node = hn_node;
             e.weight = 1.0;
@@ -399,17 +401,6 @@ class MostBalancedMinimumCut {
     ASSERT(idx == g.numNodes(), "Topological sort failed!" << V(idx) << V(g.numNodes()));
   }
 
-  static inline double imbalance(const Context& context, const std::vector<HypernodeWeight>& part_weight,
-   Scheduler & scheduler, size_t block_0, size_t block_1) {
-      const HypernodeWeight weight_part0 = part_weight[0];
-      const HypernodeWeight weight_part1 = part_weight[1];
-      const double imbalance_part0 = ((scheduler.get_not_aquired_weight(block_0, block_1) + weight_part0) /
-                                      static_cast<double>(context.partition.perfect_balance_part_weights[0]));
-      const double imbalance_part1 = ((scheduler.get_not_aquired_weight(block_1, block_0) + weight_part1) /
-                                      static_cast<double>(context.partition.perfect_balance_part_weights[1]));
-      return std::max(imbalance_part0, imbalance_part1) - 1.0;
-  }
-
   kahypar::ds::FastResetFlagArray<> _visited;
   kahypar::ds::FastResetArray<NodeID> _graph_to_flow_network;
   kahypar::ds::FastResetArray<NodeID> _flow_network_to_graph;
@@ -418,4 +409,54 @@ class MostBalancedMinimumCut {
   std::queue<NodeID> _Q;  // BFS queue
   StronglyConnectedComponents _sccs;
 };
+
+template <typename TypeTraits, typename FlowTypeTraits>
+class MatchingMostBalancedMinimumCut : public MostBalancedMinimumCut<TypeTraits, FlowTypeTraits> {
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+  using Scheduler = typename FlowTypeTraits::Scheduler;
+  using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
+  using Base = MostBalancedMinimumCut<TypeTraits, FlowTypeTraits>;
+
+  using Base::Base;
+
+  public:
+  std::vector<HypernodeWeight> get_aquired_part_weight_impl(HyperGraph& hypergraph, size_t block_0,size_t block_1, FlowNetwork& flow_network){
+    return std::vector<HypernodeWeight> (2, 0);
+  }
+
+  static inline double imbalance(HyperGraph& hypergraph, const Context& context, const std::vector<HypernodeWeight>& part_weight,
+   Scheduler & scheduler, size_t block_0, size_t block_1) {
+    unused(scheduler);
+    unused(part_weight);
+    return metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
+  }
+};
+
+template <typename TypeTraits, typename FlowTypeTraits>
+class OptMostBalancedMinimumCut : public MostBalancedMinimumCut<TypeTraits, FlowTypeTraits> {
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+  using Scheduler = typename FlowTypeTraits::Scheduler;
+  using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
+  using Base = MostBalancedMinimumCut<TypeTraits, FlowTypeTraits>;
+
+  using Base::Base;
+
+  public:
+  std::vector<HypernodeWeight> get_aquired_part_weight_impl(HyperGraph& hypergraph, size_t block_0,size_t block_1, FlowNetwork& flow_network){
+    return flow_network.get_aquired_part_weight(hypergraph,block_0, block_1);
+  }
+
+  static inline double imbalance(HyperGraph& hypergraph, const Context& context, const std::vector<HypernodeWeight>& part_weight,
+  Scheduler & scheduler, size_t block_0, size_t block_1) {
+    unused(hypergraph);
+    const HypernodeWeight weight_part0 = part_weight[0];
+    const HypernodeWeight weight_part1 = part_weight[1];
+    const double imbalance_part0 = ((scheduler.get_not_aquired_weight(block_0, block_1) + weight_part0) /
+                                    static_cast<double>(context.partition.perfect_balance_part_weights[0]));
+    const double imbalance_part1 = ((scheduler.get_not_aquired_weight(block_1, block_0) + weight_part1) /
+                                    static_cast<double>(context.partition.perfect_balance_part_weights[1]));
+    return std::max(imbalance_part0, imbalance_part1) - 1.0;
+  }
+};
+
 }  // namespace mt_kahypar

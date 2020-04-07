@@ -25,11 +25,13 @@ class FlowRefinerT final : public IRefiner{
         using TBB = typename TypeTraits::TBB;
         using HwTopology = typename TypeTraits::HwTopology;
         using Scheduler = typename FlowTypeTraits::Scheduler;
+        using RegionBuildPolicy =  typename FlowTypeTraits::RegionBuildPolicy;
+        using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
+
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
-        using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowTypeTraits>;
-        using MaximumFlow = IBFS<TypeTraits, FlowTypeTraits, FlowNetwork>;
+        using MaximumFlow = IBFS<TypeTraits, FlowTypeTraits>;
         using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
         using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
 
@@ -257,7 +259,7 @@ class FlowRefinerT final : public IRefiner{
                 utils::Randomize::instance().shuffleVector(cut_hes);
 
                 // Build Flow Problem
-                CutBuildPolicy<TypeTraits>::buildFlowNetwork(
+                RegionBuildPolicy::buildFlowNetwork(
                     hypergraph, _context, flow_network,
                     cut_hes, alpha, block_0, block_1,
                     visited, scheduler);
@@ -284,10 +286,15 @@ class FlowRefinerT final : public IRefiner{
                         "Flow calculation should not increase cut!"
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
 
-                //const double current_imbalance = metrics::localBlockImbalance(hypergraph, _context, block_0, block_1);
+                //TODO: make generic smh
+                double current_imbalance = 0;
+                if(_context.refinement.flow.algorithm == FlowAlgorithm::flow_opt){
                 std::vector<HypernodeWeight> aquired_part_weight = flow_network.get_aquired_part_weight(hypergraph, block_0, block_1);
-                double current_imbalance = metrics::localBlockImbalanceParallel(_context, block_0, block_1, scheduler,
+                    current_imbalance = metrics::localBlockImbalanceParallel(_context, block_0, block_1, scheduler,
                     aquired_part_weight[0], aquired_part_weight[1]);
+                }else if(_context.refinement.flow.algorithm == FlowAlgorithm::flow_match){
+                    current_imbalance = metrics::localBlockImbalance(hypergraph, _context, block_0, block_1);
+                }
 
                 //const bool equal_metric = delta == 0;
                 const bool improved_metric = delta > 0;
@@ -349,10 +356,16 @@ class FlowRefinerT final : public IRefiner{
 
 struct FlowMatchingTypeTraits{
     using Scheduler = MatchingScheduler<GlobalTypeTraits>;
+    using RegionBuildPolicy = MatchingFlowRegionBuildPolicy<GlobalTypeTraits>;
+    using FlowNetwork = ds::FlowNetwork<GlobalTypeTraits, FlowMatchingTypeTraits>;
+    using MostBalancedMinimumCut = MatchingMostBalancedMinimumCut<GlobalTypeTraits, FlowMatchingTypeTraits>;
 };
 
 struct FlowOptTypeTraits{
     using Scheduler = OptScheduler<GlobalTypeTraits>;
+    using RegionBuildPolicy = OptFlowRegionBuildPolicy<GlobalTypeTraits>;
+    using FlowNetwork = ds::OptFlowNetwork<GlobalTypeTraits, FlowOptTypeTraits>;
+    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<GlobalTypeTraits, FlowOptTypeTraits>;
 };
 
 using FlowRefinerMatch = FlowRefinerT<GlobalTypeTraits, FlowMatchingTypeTraits>;
