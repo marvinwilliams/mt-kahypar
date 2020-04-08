@@ -354,21 +354,23 @@ class FlowRefinerT final : public IRefiner{
     std::vector<std::vector<Edge>> _start_new_parallel_do;
 };
 
+template <typename TypeTraits>
 struct FlowMatchingTypeTraits{
-    using Scheduler = MatchingScheduler<GlobalTypeTraits>;
-    using RegionBuildPolicy = MatchingFlowRegionBuildPolicy<GlobalTypeTraits>;
-    using FlowNetwork = ds::FlowNetwork<GlobalTypeTraits, FlowMatchingTypeTraits>;
-    using MostBalancedMinimumCut = MatchingMostBalancedMinimumCut<GlobalTypeTraits, FlowMatchingTypeTraits>;
+    using Scheduler = MatchingScheduler<TypeTraits>;
+    using RegionBuildPolicy = MatchingFlowRegionBuildPolicy<TypeTraits>;
+    using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowMatchingTypeTraits>;
+    using MostBalancedMinimumCut = MatchingMostBalancedMinimumCut<TypeTraits, FlowMatchingTypeTraits>;
 };
 
+template <typename TypeTraits>
 struct FlowOptTypeTraits{
-    using Scheduler = OptScheduler<GlobalTypeTraits>;
-    using RegionBuildPolicy = OptFlowRegionBuildPolicy<GlobalTypeTraits>;
-    using FlowNetwork = ds::OptFlowNetwork<GlobalTypeTraits, FlowOptTypeTraits>;
-    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<GlobalTypeTraits, FlowOptTypeTraits>;
+    using Scheduler = OptScheduler<TypeTraits>;
+    using RegionBuildPolicy = OptFlowRegionBuildPolicy<TypeTraits>;
+    using FlowNetwork = ds::OptFlowNetwork<TypeTraits, FlowOptTypeTraits>;
+    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<TypeTraits, FlowOptTypeTraits>;
 };
 
-using FlowRefinerMatch = FlowRefinerT<GlobalTypeTraits, FlowMatchingTypeTraits>;
-using FlowRefinerOpt = FlowRefinerT<GlobalTypeTraits, FlowOptTypeTraits>;
+using FlowRefinerMatch = FlowRefinerT<GlobalTypeTraits, FlowMatchingTypeTraits<GlobalTypeTraits>>;
+using FlowRefinerOpt = FlowRefinerT<GlobalTypeTraits, FlowOptTypeTraits<GlobalTypeTraits>>;
 
 } //namespace mt_kahypar
