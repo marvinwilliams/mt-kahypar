@@ -358,7 +358,7 @@ template <typename TypeTraits>
 struct FlowMatchingTypeTraits{
     using Scheduler = MatchingScheduler<TypeTraits>;
     using RegionBuildPolicy = MatchingFlowRegionBuildPolicy<TypeTraits>;
-    using FlowNetwork = ds::FlowNetwork<TypeTraits, FlowMatchingTypeTraits>;
+    using FlowNetwork = ds::MatchingFlowNetwork<TypeTraits, FlowMatchingTypeTraits>;
     using MostBalancedMinimumCut = MatchingMostBalancedMinimumCut<TypeTraits, FlowMatchingTypeTraits>;
 };
 

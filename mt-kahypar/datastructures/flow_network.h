@@ -62,6 +62,7 @@ class FlowNetwork {
   using HypernodeIterator = std::pair<const HypernodeID*, const HypernodeID*>;
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using Scheduler = typename FlowTypeTraits::Scheduler;
+  using Derived = typename FlowTypeTraits::FlowNetwork;
 
  public:
   static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
@@ -130,14 +131,9 @@ class FlowNetwork {
       const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
       for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
         if (!_visited[hypergraph.originalEdgeID(he)]) {
-          //fix all pins of he's, that contain an already aquired pin
-          for (const HypernodeID& pin : hypergraph.pins(he)) {
-            if (!_hypernodes.contains(hypergraph.originalNodeID(pin)) && scheduler.isAquired(pin)) {
-              _contains_aquired_node.set(he, true);
-              fixNodes(hypergraph, he, block_0);
-              break;
-            }
-          }
+          //fix all pins of he's, that contain an already aquired pin (only OptScheduling)
+          static_cast<Derived*>(this)->fixAquiredHyperEdge(hypergraph, block_0, scheduler, he);
+          
           if(!_contains_aquired_node[he]){
             if (isHyperedgeOfSize(hypergraph, he, 1)) {
               addHyperedge(hypergraph, context, he);
@@ -184,33 +180,6 @@ class FlowNetwork {
           }
           // Invariant: All outgoing edges of hyperedge 'he'
           //            are contained in the flow problem.
-        }
-      }
-    }
-  }
-
-  void fixNodes(HyperGraph& hypergraph, HyperedgeID he, const PartitionID block_0){
-    const size_t pins_u_block0 = _pins_block0.get(hypergraph.originalEdgeID(he));
-    const size_t pins_u_block1 = _pins_block1.get(hypergraph.originalEdgeID(he));
-
-    const NodeID u = mapToIncommingHyperedgeID(hypergraph, he);
-    const NodeID v = mapToOutgoingHyperedgeID(hypergraph, he);
-
-    if(pins_u_block0 > 0){
-      addNodeId(u);
-      addSourceWithId(u);
-    }
-    if(pins_u_block1 > 0){
-      addNodeId(v);
-      addSinkWithId(v);
-    }
-
-    for (const HypernodeID& pin : hypergraph.pins(he)) {
-      if (_hypernodes.contains(hypergraph.originalNodeID(pin))) {
-        if(hypergraph.partID(pin) == block_0){
-          addEdge(u, pin, kInfty);
-        }else{
-          addEdge(pin, v, kInfty);
         }
       }
     }
@@ -305,10 +274,7 @@ class FlowNetwork {
   }
 
   void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
-    unused(hypergraph);
-    unused(block_0);
-    unused(block_1);
-    unused(scheduler);
+    static_cast<Derived*>(this)->releaseHyperNodesImpl(hypergraph, block_0, block_1, scheduler);
   }
 
   bool isTrivialFlow() const {
@@ -715,6 +681,30 @@ class FlowNetwork {
 };
 
 template <typename TypeTraits, typename FlowTypeTraits>
+class MatchingFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
+  using Base = FlowNetwork<TypeTraits,FlowTypeTraits>;
+  using Base::Base;
+
+  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+  using Scheduler = typename FlowTypeTraits::Scheduler;
+
+  public:
+    void releaseHyperNodesImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+      unused(hypergraph);
+      unused(block_0);
+      unused(block_1);
+      unused(scheduler);
+    }
+
+    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, Scheduler & scheduler, const HyperedgeID he){
+      unused(hypergraph);
+      unused(block_0);
+      unused(scheduler);
+      unused(he);
+    }
+};
+
+template <typename TypeTraits, typename FlowTypeTraits>
 class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
   using Base = FlowNetwork<TypeTraits,FlowTypeTraits>;
   using Base::Base;
@@ -723,7 +713,7 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
   using Scheduler = typename FlowTypeTraits::Scheduler;
 
   public:
-    void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+    void releaseHyperNodesImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
       std::vector<HypernodeWeight> aquired_part_weight = this->get_aquired_part_weight(hypergraph,block_0, block_1);
       scheduler.release_block_weight(block_0, block_1, aquired_part_weight[0]);
       scheduler.release_block_weight(block_1, block_0, aquired_part_weight[1]);
@@ -731,6 +721,44 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
         scheduler.releaseNode(hn);
       }  
     }
+
+    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, Scheduler & scheduler, const HyperedgeID he){
+      for (const HypernodeID& pin : hypergraph.pins(he)) {
+        if (!this->_hypernodes.contains(hypergraph.originalNodeID(pin)) && scheduler.isAquired(pin)) {
+          this->_contains_aquired_node.set(he, true);
+          fixNodes(hypergraph, he, block_0);
+          break;
+        }
+      }
+    }
+
+  private:
+    void fixNodes(HyperGraph& hypergraph, HyperedgeID he, const PartitionID block_0){
+    const size_t pins_u_block0 = this->_pins_block0.get(hypergraph.originalEdgeID(he));
+    const size_t pins_u_block1 = this->_pins_block1.get(hypergraph.originalEdgeID(he));
+
+    const NodeID u = this->mapToIncommingHyperedgeID(hypergraph, he);
+    const NodeID v = this->mapToOutgoingHyperedgeID(hypergraph, he);
+
+    if(pins_u_block0 > 0){
+      this->addNodeId(u);
+      this->addSourceWithId(u);
+    }
+    if(pins_u_block1 > 0){
+      this->addNodeId(v);
+      this->addSinkWithId(v);
+    }
+
+    for (const HypernodeID& pin : hypergraph.pins(he)) {
+      if (this->_hypernodes.contains(hypergraph.originalNodeID(pin))) {
+        if(hypergraph.partID(pin) == block_0){
+          this->addEdge(u, pin, this->kInfty);
+        }else{
+          this->addEdge(pin, v, this->kInfty);
+        }
+      }
+    }
+  }
 };
 
 }  // namespace ds
