@@ -151,14 +151,18 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
         continue;
       }
 
-      for (ds::FlowEdge& e : flow_network.incidentEdges(u_og)) {
+      size_t next_idx = flow_network.getFirstFlowEdge(u_og);
+      
+      while(next_idx != FlowNetwork::kInvalidNode){
+        FlowEdge & e = flow_network.getEdge(next_idx);
         const NodeID v = e.target;
         if (!_visited[v] && flow_network.residualCapacity(e)) {
           _parent.set(v, &e);
           _visited.set(v, true);
           _Q.push(v);
         }
-      }
+        next_idx = e.nextEdge;
+      }    
     }
     return augmenting_path_exists;
   }
@@ -344,6 +348,7 @@ class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits>{
     _flow_graph.computeMaxFlow();
     const Flow max_flow = _flow_graph.getFlow();
 
+    //assign flow to flow network
     FlowGraph::Arc* a = _flow_graph.arcs;
     while (a != _flow_graph.arcEnd) {
       const Flow flow = a->flowEdge->capacity - a->rCap;
@@ -377,9 +382,13 @@ class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits>{
       cur_id++;
     }
 
+    /*
     for (const NodeID node : flow_network.nodes()) {
       const NodeID u = _flow_network_mapping[node];
-      for (ds::FlowEdge& edge : flow_network.incidentEdges(node)) {
+      size_t next_idx = flow_network.getFirstFlowEdge(node);
+      
+      while(next_idx != FlowNetwork::kInvalidNode){
+        FlowEdge & edge = flow_network.getEdge(next_idx);
         const NodeID v = _flow_network_mapping[edge.target];
         const Capacity c = edge.capacity;
         ds::FlowEdge& rev_edge = flow_network.reverseEdge(edge);
@@ -387,8 +396,27 @@ class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits>{
         if (!_visited[edge.target]) {
           _flow_graph.addEdge(u, v, c, rev_c, &edge, &rev_edge);
         }
+        next_idx = edge.nextEdge;
       }
       _visited.set(node, true);
+      
+    }*/
+
+
+    //add Edges
+    bool reverse = false;
+    for (ds::FlowEdge& edge : flow_network.edges()) {
+      if(reverse){
+        reverse = false;
+      }else{
+        const NodeID u = _flow_network_mapping[edge.source];
+        const NodeID v = _flow_network_mapping[edge.target];
+        const Capacity c = edge.capacity;
+        ds::FlowEdge& rev_edge = flow_network.reverseEdge(edge);
+        const Capacity rev_c = rev_edge.capacity;
+        _flow_graph.addEdge(u, v, c, rev_c, &edge, &rev_edge);
+        reverse = true;
+      }
     }
 
     _flow_graph.initGraph();

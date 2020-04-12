@@ -189,7 +189,7 @@ class MostBalancedMinimumCut {
         //metric != metric_before ||
         if (Derived::imbalance(hypergraph, context, aquired_part_weight, scheduler, block_0, block_1) != imbalance_before) {
           LOG << "Restoring original partition failed!";
-          //LOG << V(metric_before) << V(metric);
+          LOG << V(imbalance_before) << V(Derived::imbalance(hypergraph, context, aquired_part_weight, scheduler, block_0, block_1));
           return false;
         }
 
@@ -282,7 +282,10 @@ class MostBalancedMinimumCut {
         }
       }
 
-      for (FlowEdge& e : flow_network.incidentEdges(u_og)) {
+      size_t next_idx = flow_network.getFirstFlowEdge(u_og);
+      
+      while(next_idx != FlowNetwork::kInvalidNode){
+        FlowEdge & e = flow_network.getEdge(next_idx);
         const FlowEdge& reverse_edge = flow_network.reverseEdge(e);
         const NodeID v_og = e.target;
         if (!_visited[v_og]) {
@@ -292,6 +295,7 @@ class MostBalancedMinimumCut {
             _visited.set(v_og, true);
           }
         }
+        next_idx = e.nextEdge;
       }
     }
   }
@@ -313,11 +317,14 @@ class MostBalancedMinimumCut {
     }
 
     std::vector<std::vector<Edge> > adj_list(cur_graph_node, std::vector<Edge>());
-
     for (const NodeID& node : flow_network.nodes()) {
       if (!_visited[node]) {
         const NodeID source = _flow_network_to_graph.get(node);
-        for (FlowEdge& flow_edge : flow_network.incidentEdges(node)) {
+
+        size_t next_idx = flow_network.getFirstFlowEdge(node);
+      
+        while(next_idx != FlowNetwork::kInvalidNode){
+          FlowEdge & flow_edge = flow_network.getEdge(next_idx);
           const NodeID target = flow_edge.target;
           if (flow_network.residualCapacity(flow_edge) && !_visited[target]) {
             Edge e;
@@ -325,6 +332,7 @@ class MostBalancedMinimumCut {
             e.weight = 1.0;
             adj_list[source].push_back(e);
           }
+          next_idx = flow_edge.nextEdge;
         }
       }
     }
