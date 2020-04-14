@@ -27,6 +27,7 @@
 #include "tbb/parallel_reduce.h"
 
 #include "kahypar/meta/mandatory.h"
+#include "kahypar/utils/math.h"
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
@@ -208,6 +209,10 @@ class CommunitySupport {
     _community_hyperedges = std::move(other._community_hyperedges);
     _vertex_to_community_node_id = std::move(other._vertex_to_community_node_id);
     return *this;
+  }
+
+  ~CommunitySupport() {
+    freeInternalData();
   }
 
   bool isInitialized() const {
@@ -598,6 +603,26 @@ class CommunitySupport {
     });
 
     return community_support;
+  }
+
+  // Free internal data in parallel
+  void freeInternalData() {
+    if ( _are_community_hyperedges_initialized ) {
+      tbb::parallel_invoke([&] {
+        parallel::parallel_free(_community_hyperedge_ids);
+      }, [&] {
+        parallel::parallel_free(
+          _communities_num_hypernodes, _communities_num_pins,
+          _community_degree, _vertex_to_community_node_id,
+          _community_hyperedges);
+      });
+    } else if ( _is_initialized ) {
+      parallel::parallel_free(
+        _communities_num_hypernodes, _communities_num_pins,
+        _community_degree, _vertex_to_community_node_id);
+    }
+    _is_initialized = false;
+    _are_community_hyperedges_initialized = false;
   }
 
   // Copy community support sequential

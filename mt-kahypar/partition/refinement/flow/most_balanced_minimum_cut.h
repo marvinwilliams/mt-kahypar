@@ -44,7 +44,7 @@
 #include "mt-kahypar/utils/randomize.h"
 
 namespace mt_kahypar {
-using kahypar::ds::Graph;
+using KaHyParGraph = kahypar::ds::Graph;
 using kahypar::ds::Edge;
 
 template <typename TypeTraits, typename FlowTypeTraits>
@@ -80,14 +80,14 @@ class MostBalancedMinimumCut {
     markAllReachableNodesAsVisited<false>(hypergraph, flow_network, block_0, block_1);
 
     // Build residual graph
-    Graph residual_graph(std::move(buildResidualGraph(hypergraph, flow_network)));
+    KaHyParGraph residual_graph(std::move(buildResidualGraph(hypergraph, flow_network)));
 
     // Find strongly connected components
     findStronglyConnectedComponents(residual_graph);
 
     // Contract strongly connected components
     auto contraction = residual_graph.contractClusters();
-    Graph dag(std::move(contraction.first));
+    KaHyParGraph dag(std::move(contraction.first));
     std::vector<NodeID> contraction_mapping = std::move(contraction.second);
 
     // Build mapping from contracted graph to flow network
@@ -283,7 +283,7 @@ class MostBalancedMinimumCut {
       }
 
       size_t next_idx = flow_network.getFirstFlowEdge(u_og);
-      
+
       while(next_idx != FlowNetwork::kInvalidNode){
         FlowEdge & e = flow_network.getEdge(next_idx);
         const FlowEdge& reverse_edge = flow_network.reverseEdge(e);
@@ -300,7 +300,7 @@ class MostBalancedMinimumCut {
     }
   }
 
-  Graph buildResidualGraph(HyperGraph& hypergraph, FlowNetwork& flow_network) {
+  KaHyParGraph buildResidualGraph(HyperGraph& hypergraph, FlowNetwork& flow_network) {
     size_t cur_graph_node = 0;
     for (const NodeID& node : flow_network.nodes()) {
       if (!_visited[node]) {
@@ -322,7 +322,7 @@ class MostBalancedMinimumCut {
         const NodeID source = _flow_network_to_graph.get(node);
 
         size_t next_idx = flow_network.getFirstFlowEdge(node);
-      
+
         while(next_idx != FlowNetwork::kInvalidNode){
           FlowEdge & flow_edge = flow_network.getEdge(next_idx);
           const NodeID target = flow_edge.target;
@@ -368,15 +368,15 @@ class MostBalancedMinimumCut {
       adj_array.push_back(adj_array[u] + adj_list[u].size());
     }
 
-    return Graph(adj_array, edges);
+    return KaHyParGraph(adj_array, edges);
   }
 
-  void findStronglyConnectedComponents(Graph& g) {
+  void findStronglyConnectedComponents(KaHyParGraph& g) {
     _sccs.compute(g);
   }
 
 
-  void topologicalSort(const Graph& g,
+  void topologicalSort(const KaHyParGraph& g,
                        std::vector<size_t> in_degree,
                        std::vector<NodeID>& topological_order) {
     std::vector<NodeID> start_nodes;

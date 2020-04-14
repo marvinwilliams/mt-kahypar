@@ -28,8 +28,7 @@
 #include "mt-kahypar/definitions.h"
 
 namespace mt_kahypar {
-using kahypar::ds::Graph;
-using kahypar::ds::Edge;
+using KaHyParGraph = kahypar::ds::Graph;
 
 class StronglyConnectedComponents {
  public:
@@ -42,7 +41,7 @@ class StronglyConnectedComponents {
     _roots.reserve(max_num_nodes);
   }
 
-  void compute(Graph& graph) {
+  void compute(KaHyParGraph& graph) {
     ASSERT(_roots.empty());
     ASSERT(_unfinished.empty());
     ASSERT(_call_stack.empty());
@@ -64,8 +63,8 @@ class StronglyConnectedComponents {
 
  private:
   // Cheriyan/Mehlhorn 96, Gabow 2000
-  void scc(const NodeID node, Graph& g, NodeID& dfs_num, ClusterID& cid) {
-    using EdgeIterator = Graph::EdgeIterator;
+  void scc(const NodeID node, KaHyParGraph& g, NodeID& dfs_num, ClusterID& cid) {
+    using EdgeIterator = KaHyParGraph::EdgeIterator;
 
     ASSERT(_call_stack.empty());
     _call_stack.push_back(std::make_pair(node, g.firstEdge(node)));
@@ -98,7 +97,7 @@ class StronglyConnectedComponents {
       }
 
       if (current_node == _roots.back()) {
-        NodeID w = Graph::kInvalidNode;
+        NodeID w = KaHyParGraph::kInvalidNode;
         do {
           w = _unfinished.back();
           _unfinished.pop_back();
@@ -110,10 +109,9 @@ class StronglyConnectedComponents {
     }
   }
 
-
   std::vector<int> _dfs_num;
   std::vector<NodeID> _unfinished;
   std::vector<NodeID> _roots;
-  std::vector<std::pair<NodeID, Graph::EdgeIterator> > _call_stack;
+  std::vector<std::pair<NodeID, KaHyParGraph::EdgeIterator> > _call_stack;
 };
 }  // namespace mt_kahypar

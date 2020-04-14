@@ -43,9 +43,11 @@ using HypernodeWeight = int32_t;
 using HyperedgeWeight = int32_t;
 using PartitionID = int32_t;
 using Gain = HyperedgeWeight;
+
 using ClusterID = PartitionID;
 using Flow = int32_t;
 using Capacity = int32_t;
+using NodeID = uint32_t;
 
 // Constant Declarations
 static constexpr PartitionID kInvalidPartition = -1;
@@ -111,16 +113,12 @@ struct Memento {
   * This struct is used during multilevel coarsening to efficiently
   * detect parallel hyperedges.
   */
-struct ContractedHyperedge {
-  HyperedgeID he;
-  size_t hash;
-  HyperedgeWeight weight;
-  bool is_parallel; // Indicates if this hyperedges is already detected as parallel
-  int node; // NUMA Node of hyperedge
-  parallel::scalable_vector<HypernodeID> hyperedge;
-  HyperedgeID he_idx; // Index in hyperedge vector
-  HypernodeID pin_idx; // Index of pins in incidence array
-};
+  struct HyperedgeHash {
+    HyperedgeID he;
+    size_t hash;
+    size_t size;
+    bool valid;
+  };
 
 namespace common {
 

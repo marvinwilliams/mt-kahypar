@@ -59,6 +59,7 @@ TEST_F(AStaticNumaHypergraph, HasCorrectStats) {
   ASSERT_EQ(6,  hypergraph.initialNumPins(1));
   ASSERT_EQ(3,  hypergraph.initialTotalVertexDegree(1));
   ASSERT_EQ(7,  hypergraph.totalWeight());
+  ASSERT_EQ(4,  hypergraph.maxEdgeSize());
 }
 
 TEST_F(AStaticNumaHypergraph, HasCorrectInitialNodeIterator) {
@@ -563,6 +564,7 @@ TEST_F(AStaticNumaHypergraph, ComparesStatsIfCopiedParallel) {
   ASSERT_EQ(hypergraph.initialNumPins(), copy_hg.initialNumPins());
   ASSERT_EQ(hypergraph.initialTotalVertexDegree(), copy_hg.initialTotalVertexDegree());
   ASSERT_EQ(hypergraph.totalWeight(), copy_hg.totalWeight());
+  ASSERT_EQ(hypergraph.maxEdgeSize(), copy_hg.maxEdgeSize());
 }
 
 TEST_F(AStaticNumaHypergraph, ComparesStatsIfCopiedSequential) {
@@ -572,6 +574,7 @@ TEST_F(AStaticNumaHypergraph, ComparesStatsIfCopiedSequential) {
   ASSERT_EQ(hypergraph.initialNumPins(), copy_hg.initialNumPins());
   ASSERT_EQ(hypergraph.initialTotalVertexDegree(), copy_hg.initialTotalVertexDegree());
   ASSERT_EQ(hypergraph.totalWeight(), copy_hg.totalWeight());
+  ASSERT_EQ(hypergraph.maxEdgeSize(), copy_hg.maxEdgeSize());
 }
 
 TEST_F(AStaticNumaHypergraph, ComparesIncidentNetsIfCopiedParallel) {
@@ -739,23 +742,27 @@ TEST_F(AStaticNumaHypergraph, ComparesPinsOfCommunityHyperedgesIfCopiedSequentia
 }
 
 TEST_F(AStaticNumaHypergraph, ContractsCommunities1) {
-  auto contracted_hg = hypergraph.contract(
-    {1, 4, 1, 5, 5, 4, 5}, TBB::GLOBAL_TASK_GROUP);
-  NumaHyperGraph& c_hypergraph = contracted_hg.first;
-  auto& c_mapping = contracted_hg.second;
+  parallel::scalable_vector<HypernodeID> c_mapping = {1, 4, 1, 5, 5, 4, 5};
+  NumaHyperGraph c_hypergraph = hypergraph.contract(
+    c_mapping, TBBNumaArena::GLOBAL_TASK_GROUP);
   std::vector<HypernodeID> id = { GLOBAL_ID(c_hypergraph, 0),
     GLOBAL_ID(c_hypergraph, 1), GLOBAL_ID(c_hypergraph, 2) };
 
   // Verify Mapping
-  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[1]));
-  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[4]));
-  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[5]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[0]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[1]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[2]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[3]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[4]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[5]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[6]));
 
   // Verify Stats
   ASSERT_EQ(3, c_hypergraph.initialNumNodes());
   ASSERT_EQ(1, c_hypergraph.initialNumEdges());
   ASSERT_EQ(3, c_hypergraph.initialNumPins());
   ASSERT_EQ(7, c_hypergraph.totalWeight());
+  ASSERT_EQ(3, c_hypergraph.maxEdgeSize());
 
   // Verify Vertex Weights
   ASSERT_EQ(2, c_hypergraph.nodeWeight(id[0]));
@@ -774,24 +781,27 @@ TEST_F(AStaticNumaHypergraph, ContractsCommunities1) {
 }
 
 TEST_F(AStaticNumaHypergraph, ContractsCommunities2) {
-  auto contracted_hg = hypergraph.contract(
-    {1, 4, 1, 5, 5, 6, 5}, TBB::GLOBAL_TASK_GROUP);
-  NumaHyperGraph& c_hypergraph = contracted_hg.first;
-  auto& c_mapping = contracted_hg.second;
+  parallel::scalable_vector<HypernodeID> c_mapping = {1, 4, 1, 5, 5, 6, 5};
+  NumaHyperGraph c_hypergraph = hypergraph.contract(
+    c_mapping, TBBNumaArena::GLOBAL_TASK_GROUP);
   std::vector<HypernodeID> id = { GLOBAL_ID(c_hypergraph, 0),
     GLOBAL_ID(c_hypergraph, 1), GLOBAL_ID(c_hypergraph, 2), GLOBAL_ID(c_hypergraph, 3) };
 
   // Verify Mapping
-  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[1]));
-  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[4]));
-  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[5]));
-  ASSERT_EQ(3, c_hypergraph.originalNodeID(c_mapping[6]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[0]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[1]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[2]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[3]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[4]));
+  ASSERT_EQ(3, c_hypergraph.originalNodeID(c_mapping[5]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[6]));
 
   // Verify Stats
   ASSERT_EQ(4, c_hypergraph.initialNumNodes());
   ASSERT_EQ(2, c_hypergraph.initialNumEdges());
   ASSERT_EQ(6, c_hypergraph.initialNumPins());
   ASSERT_EQ(7, c_hypergraph.totalWeight());
+  ASSERT_EQ(3, c_hypergraph.maxEdgeSize());
 
   // Verify Vertex Weights
   ASSERT_EQ(2, c_hypergraph.nodeWeight(id[0]));
@@ -807,35 +817,38 @@ TEST_F(AStaticNumaHypergraph, ContractsCommunities2) {
   verifyIncidentNets(c_hypergraph, id[0],
     { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 1) });
   verifyIncidentNets(c_hypergraph, id[1],
-    { GLOBAL_EDGE_ID(c_hypergraph, 1) });
+    { GLOBAL_EDGE_ID(c_hypergraph, 0) });
   verifyIncidentNets(c_hypergraph, id[2],
     { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 1) });
   verifyIncidentNets(c_hypergraph, id[3],
-    { GLOBAL_EDGE_ID(c_hypergraph, 0) });
+    { GLOBAL_EDGE_ID(c_hypergraph, 1) });
   verifyPins(c_hypergraph,
     { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 1) },
-    { {id[0], id[2], id[3]}, {id[0], id[1], id[2]} });
+    { {id[0], id[1], id[2]}, {id[0], id[2], id[3]} });
 }
 
 TEST_F(AStaticNumaHypergraph, ContractsCommunities3) {
-  auto contracted_hg = hypergraph.contract(
-    {2, 2, 0, 5, 5, 1, 1}, TBB::GLOBAL_TASK_GROUP);
-  NumaHyperGraph& c_hypergraph = contracted_hg.first;
-  auto& c_mapping = contracted_hg.second;
+  parallel::scalable_vector<HypernodeID> c_mapping = {2, 2, 0, 5, 5, 1, 1};
+  NumaHyperGraph c_hypergraph = hypergraph.contract(
+    c_mapping, TBBNumaArena::GLOBAL_TASK_GROUP);
   std::vector<HypernodeID> id = { GLOBAL_ID(c_hypergraph, 0),
     GLOBAL_ID(c_hypergraph, 1), GLOBAL_ID(c_hypergraph, 2), GLOBAL_ID(c_hypergraph, 3) };
 
   // Verify Mapping
-  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[0]));
-  ASSERT_EQ(3, c_hypergraph.originalNodeID(c_mapping[1]));
-  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[2]));
-  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[5]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[0]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[1]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[2]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[3]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[4]));
+  ASSERT_EQ(3, c_hypergraph.originalNodeID(c_mapping[5]));
+  ASSERT_EQ(3, c_hypergraph.originalNodeID(c_mapping[6]));
 
   // Verify Stats
   ASSERT_EQ(4, c_hypergraph.initialNumNodes());
   ASSERT_EQ(4, c_hypergraph.initialNumEdges());
   ASSERT_EQ(8, c_hypergraph.initialNumPins());
   ASSERT_EQ(7, c_hypergraph.totalWeight());
+  ASSERT_EQ(2, c_hypergraph.maxEdgeSize());
 
   // Verify Vertex Weights
   ASSERT_EQ(2, c_hypergraph.nodeWeight(id[0]));
@@ -851,38 +864,41 @@ TEST_F(AStaticNumaHypergraph, ContractsCommunities3) {
 
   // Verify Hypergraph Structure
   verifyIncidentNets(c_hypergraph, id[0],
-    { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 2) });
-  verifyIncidentNets(c_hypergraph, id[1],
     { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 1) });
+  verifyIncidentNets(c_hypergraph, id[1],
+    { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 3) });
   verifyIncidentNets(c_hypergraph, id[2],
-    { GLOBAL_EDGE_ID(c_hypergraph, 2), GLOBAL_EDGE_ID(c_hypergraph, 3) });
+    { GLOBAL_EDGE_ID(c_hypergraph, 1), GLOBAL_EDGE_ID(c_hypergraph, 2) });
   verifyIncidentNets(c_hypergraph, id[3],
-    { GLOBAL_EDGE_ID(c_hypergraph, 1), GLOBAL_EDGE_ID(c_hypergraph, 3) });
+    { GLOBAL_EDGE_ID(c_hypergraph, 2), GLOBAL_EDGE_ID(c_hypergraph, 3) });
   verifyPins(c_hypergraph,
     { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 1),
       GLOBAL_EDGE_ID(c_hypergraph, 2), GLOBAL_EDGE_ID(c_hypergraph, 3) },
-    { { id[0], id[1] }, { id[1], id[3] }, { id[0], id[2] }, { id[2], id[3] } });
+    { { id[0], id[1] }, { id[0], id[2] }, { id[2], id[3] }, { id[1], id[3] } });
 }
 
 TEST_F(AStaticNumaHypergraph, ContractsCommunitiesWithDisabledHypernodes) {
   hypergraph.disableHypernode(id[0]);
   hypergraph.disableHypernode(id[6]);
 
-  auto contracted_hg = hypergraph.contract(
-    {0, 1, 1, 2, 2, 2, 6}, TBBNumaArena::GLOBAL_TASK_GROUP);
-  NumaHyperGraph& c_hypergraph = contracted_hg.first;
-  auto& c_mapping = contracted_hg.second;
+  parallel::scalable_vector<HypernodeID> c_mapping = {0, 1, 1, 2, 2, 2, 6};
+  NumaHyperGraph c_hypergraph = hypergraph.contract(
+    c_mapping, TBBNumaArena::GLOBAL_TASK_GROUP);
   std::vector<HypernodeID> id = { GLOBAL_ID(c_hypergraph, 0), GLOBAL_ID(c_hypergraph, 1) };
 
   // Verify Mapping
   ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[1]));
-  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[2]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[2]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[3]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[4]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[5]));
 
   // Verify Stats
   ASSERT_EQ(2, c_hypergraph.initialNumNodes());
   ASSERT_EQ(1, c_hypergraph.initialNumEdges());
   ASSERT_EQ(2, c_hypergraph.initialNumPins());
   ASSERT_EQ(5, c_hypergraph.totalWeight());
+  ASSERT_EQ(2, c_hypergraph.maxEdgeSize());
 
   // Verify Vertex Weights
   ASSERT_EQ(2, c_hypergraph.nodeWeight(id[0]));
@@ -901,24 +917,27 @@ TEST_F(AStaticNumaHypergraph, ContractsCommunitiesWithDisabledHypernodes) {
 TEST_F(AStaticNumaHypergraph, ContractsCommunitiesWithDisabledHyperedges) {
   hypergraph.disableHyperedge(GLOBAL_EDGE_ID(hypergraph, 3));
 
-  auto contracted_hg = hypergraph.contract(
-    {0, 0, 0, 1, 1, 2, 3}, TBBNumaArena::GLOBAL_TASK_GROUP);
-  NumaHyperGraph& c_hypergraph = contracted_hg.first;
-  auto& c_mapping = contracted_hg.second;
+  parallel::scalable_vector<HypernodeID> c_mapping = {0, 0, 0, 1, 1, 2, 3};
+  NumaHyperGraph c_hypergraph = hypergraph.contract(
+    c_mapping, TBBNumaArena::GLOBAL_TASK_GROUP);
   std::vector<HypernodeID> id = { GLOBAL_ID(c_hypergraph, 0), GLOBAL_ID(c_hypergraph, 1),
     GLOBAL_ID(c_hypergraph, 2), GLOBAL_ID(c_hypergraph, 3) };
 
   // Verify Mapping
   ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[0]));
-  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[1]));
-  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[2]));
-  ASSERT_EQ(3, c_hypergraph.originalNodeID(c_mapping[3]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[1]));
+  ASSERT_EQ(0, c_hypergraph.originalNodeID(c_mapping[2]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[3]));
+  ASSERT_EQ(1, c_hypergraph.originalNodeID(c_mapping[4]));
+  ASSERT_EQ(2, c_hypergraph.originalNodeID(c_mapping[5]));
+  ASSERT_EQ(3, c_hypergraph.originalNodeID(c_mapping[6]));
 
   // Verify Stats
   ASSERT_EQ(4, c_hypergraph.initialNumNodes());
   ASSERT_EQ(2, c_hypergraph.initialNumEdges());
   ASSERT_EQ(4, c_hypergraph.initialNumPins());
   ASSERT_EQ(7, c_hypergraph.totalWeight());
+  ASSERT_EQ(2, c_hypergraph.maxEdgeSize());
 
   // Verify Vertex Weights
   ASSERT_EQ(3, c_hypergraph.nodeWeight(id[0]));
@@ -943,9 +962,9 @@ TEST_F(AStaticNumaHypergraph, ContractsCommunitiesWithDisabledHyperedges) {
 
 TEST_F(AStaticNumaHypergraph, ContractCommunitiesIfCommunityInformationAreAvailable) {
   assignCommunityIds();
-  auto contracted_hg = hypergraph.contract(
-    {0, 0, 1, 2, 2, 3, 3}, TBBNumaArena::GLOBAL_TASK_GROUP);
-  NumaHyperGraph& c_hypergraph = contracted_hg.first;
+  parallel::scalable_vector<HypernodeID> c_mapping = {0, 0, 1, 2, 2, 3, 3};
+  NumaHyperGraph c_hypergraph = hypergraph.contract(
+    c_mapping, TBBNumaArena::GLOBAL_TASK_GROUP);
   std::vector<HypernodeID> id = { GLOBAL_ID(c_hypergraph, 0),
     GLOBAL_ID(c_hypergraph, 1), GLOBAL_ID(c_hypergraph, 2), GLOBAL_ID(c_hypergraph, 3) };
 
@@ -970,22 +989,22 @@ TEST_F(AStaticNumaHypergraph, ContractCommunitiesIfCommunityInformationAreAvaila
 TEST_F(AStaticNumaHypergraph, ContractCommunitiesIfCommunityHyperedgesAreAvailable) {
   assignCommunityIds();
   hypergraph.initializeCommunityHyperedges(TBBNumaArena::GLOBAL_TASK_GROUP);
-  auto contracted_hg = hypergraph.contract(
-    {0, 0, 1, 2, 2, 3, 3}, TBBNumaArena::GLOBAL_TASK_GROUP);
-  NumaHyperGraph& c_hypergraph = contracted_hg.first;
+  parallel::scalable_vector<HypernodeID> c_mapping = {0, 0, 1, 2, 2, 3, 3};
+  NumaHyperGraph c_hypergraph = hypergraph.contract(
+    c_mapping, TBBNumaArena::GLOBAL_TASK_GROUP);
   std::vector<HypernodeID> id = { GLOBAL_ID(c_hypergraph, 0),
     GLOBAL_ID(c_hypergraph, 1), GLOBAL_ID(c_hypergraph, 2), GLOBAL_ID(c_hypergraph, 3) };
 
   // Verify Hypergraph Structure
   verifyCommunityPins(c_hypergraph, 0,
     { GLOBAL_EDGE_ID(c_hypergraph, 0), GLOBAL_EDGE_ID(c_hypergraph, 1),
-      GLOBAL_EDGE_ID(c_hypergraph, 2) },
-    { {id[0], id[1]}, {id[1]}, {id[0]} });
+      GLOBAL_EDGE_ID(c_hypergraph, 3) },
+    { {id[0], id[1]}, {id[0]}, {id[1]} });
   verifyCommunityPins(c_hypergraph, 1,
-    { GLOBAL_EDGE_ID(c_hypergraph, 2), GLOBAL_EDGE_ID(c_hypergraph, 3) },
+    { GLOBAL_EDGE_ID(c_hypergraph, 1), GLOBAL_EDGE_ID(c_hypergraph, 2) },
     { {id[2]}, {id[2]} });
   verifyCommunityPins(c_hypergraph, 2,
-    { GLOBAL_EDGE_ID(c_hypergraph, 1), GLOBAL_EDGE_ID(c_hypergraph, 3) },
+    { GLOBAL_EDGE_ID(c_hypergraph, 2), GLOBAL_EDGE_ID(c_hypergraph, 3) },
     { {id[3]}, {id[3]} });
 }
 

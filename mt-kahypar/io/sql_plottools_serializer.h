@@ -56,7 +56,6 @@ static inline std::string serialize(const PartitionedHypergraph<>& hypergraph,
         << " perfect_balance_part_weight=" << context.partition.perfect_balance_part_weights[0]
         << " max_part_weight=" << context.partition.max_part_weights[0]
         << " total_graph_weight=" << hypergraph.totalWeight()
-        << " use_community_structure_from_file=" << std::boolalpha << context.preprocessing.use_community_structure_from_file
         << " use_community_detection=" << std::boolalpha << context.preprocessing.use_community_detection
         << " community_edge_weight_function=" << context.preprocessing.community_detection.edge_weight_function
         << " community_max_pass_iterations=" << context.preprocessing.community_detection.max_pass_iterations
@@ -82,6 +81,14 @@ static inline std::string serialize(const PartitionedHypergraph<>& hypergraph,
         << " initial_partitioning_use_adaptive_epsilon=" << std::boolalpha << context.initial_partitioning.use_adaptive_epsilon
         << " initial_partitioning_lp_maximum_iterations=" << context.initial_partitioning.lp_maximum_iterations
         << " initial_partitioning_lp_initial_block_size=" << context.initial_partitioning.lp_initial_block_size
+        << " sparsification_use_degree_zero_contractions=" << std::boolalpha << context.sparsification.use_degree_zero_contractions
+        << " sparsification_use_heavy_net_removal=" << std::boolalpha << context.sparsification.use_heavy_net_removal
+        << " sparsification_use_similiar_net_removal=" << std::boolalpha << context.sparsification.use_similiar_net_removal
+        << " sparsification_hyperedge_pin_weight_fraction=" << context.sparsification.hyperedge_pin_weight_fraction
+        << " sparsification_max_hyperedge_pin_weight=" << context.sparsification.max_hyperedge_pin_weight
+        << " sparsification_min_hash_footprint_size=" << context.sparsification.min_hash_footprint_size
+        << " sparsification_jaccard_threshold=" << context.sparsification.jaccard_threshold
+        << " sparsification_similiar_net_combiner_strategy=" << context.sparsification.similiar_net_combiner_strategy
         << " lp_algorithm=" << context.refinement.label_propagation.algorithm
         << " lp_maximum_iterations=" << context.refinement.label_propagation.maximum_iterations
         << " lp_numa_aware=" << std::boolalpha << context.refinement.label_propagation.numa_aware
@@ -91,6 +98,7 @@ static inline std::string serialize(const PartitionedHypergraph<>& hypergraph,
         << " flow_use_most_balanced_minimum_cut=" << std::boolalpha << context.refinement.flow.use_most_balanced_minimum_cut
         << " flow_use_improvement_history=" << std::boolalpha << context.refinement.flow.use_improvement_history
         << " num_threads=" << context.shared_memory.num_threads
+        << " use_localized_random_shuffle=" << context.shared_memory.use_localized_random_shuffle
         << " shuffle_block_size=" << context.shared_memory.shuffle_block_size;
 
     // Metrics
@@ -103,7 +111,7 @@ static inline std::string serialize(const PartitionedHypergraph<>& hypergraph,
     oss << " totalPartitionTime=" << elapsed_seconds.count();
 
     // Timings
-    utils::Timer::instance(context.partition.detailed_timings).serialize(oss);
+    utils::Timer::instance(context.partition.show_detailed_timings).serialize(oss);
 
     // Stats
     oss << utils::Stats::instance();

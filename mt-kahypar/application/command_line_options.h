@@ -106,8 +106,12 @@ po::options_description createGenericOptionsDescription(Context& context,
     "Verbose main partitioning output")
     ("quiet,q", po::value<bool>(&context.partition.quiet_mode)->value_name("<bool>"),
     "Quiet Mode: Completely suppress console output")
-    ("show-detailed-timings", po::value<bool>(&context.partition.detailed_timings)->value_name("<bool>"),
+    ("show-detailed-timings", po::value<bool>(&context.partition.show_detailed_timings)->value_name("<bool>"),
     "If true, detailed timings overview is shown")
+    ("show-memory-consumption", po::value<bool>(&context.partition.show_memory_consumption)->value_name("<bool>"),
+    "If true, memory consumption overview is shown")
+    ("show-modularity", po::value<bool>(&context.partition.show_modularity)->value_name("<bool>"),
+    "If true, modularity is shown")
     ("enable-progress-bar", po::value<bool>(&context.partition.enable_progress_bar)->value_name("<bool>"),
     "If true, than progress bar is displayed")
     ("enable-profiler", po::value<bool>(&context.partition.enable_profiler)->value_name("<bool>"),
@@ -125,9 +129,6 @@ po::options_description createGenericOptionsDescription(Context& context,
 po::options_description createPreprocessingOptionsDescription(Context& context, const int num_columns) {
   po::options_description options("Preprocessing Options", num_columns);
   options.add_options()
-    ("p-use-community-structure-from-file",
-    po::value<bool>(&context.preprocessing.use_community_structure_from_file)->value_name("<bool>"),
-    "If true, than community structure is read from file <path-to-hypergraph>/<hypergraph-name>.community")
     ("p-enable-community-detection",
     po::value<bool>(&context.preprocessing.use_community_detection)->value_name("<bool>"),
     "If true, community detection is used as preprocessing step to guide contractions in coarsening phase")
@@ -328,6 +329,42 @@ po::options_description createInitialPartitioningOptionsDescription(Context& con
   return options;
 }
 
+po::options_description createSparsificationOptionsDescription(Context& context,
+                                                               const int num_columns) {
+  po::options_description sparsification_options("Sparsification Options", num_columns);
+  sparsification_options.add_options()
+    ("sp-use-degree-zero-contractions",
+    po::value<bool>(&context.sparsification.use_degree_zero_contractions)->value_name("<bool>"),
+    "If true, than vertices with degree zero are contracted to supervertices")
+    ("sp-use-heavy-net-removal",
+    po::value<bool>(&context.sparsification.use_heavy_net_removal)->value_name("<bool>"),
+    "If true, than hyperedges with a weight greater than a certain threshold are removed before IP")
+    ("sp-use-similiar-net-removal",
+    po::value<bool>(&context.sparsification.use_similiar_net_removal)->value_name("<bool>"),
+    "If true, than hyperedges with a jaccard similiarity greater than a certain threshold are removed before IP")
+    ("sp-hyperedge-pin-weight-fraction",
+    po::value<double>(&context.sparsification.hyperedge_pin_weight_fraction)->value_name("<double>"),
+    "Hyperedges where the sum of the weights of all pins are greater than ((1 + eps)|V|/k) / fraction are removed before IP")
+    ("sp-min-hash-footprint-size",
+    po::value<size_t>(&context.sparsification.min_hash_footprint_size)->value_name("<size_t>"),
+    "Number of locality sensitive hash functions used for similiar hyperedge removal")
+    ("sp-jaccard-threshold",
+    po::value<double>(&context.sparsification.jaccard_threshold)->value_name("<double>"),
+    "Jaccard threshold for which to hyperedges are considered as similiar")
+    ("sp-similiar-net-combiner-strategy",
+    po::value<std::string>()->value_name("<string>")->notifier(
+      [&](const std::string& strategy) {
+      context.sparsification.similiar_net_combiner_strategy =
+        similiarNetCombinerStrategyFromString(strategy);
+    }),
+    "Determines how similiar nets are combined:\n"
+    "- union: set union of both nets\n"
+    "- max_size: largest net\n"
+    "- importance: net with most 'important' pins");
+
+  return sparsification_options;
+}
+
 po::options_description createSharedMemoryOptionsDescription(Context& context,
                                                              const int num_columns) {
   po::options_description shared_memory_options("Shared Memory Options", num_columns);
@@ -336,9 +373,12 @@ po::options_description createSharedMemoryOptionsDescription(Context& context,
     po::value<size_t>(&context.shared_memory.num_threads)->value_name("<size_t>"),
     "Number of threads used during shared memory hypergraph partitioning\n"
     "(default 1)")
+    ("s-use-localized-random-shuffle",
+    po::value<bool>(&context.shared_memory.use_localized_random_shuffle)->value_name("<bool>"),
+    "If true, localized parallel random shuffle is performed.")
     ("s-shuffle-block-size",
     po::value<size_t>(&context.shared_memory.shuffle_block_size)->value_name("<size_t>"),
-    "If we perform a random shuffle in parallel, we perform a parallel for over blocks of size"
+    "If we perform a localized random shuffle in parallel, we perform a parallel for over blocks of size"
     "'shuffle_block_size' and shuffle them sequential.");
 
   return shared_memory_options;
@@ -378,6 +418,8 @@ void processCommandLineInput(Context& context, int argc, char* argv[]) {
     createInitialPartitioningOptionsDescription(context, num_columns);
   po::options_description refinement_options =
     createRefinementOptionsDescription(context, num_columns, false);
+  po::options_description sparsification_options =
+    createSparsificationOptionsDescription(context, num_columns);
   po::options_description shared_memory_options =
     createSharedMemoryOptionsDescription(context, num_columns);
 
@@ -390,6 +432,7 @@ void processCommandLineInput(Context& context, int argc, char* argv[]) {
   .add(coarsening_options)
   .add(initial_paritioning_options)
   .add(refinement_options)
+  .add(sparsification_options)
   .add(shared_memory_options);
 
   po::variables_map cmd_vm;
@@ -416,6 +459,7 @@ void processCommandLineInput(Context& context, int argc, char* argv[]) {
   .add(coarsening_options)
   .add(initial_paritioning_options)
   .add(refinement_options)
+  .add(sparsification_options)
   .add(shared_memory_options);
 
   po::store(po::parse_config_file(file, ini_line_options, true), cmd_vm);
@@ -454,6 +498,8 @@ void parseIniToContext(Context& context, const std::string& ini_filename) {
     createInitialPartitioningOptionsDescription(context, num_columns);
   po::options_description refinement_options =
     createRefinementOptionsDescription(context, num_columns, false);
+  po::options_description sparsification_options =
+    createSparsificationOptionsDescription(context, num_columns);
   po::options_description shared_memory_options =
     createSharedMemoryOptionsDescription(context, num_columns);
 
@@ -464,6 +510,7 @@ void parseIniToContext(Context& context, const std::string& ini_filename) {
   .add(coarsening_options)
   .add(initial_paritioning_options)
   .add(refinement_options)
+  .add(sparsification_options)
   .add(shared_memory_options);
 
   po::store(po::parse_config_file(file, ini_line_options, true), cmd_vm);

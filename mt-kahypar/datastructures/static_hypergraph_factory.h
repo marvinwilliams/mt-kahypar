@@ -62,8 +62,8 @@ class StaticHypergraphFactory {
     StaticHypergraph hypergraph;
     hypergraph._num_hypernodes = num_hypernodes;
     hypergraph._num_hyperedges = num_hyperedges;
-    hypergraph._hypernodes.resize(num_hypernodes);
-    hypergraph._hyperedges.resize(num_hyperedges);
+    hypergraph._hypernodes.resize(num_hypernodes + 1);
+    hypergraph._hyperedges.resize(num_hyperedges + 1);
 
     ASSERT(edge_vector.size() == num_hyperedges);
 
@@ -72,14 +72,21 @@ class StaticHypergraphFactory {
     utils::Timer::instance().start_timer("compute_ds_sizes", "Precompute DS Size", true);
     Counter num_pins_per_hyperedge(num_hyperedges, 0);
     ThreadLocalCounter local_incident_nets_per_vertex(num_hypernodes, 0);
+    tbb::enumerable_thread_specific<size_t> local_max_edge_size(0UL);
     tbb::parallel_for(ID(0), num_hyperedges, [&](const size_t pos) {
       Counter& num_incident_nets_per_vertex = local_incident_nets_per_vertex.local();
       num_pins_per_hyperedge[pos] = edge_vector[pos].size();
+      local_max_edge_size.local() = std::max(
+        local_max_edge_size.local(), edge_vector[pos].size());
       for ( const HypernodeID& pin : edge_vector[pos] ) {
-        ASSERT(pin < num_hypernodes);
+        ASSERT(pin < num_hypernodes, V(pin) << V(num_hypernodes));
         ++num_incident_nets_per_vertex[pin];
       }
     });
+    hypergraph._max_edge_size = local_max_edge_size.combine(
+      [&](const size_t lhs, const size_t rhs) {
+        return std::max(lhs, rhs);
+      });
 
     // We sum up the number of incident nets per vertex only thread local.
     // To obtain the global number of incident nets per vertex, we iterate
@@ -161,14 +168,31 @@ class StaticHypergraphFactory {
       });
     });
     // Add Sentinels
-    hypergraph._hypernodes.emplace_back(hypergraph._incident_nets.size());
-    hypergraph._hyperedges.emplace_back(hypergraph._incidence_array.size());
+    hypergraph._hypernodes.back() = StaticHypergraph::Hypernode(hypergraph._incident_nets.size());
+    hypergraph._hyperedges.back() = StaticHypergraph::Hyperedge(hypergraph._incidence_array.size());
 
     // Compute total weight of hypergraph
     hypergraph.updateTotalWeight(task_group_id);
     utils::Timer::instance().stop_timer("setup_hypergraph");
 
+
+    utils::Timer::instance().start_timer("allocate_tmp_contraction_buffer", "Alloc Tmp Contraction Buffer", true);
+    // Allocates temporary contraction buffer
+    hypergraph.allocateTmpContractionBuffer();
+    utils::Timer::instance().stop_timer("allocate_tmp_contraction_buffer");
+
     return hypergraph;
+  }
+
+  static StaticHypergraph construct(const TaskGroupID,
+                                    const HypernodeID,
+                                    const HyperedgeID,
+                                    const HyperedgeVector&,
+                                    parallel::scalable_vector<int>&&,
+                                    const HyperedgeWeight*,
+                                    const HypernodeWeight*) {
+    ERROR("Assignment with fixed numa mapping of static hypergraph is not supported");
+    return StaticHypergraph();
   }
 
   static StaticHypergraph construct(const TaskGroupID,
@@ -213,9 +237,12 @@ class StaticHypergraphFactory {
     Counter edges_on_this_numa_node(num_hyperedges, 0);
     Counter num_pins_per_hyperedge(num_hyperedges, 0);
     ThreadLocalCounter local_incident_nets_per_vertex(num_hypernodes, 0);
+    tbb::enumerable_thread_specific<size_t> local_max_edge_size(0UL);
     tbb::parallel_for(ID(0), num_hyperedges, [&](const size_t pos) {
       if ( edges_to_numa_node[pos] == node ) {
         num_pins_per_hyperedge[pos] = edge_vector[pos].size();
+        local_max_edge_size.local() = std::max(
+          local_max_edge_size.local(), edge_vector[pos].size());
         edges_on_this_numa_node[pos] = 1UL;
       }
 
@@ -227,6 +254,10 @@ class StaticHypergraphFactory {
         }
       }
     });
+    hypergraph._max_edge_size = local_max_edge_size.combine(
+      [&](const size_t lhs, const size_t rhs) {
+        return std::max(lhs, rhs);
+      });
 
     // We sum up the number of incident nets per vertex only thread local.
     // To obtain the global number of incident nets per vertex, we iterate
@@ -276,8 +307,8 @@ class StaticHypergraphFactory {
     hypergraph._num_hyperedges = edges_prefix_sum.total_sum();
     hypergraph._num_pins = pin_prefix_sum.total_sum();
     hypergraph._total_degree = incident_net_prefix_sum.total_sum();
-    hypergraph._hypernodes.resize(hypergraph._num_hypernodes);
-    hypergraph._hyperedges.resize(hypergraph._num_hyperedges);
+    hypergraph._hypernodes.resize(hypergraph._num_hypernodes + 1);
+    hypergraph._hyperedges.resize(hypergraph._num_hyperedges + 1);
     hypergraph._incident_nets.resize(incident_net_prefix_sum.total_sum());
     hypergraph._incidence_array.resize(hypergraph._num_pins);
 
@@ -343,8 +374,8 @@ class StaticHypergraphFactory {
       });
     });
     // Add Sentinels
-    hypergraph._hypernodes.emplace_back(hypergraph._incident_nets.size());
-    hypergraph._hyperedges.emplace_back(hypergraph._incidence_array.size());
+    hypergraph._hypernodes.back() = StaticHypergraph::Hypernode(hypergraph._incident_nets.size());
+    hypergraph._hyperedges.back() = StaticHypergraph::Hyperedge(hypergraph._incidence_array.size());
 
     // Compute total weight of hypergraph
     hypergraph._total_weight = tbb::parallel_reduce(
@@ -358,6 +389,10 @@ class StaticHypergraphFactory {
       }, std::plus<HypernodeWeight>());
     utils::Timer::instance().stop_timer("setup_numa_hypergraph");
 
+    utils::Timer::instance().start_timer("allocate_tmp_contraction_buffer", "Alloc Tmp Contraction Buffer", true);
+    // Allocates temporary contraction buffer
+    hypergraph.allocateTmpContractionBuffer(true);
+    utils::Timer::instance().stop_timer("allocate_tmp_contraction_buffer");
     return hypergraph;
   }
 

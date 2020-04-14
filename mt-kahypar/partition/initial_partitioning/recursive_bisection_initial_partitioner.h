@@ -364,6 +364,7 @@ class RecursiveBisectionInitialPartitionerT : public IInitialPartitioner {
       bisection_context.partition.verbose_output = debug;
       bisection_context.initial_partitioning.mode = InitialPartitioningMode::direct;
       bisection_context.refinement.flow.algorithm = FlowAlgorithm::do_nothing;
+      bisection_context.refinement.label_propagation.numa_aware = false;
 
       // Setup Part Weights
       HypernodeWeight total_weight = hypergraph.totalWeight();
@@ -412,6 +413,7 @@ class RecursiveBisectionInitialPartitionerT : public IInitialPartitioner {
         }
       }
       bisection_context.setupContractionLimit(total_weight);
+      bisection_context.setupSparsificationParameters();
 
 
       return bisection_context;

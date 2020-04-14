@@ -46,15 +46,11 @@ class MultilevelCoarsenerBase {
 
    public:
     explicit Hierarchy(HyperGraph&& contracted_hypergraph,
-                       parallel::scalable_vector<HypernodeID>&& communities,
-                       parallel::scalable_vector<HypernodeID>&& mapping) :
+                       parallel::scalable_vector<HypernodeID>&& communities) :
       _representative_hypergraph(nullptr),
       _contracted_hypergraph(std::move(contracted_hypergraph)),
       _contracted_partitioned_hypergraph(),
-      _communities(std::move(communities)),
-      _mapping(std::move(mapping)) {
-      ASSERT(_communities.size() == _mapping.size());
-    }
+      _communities(std::move(communities)) { }
 
     void setRepresentativeHypergraph(PartitionedHyperGraph* representative_hypergraph) {
       _representative_hypergraph = representative_hypergraph;
@@ -83,7 +79,17 @@ class MultilevelCoarsenerBase {
       ASSERT(_representative_hypergraph);
       const HypernodeID original_id = _representative_hypergraph->originalNodeID(hn);
       ASSERT(original_id < _communities.size());
-      return _mapping[_communities[original_id]];
+      return _communities[original_id];
+    }
+
+    void freeInternalData() {
+      tbb::parallel_invoke([&] {
+        _contracted_hypergraph.freeInternalData();
+      }, [&] {
+        _contracted_partitioned_hypergraph.freeInternalData();
+      }, [&] {
+        parallel::free(_communities);
+      });
     }
 
    private:
@@ -94,11 +100,8 @@ class MultilevelCoarsenerBase {
     // ! Partitioned Hypergraph
     PartitionedHyperGraph _contracted_partitioned_hypergraph;
     // ! Defines the communities that are contracted
-    // ! in the contracted hypergraph
-    const parallel::scalable_vector<HypernodeID> _communities;
-    // ! Mapping from community to original vertex id
-    // ! in the contracted hypergraph
-    const parallel::scalable_vector<HypernodeID> _mapping;
+    // ! in the coarse hypergraph
+    parallel::scalable_vector<HypernodeID> _communities;
   };
 
  public:
@@ -124,7 +127,11 @@ class MultilevelCoarsenerBase {
   MultilevelCoarsenerBase & operator= (const MultilevelCoarsenerBase &) = delete;
   MultilevelCoarsenerBase & operator= (MultilevelCoarsenerBase &&) = delete;
 
-  virtual ~MultilevelCoarsenerBase() throw () { }
+  virtual ~MultilevelCoarsenerBase() throw () {
+    tbb::parallel_for(0UL, _hierarchies.size(), [&](const size_t i) {
+      _hierarchies[i].freeInternalData();
+    }, tbb::static_partitioner());
+  }
 
  protected:
 
@@ -187,14 +194,13 @@ class MultilevelCoarsenerBase {
     ASSERT(!_is_finalized);
     HyperGraph& current_hg = currentHypergraph();
     ASSERT(current_hg.initialNumNodes() == communities.size());
-    auto contracted_hg = current_hg.contract(communities, _task_group_id);
-    _hierarchies.emplace_back(std::move(contracted_hg.first),
-      std::move(communities), std::move(contracted_hg.second));
+    HyperGraph contracted_hg = current_hg.contract(communities, _task_group_id);
+    _hierarchies.emplace_back(std::move(contracted_hg), std::move(communities));
   }
 
   PartitionedHyperGraph&& doUncoarsen(std::unique_ptr<Refiner>& label_propagation,
                                       std::unique_ptr<Refiner>& flow) {
-    const PartitionedHyperGraph& current_hg = currentPartitionedHypergraph();
+    PartitionedHyperGraph& current_hg = currentPartitionedHypergraph();
     int64_t num_nodes = current_hg.initialNumNodes();
     int64_t num_edges = current_hg.initialNumEdges();
     HyperedgeWeight cut = 0;
@@ -218,6 +224,9 @@ class MultilevelCoarsenerBase {
       _context.partition.objective == kahypar::Objective::km1 ? current_metrics.km1 : current_metrics.cut,
       _context.partition.verbose_output && _context.partition.enable_progress_bar);
     uncontraction_progress += num_nodes;
+
+    // Refine Coarsest Partitioned Hypergraph
+    refine(current_hg, label_propagation, flow, current_metrics);
 
     for ( int i = _hierarchies.size() - 1; i >= 0; --i ) {
       // Project partition to next level finer hypergraph
@@ -243,22 +252,7 @@ class MultilevelCoarsenerBase {
       utils::Timer::instance().stop_timer("projecting_partition");
 
       // Refinement
-      utils::Timer::instance().start_timer("initialize_refiner", "Initialize Refiner");
-      if ( label_propagation ) {
-        label_propagation->initialize(representative_hg);
-      }
-      if ( flow ) {
-        flow->initialize(representative_hg);
-      }
-      utils::Timer::instance().stop_timer("initialize_refiner");
-
-      if ( label_propagation ) {
-        label_propagation->refine(representative_hg, {}, current_metrics);
-      }
-
-      if ( flow ) {
-        flow->refine(representative_hg, {}, current_metrics);
-      }
+      refine(representative_hg, label_propagation, flow, current_metrics);
 
       // Update Progress Bar
       uncontraction_progress.setObjective(
@@ -275,6 +269,31 @@ class MultilevelCoarsenerBase {
   }
 
  protected:
+  void refine(PartitionedHyperGraph& partitioned_hypergraph,
+              std::unique_ptr<Refiner>& label_propagation,
+              std::unique_ptr<Refiner>& flow,
+              kahypar::Metrics& current_metrics) {
+    if ( label_propagation ) {
+      utils::Timer::instance().start_timer("initialize_lp_refiner", "Initialize LP Refiner");
+      label_propagation->initialize(partitioned_hypergraph);
+      utils::Timer::instance().stop_timer("initialize_lp_refiner");
+
+      utils::Timer::instance().start_timer("label_propagation", "Label Propagation");
+      label_propagation->refine(partitioned_hypergraph, {}, current_metrics);
+      utils::Timer::instance().stop_timer("label_propagation");
+    }
+
+    if ( flow ) {
+      utils::Timer::instance().start_timer("initialize_flow_refiner", "Initialize Flow Refiner");
+      flow->initialize(partitioned_hypergraph);
+      utils::Timer::instance().stop_timer("initialize_flow_refiner");
+
+      utils::Timer::instance().start_timer("flow", "Flow");
+      flow->refine(partitioned_hypergraph, {}, current_metrics);
+      utils::Timer::instance().stop_timer("flow");
+    }
+  }
+
   bool _is_finalized;
   HyperGraph& _hg;
   PartitionedHyperGraph _partitioned_hg;

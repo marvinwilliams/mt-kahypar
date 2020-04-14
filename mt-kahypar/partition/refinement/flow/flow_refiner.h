@@ -73,8 +73,6 @@ class FlowRefinerT final : public IRefiner{
                         const parallel::scalable_vector<HypernodeID>&,
                         kahypar::Metrics& best_metrics) override final {
 
-            utils::Timer::instance().start_timer("flow", "Flow");
-
             FlowConfig config(hypergraph);
 
             // Initialize Quotient Graph
@@ -140,13 +138,12 @@ class FlowRefinerT final : public IRefiner{
             }
             utils::Timer::instance().stop_timer("flow_refinement");
             //LOG << "REFINEMENT done_______________________________________________________";
-            utils::Timer::instance().stop_timer("flow");
             return improvement;
         }
 
 
-        void initializeImpl(HyperGraph&) override final { 
-            
+        void initializeImpl(HyperGraph&) override final {
+
         }
 
         void parallelFlowCalculation(FlowConfig& config,
@@ -335,7 +332,7 @@ class FlowRefinerT final : public IRefiner{
                 }
 
                 flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
-                
+
             } while (alpha > 1.0);
 
             //atomic-add improvements to _round_delta
