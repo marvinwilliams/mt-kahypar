@@ -151,17 +151,13 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
         continue;
       }
 
-      size_t next_idx = flow_network.getFirstFlowEdge(u_og);
-      
-      while(next_idx != FlowNetwork::kInvalidNode){
-        FlowEdge & e = flow_network.getEdge(next_idx);
+      for(FlowEdge & e:flow_network.incidentEdges(u_og)){
         const NodeID v = e.target;
         if (!_visited[v] && flow_network.residualCapacity(e)) {
           _parent.set(v, &e);
           _visited.set(v, true);
           _Q.push(v);
         }
-        next_idx = e.nextEdge;
       }    
     }
     return augmenting_path_exists;
