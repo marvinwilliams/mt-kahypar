@@ -46,7 +46,7 @@ struct FlowEdge {
   Flow flow;
   Capacity capacity;
   size_t reverseEdge;
-  FlowEdge* nextEdge; 
+  size_t nextEdge; 
 
   void increaseFlow(const Flow delta_flow) {
     ASSERT(flow + delta_flow <= capacity, "Cannot increase flow above capacity!");
@@ -54,28 +54,40 @@ struct FlowEdge {
   }
 };
 
+template<typename FlowNet>
 class FlowEdgeIterator{
+
   private:
-    FlowEdgeIterator(FlowEdge* edge)
-    :_edge(edge){}
+    FlowEdgeIterator(FlowNet & flow_network, size_t idx)
+    :_flow_network(flow_network),
+     _idx(idx) {
+      if(_idx != FlowNet::kInvalidNode){
+        _edge = &_flow_network.getEdge(_idx);
+      }
+     }
 
   public:
-    static FlowEdgeIterator begin(FlowEdge* edge){return FlowEdgeIterator(edge);}
-    static FlowEdgeIterator end(){return FlowEdgeIterator(nullptr);}
+    static FlowEdgeIterator begin(FlowNet & flow_network, size_t idx){return FlowEdgeIterator(flow_network, idx);}
+    static FlowEdgeIterator end(FlowNet & flow_network){return FlowEdgeIterator(flow_network, FlowNet::kInvalidNode);}
   
     FlowEdgeIterator& operator++() {
-        _edge = _edge->nextEdge;
+        _idx = _edge->nextEdge;
+        if(_idx != FlowNet::kInvalidNode){
+          _edge = &_flow_network.getEdge(_idx);
+        }
         return *this;
     }
 
-    bool operator==(FlowEdgeIterator e) const { return _edge == e._edge; }
-    bool operator!=(FlowEdgeIterator e) const { return _edge != e._edge; }
+    bool operator==(FlowEdgeIterator e) const { return _idx == e._idx; }
+    bool operator!=(FlowEdgeIterator e) const { return _idx != e._idx; }
 
     FlowEdge& operator*()  { return *_edge; }
     FlowEdge* operator->()  { return _edge; }
 
   private:
+    FlowNet & _flow_network;
     FlowEdge* _edge;
+    size_t _idx;
 };
 
 template <typename TypeTraits, typename FlowTypeTraits>
@@ -88,6 +100,7 @@ class FlowNetwork {
   using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using Scheduler = typename FlowTypeTraits::Scheduler;
   using Derived = typename FlowTypeTraits::FlowNetwork;
+  using FlowEdgeIter = FlowEdgeIterator<FlowNetwork<TypeTraits, FlowTypeTraits>>;
 
  public:
   static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
@@ -115,7 +128,7 @@ class FlowNetwork {
     _flow_graph_size(0),
     _flow_graph(),
     _flow_graph_idx(0),
-    _node_to_edge(size, nullptr),
+    _node_to_edge(size, kInvalidNode),
     _visited(size),
     _he_visited(initial_num_edges),
     _contains_aquired_node(initial_num_edges){
@@ -300,7 +313,7 @@ class FlowNetwork {
     _visited.reset();
     _contains_aquired_node.reset();
     _flow_graph_idx = 0;
-    std::fill(_node_to_edge.begin(), _node_to_edge.end(), nullptr);
+    std::fill(_node_to_edge.begin(), _node_to_edge.end(), kInvalidNode);
   }
 
   void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
@@ -421,8 +434,13 @@ class FlowNetwork {
     return std::make_pair(_flow_graph.begin(), _flow_graph.begin() + _flow_graph_idx);
   }
 
-  std::pair<FlowEdgeIterator, FlowEdgeIterator> incidentEdges(NodeID node){
-    return std::make_pair(FlowEdgeIterator::begin(_node_to_edge[node]), FlowEdgeIterator::end());
+  std::pair<FlowEdgeIter, FlowEdgeIter> incidentEdges(NodeID node){
+    return std::make_pair(FlowEdgeIter::begin(*this, _node_to_edge[node]), FlowEdgeIter::end(*this));
+  }
+
+  FlowEdge & getEdge(size_t idx){
+    ASSERT(idx != kInvalidNode && idx < _flow_graph.size(), "Trying to get invalid Node!");
+    return _flow_graph[idx];
   }
 
   /*
@@ -573,19 +591,19 @@ class FlowNetwork {
  
     if(_flow_graph_idx + 1 < _flow_graph_size ){
       _flow_graph[_flow_graph_idx] = e1;
-      _node_to_edge[u] = &_flow_graph[_flow_graph_idx++];
+      _node_to_edge[u] = _flow_graph_idx++;
       _flow_graph[_flow_graph_idx] = e2;
-      _node_to_edge[v] = &_flow_graph[_flow_graph_idx++];
+      _node_to_edge[v] = _flow_graph_idx++;
     }else{
       _flow_graph.push_back(e1);
-      _node_to_edge[u] = &_flow_graph[_flow_graph_idx++];
+      _node_to_edge[u] = _flow_graph_idx++;
       _flow_graph.push_back(e2);
-      _node_to_edge[v] = &_flow_graph[_flow_graph_idx++];
+      _node_to_edge[v] = _flow_graph_idx++;
       _flow_graph_size += 2;
     }
 
-    ASSERT(_node_to_edge[u]->source == e1.source, "Inserttion not as expected!" << V(_node_to_edge[u]->source));
-    ASSERT(_node_to_edge[v]->source == e2.source, "Inserttion not as expected!" << V(_node_to_edge[v]->source));
+    ASSERT(_flow_graph[_node_to_edge[u]].source == e1.source, "Inserttion not as expected!");
+    ASSERT(_flow_graph[_node_to_edge[v]].source == e2.source, "Inserttion not as expected!");
 
     _num_edges += (undirected ? 2 : 1);
     _num_undirected_edges += (undirected ? 1 : 0);
@@ -677,10 +695,10 @@ class FlowNetwork {
       addEdge(v, hypergraph.originalNodeID(pin), kInfty);
     } else {
       if (containsNodeId(u)) {
-        ASSERT(_node_to_edge[u] == nullptr, "Pin of size 1 hyperedge already added in flow graph!");
+        ASSERT(_node_to_edge[u] == kInvalidNode, "Pin of size 1 hyperedge already added in flow graph!");
         addEdge(u, hypergraph.originalNodeID(pin), hypergraph.edgeWeight(he));
       } else if (containsNodeId(v)) {
-        ASSERT(_node_to_edge[v] == nullptr, "Pin of size 1 hyperedge already added in flow graph!");
+        ASSERT(_node_to_edge[v] == kInvalidNode, "Pin of size 1 hyperedge already added in flow graph!");
         addEdge(hypergraph.originalNodeID(pin), v, hypergraph.edgeWeight(he));
       }
     }
@@ -730,7 +748,7 @@ class FlowNetwork {
   AdjacentList _flow_graph;
   size_t _flow_graph_idx;
   
-  parallel::scalable_vector<FlowEdge*> _node_to_edge;
+  parallel::scalable_vector<size_t> _node_to_edge;
 
   kahypar::ds::FastResetFlagArray<> _visited;
   kahypar::ds::FastResetFlagArray<> _he_visited;
