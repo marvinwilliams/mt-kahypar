@@ -77,6 +77,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
       return FlowNetwork::kInfty;
     }
 
+    utils::Timer::instance().start_timer("defaultPart", "Moving Nodes to default ", true);                
     const PartitionID default_part =
       context.refinement.flow.use_most_balanced_minimum_cut ? block_0 : block_1;
     for (const HypernodeID& ogHn : flow_network.hypernodes()) {
@@ -84,14 +85,21 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
       _original_part_id[ogHn] = hypergraph.partID(hn);
       moveHypernode(hypergraph, hn, default_part);
     }
+    utils::Timer::instance().stop_timer("defaultPart");
 
+
+    utils::Timer::instance().start_timer("maxFlow", "Calculating max Flow ", true);                
     const HyperedgeWeight cut = maximumFlow(hypergraph, flow_network);
+    utils::Timer::instance().stop_timer("maxFlow");
 
+    utils::Timer::instance().start_timer("MBMC", "Finding MBMC ", true);                
     if (context.refinement.flow.use_most_balanced_minimum_cut) {
       _mbmc.mostBalancedMinimumCut(hypergraph, flow_network, context, block_0, block_1, scheduler);
     } else {
       bfs<true>(hypergraph, flow_network, block_0);
     }
+    utils::Timer::instance().stop_timer("MBMC");
+
 
     return cut;
   }
@@ -377,27 +385,6 @@ class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits>{
       _flow_network_mapping[node] = cur_id;
       cur_id++;
     }
-
-    /*
-    for (const NodeID node : flow_network.nodes()) {
-      const NodeID u = _flow_network_mapping[node];
-      size_t next_idx = flow_network.getFirstFlowEdge(node);
-      
-      while(next_idx != FlowNetwork::kInvalidNode){
-        FlowEdge & edge = flow_network.getEdge(next_idx);
-        const NodeID v = _flow_network_mapping[edge.target];
-        const Capacity c = edge.capacity;
-        ds::FlowEdge& rev_edge = flow_network.reverseEdge(edge);
-        const Capacity rev_c = rev_edge.capacity;
-        if (!_visited[edge.target]) {
-          _flow_graph.addEdge(u, v, c, rev_c, &edge, &rev_edge);
-        }
-        next_idx = edge.nextEdge;
-      }
-      _visited.set(node, true);
-      
-    }*/
-
 
     //add Edges
     bool reverse = false;

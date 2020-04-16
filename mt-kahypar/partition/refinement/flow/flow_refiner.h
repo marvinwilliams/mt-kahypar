@@ -191,7 +191,6 @@ class FlowRefinerT final : public IRefiner{
                                 bool & improvement,
                                 Scheduler & scheduler,
                                 tbb::parallel_do_feeder<Edge>& feeder) {
-            utils::Timer::instance().start_timer("schedule", "Scheduling Next Blocks ", true);
             //start new tasks on this numa node
             auto sched_edges = scheduler.scheduleNextBlocks(old_edge, node, feeder);
             //start new parallel do on stalled numa nodes
@@ -210,7 +209,6 @@ class FlowRefinerT final : public IRefiner{
                     });
                 });
             }
-            utils::Timer::instance().stop_timer("schedule");
         }
 
         bool executeAdaptiveFlow(FlowConfig& config,
@@ -256,14 +254,18 @@ class FlowRefinerT final : public IRefiner{
                 utils::Randomize::instance().shuffleVector(cut_hes);
 
                 // Build Flow Problem
+                utils::Timer::instance().start_timer("aquHn", "Building Region ", true);
                 RegionBuildPolicy::buildFlowNetwork(
                     hypergraph, _context, flow_network,
                     cut_hes, alpha, block_0, block_1,
                     visited, scheduler);
+                utils::Timer::instance().stop_timer("aquHn");
 
+                utils::Timer::instance().start_timer("buildFlow", "Building Flow Network ", true);
                 const HyperedgeWeight cut_flow_network_before =
                     flow_network.build(
                         hypergraph, _context, block_0, block_1, scheduler);
+                utils::Timer::instance().stop_timer("buildFlow");
 
                 // Find minimum (S,T)-bipartition
                 const HyperedgeWeight cut_flow_network_after =

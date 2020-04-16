@@ -10,6 +10,7 @@ cmake-build-debug/*
 *.py~
 *.cfg~
 build/*
+profiler_build/*
 build2/*
 build_numa/*
 rel2/
