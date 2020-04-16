@@ -116,7 +116,13 @@ class FlowRefinerT final : public IRefiner{
 
                 //LOG << "ROUND done_______________________________________________________";
 
-                HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
+                HyperedgeWeight current_metric;
+                if(!_context.refinement.flow.fix_nodes && _context.refinement.flow.algorithm == FlowAlgorithm::flow_opt){
+                    //deltas do not sum up to the objective in case the nodes are not fixated
+                    current_metric = metrics::objective(hypergraph, _context.partition.objective);
+                } else{
+                    current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
+                } 
                 double current_imbalance = metrics::imbalance(hypergraph, _context);
 
                 //check if the metric improved as exspected

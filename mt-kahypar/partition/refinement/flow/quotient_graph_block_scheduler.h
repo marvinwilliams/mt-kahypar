@@ -582,7 +582,7 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
         best_edge = bestEdge{e, own_numa, i};
       } 
     }
-    if(independence < std::numeric_limits<size_t>::max()){
+    if(independence < this->_context.refinement.flow.scheduling_thresh){
       _tasks_on_block[best_edge.e.first] ++;
       _tasks_on_block[best_edge.e.second] ++;
       this->removeElement(best_edge.index, this->_round_edges[best_edge.numa]);
@@ -600,7 +600,7 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
         } 
       }
     }
-    if(independence < std::numeric_limits<size_t>::max()){
+    if(independence < this->_context.refinement.flow.scheduling_thresh){//std::numeric_limits<size_t>::max()
       _tasks_on_block[best_edge.e.first] ++;
       _tasks_on_block[best_edge.e.second] ++;
       this->removeElement(best_edge.index, this->_round_edges[best_edge.numa]);

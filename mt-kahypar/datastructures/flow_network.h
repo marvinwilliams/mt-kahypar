@@ -172,9 +172,10 @@ class FlowNetwork {
       const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
       for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
         if (!_visited[hypergraph.originalEdgeID(he)]) {
-          //fix all pins of he's, that contain an already aquired pin (only OptScheduling)
-          static_cast<Derived*>(this)->fixAquiredHyperEdge(hypergraph, block_0, scheduler, he);
-          
+          if(context.refinement.flow.fix_nodes){
+            //fix all pins of he's, that contain an already aquired pin (only OptScheduling)
+            static_cast<Derived*>(this)->fixAquiredHyperEdge(hypergraph, block_0, scheduler, he);
+          }
           if(!_contains_aquired_node[he]){
             if (isHyperedgeOfSize(hypergraph, he, 1)) {
               addHyperedge(hypergraph, context, he);
