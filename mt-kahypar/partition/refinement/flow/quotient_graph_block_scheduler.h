@@ -128,8 +128,8 @@ class SchedulerBase {
     return static_cast<Derived*>(this)->getNumberOfActiveTasksImpl();
   }
 
-  bool tryAquireNode(HypernodeID node){
-    return static_cast<Derived*>(this)->tryAquireNodeImpl(node);
+  bool tryAquireNode(HypernodeID node, const int blocks_idx){
+    return static_cast<Derived*>(this)->tryAquireNodeImpl(node, blocks_idx);
   }
 
   bool isAquired(HypernodeID node){
@@ -434,8 +434,9 @@ class MatchingScheduler : public SchedulerBase<TypeTraits, MatchingScheduler<Typ
     return tasks;
   }
 
-  bool tryAquireNodeImpl(HypernodeID node){
+  bool tryAquireNodeImpl(HypernodeID node,const int blocks_idx){
     unused(node);
+    unused(blocks_idx);
     return true;
   }
 
@@ -470,7 +471,8 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
     _tasks_on_block(context.partition.k, 0),
     _node_lock(hypergraph.initialNumNodes(), false),
     _block_weights(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
-    _rw_locks(context.partition.k){ }
+    _rw_locks(context.partition.k){}
+    
 
   std::vector<std::vector<edge>> getInitialParallelEdgesImpl(){
     std::vector<std::vector<edge>> initial_edges (this->_num_numa_nodes);
@@ -497,8 +499,9 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
     _tasks_on_block[old_edge.second] --;
 
     edge e = getMostIndependentEdge(node);
-    if(e.first >= 0)
+    if(e.first >= 0){
       feeder.add(e);
+    }
     return std::vector<scheduling_edge>(0);
   }
 
@@ -510,8 +513,13 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
     return tasks;
   }
 
-  bool tryAquireNodeImpl(HypernodeID node){
-    bool already_aquired = _node_lock[node].compare_and_swap(true, false);
+  /**
+   * try to aquire a Hypernode. Return true on success, false if already aquired.
+   * Not aquired Nodes have value 0.
+   * Aquired Nodes have the value (block_0 * k) + block_1 to store the blocks of the flow calculation holding the Node
+   **/
+  bool tryAquireNodeImpl(HypernodeID node, const int blocksIdx){
+    bool already_aquired = _node_lock[node].compare_and_swap(blocksIdx, 0);
     return !already_aquired;
   }
 
@@ -519,9 +527,16 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
     return _node_lock[node];
   }
 
+  bool is_block_overlap(HypernodeID node,const PartitionID block_0, const PartitionID block_1){
+    int blocks_idx = _node_lock[node];
+    PartitionID other_block_0 = blocks_idx / this->_context.partition.k;
+    PartitionID other_block_1 = blocks_idx % this->_context.partition.k;
+    return (block_0 == other_block_0 || block_0 == other_block_1 || block_1 == other_block_0 || block_1 == other_block_1);
+  }
+
   void releaseNodeImpl(HypernodeID node){
-    ASSERT(_node_lock[node] == true, "Tryed to release Node that is not aquired!");
-    _node_lock[node] = false;
+    ASSERT(_node_lock[node] > 0, "Tryed to release Node that is not aquired!");
+    _node_lock[node] = 0;
   }
 
   void init_block_weightsImpl(){
@@ -611,7 +626,7 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
   }
 
   std::vector<size_t> _tasks_on_block;
-  std::vector<tbb::atomic<bool>> _node_lock;
+  std::vector<tbb::atomic<int>> _node_lock;
   std::vector<std::vector<size_t>> _block_weights;
   std::vector<tbb::spin_rw_mutex> _rw_locks;
 };

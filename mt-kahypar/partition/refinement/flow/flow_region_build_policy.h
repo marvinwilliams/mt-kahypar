@@ -54,6 +54,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
                                       kahypar::ds::FastResetFlagArray<>& visited,
                                       Scheduler & scheduler) {
     visited.reset();
+    const int blocks_idx = block_0 * context.partition.k + block_1;
     std::vector<HypernodeID> start_nodes_block_0;
     std::vector<HypernodeID> start_nodes_block_1;
     for (const HyperedgeID he : cut_hes) {
@@ -62,11 +63,11 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
       for (const HypernodeID& pin : hg.pins(he)) {
         if (!visited[hg.originalNodeID(pin)]) {
           if (hg.partID(pin) == block_0) {
-            if(scheduler.tryAquireNode(pin)){
+            if(scheduler.tryAquireNode(pin, blocks_idx)){
               start_nodes_block_0.push_back(pin);
             }
           } else if (hg.partID(pin) == block_1) {
-            if(scheduler.tryAquireNode(pin)){
+            if(scheduler.tryAquireNode(pin, blocks_idx)){
               start_nodes_block_1.push_back(pin);
             }
           }
@@ -93,7 +94,8 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
                                                         block_1,
                                                         max_part_weight_0,
                                                         visited,
-                                                        scheduler);
+                                                        scheduler,
+                                                        blocks_idx);
     if (num_nodes_block_0 == hg.partSize(block_0)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_0 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));
@@ -107,7 +109,8 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
                                                         block_0,
                                                         max_part_weight_1,
                                                         visited,
-                                                        scheduler);
+                                                        scheduler,
+                                                        blocks_idx);
     if (num_nodes_block_1 == hg.partSize(block_1)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn_block_1 = hg.globalNodeID(*(flow_network.hypernodes().second - 1));
@@ -150,7 +153,8 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<TypeTraits, M
                                 const PartitionID other_part,
                                 const HypernodeWeight max_part_weight,
                                 kahypar::ds::FastResetFlagArray<>& visited,
-                                Scheduler& scheduler) {
+                                Scheduler& scheduler,
+                                const int blocks_idx) {
     unused(other_part);
     visited.reset();
     utils::Randomize::instance().shuffleVector(start_nodes);
@@ -180,7 +184,7 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<TypeTraits, M
           for (const HypernodeID& pin : hg.pins(he)) {
             if (!visited[hg.originalNodeID(pin)] && hg.partID(pin) == part &&
                 queue_weight + hg.nodeWeight(pin) <= max_part_weight) {
-              if(scheduler.tryAquireNode(pin)){
+              if(scheduler.tryAquireNode(pin, blocks_idx)){
                 Q.push(pin);
                 queue_weight += hg.nodeWeight(pin);
               }
@@ -210,7 +214,8 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<TypeTraits, OptFlo
                                 const PartitionID other_part,
                                 const HypernodeWeight max_part_weight,
                                 kahypar::ds::FastResetFlagArray<>& visited,
-                                Scheduler& scheduler) {
+                                Scheduler& scheduler,
+                                const int blocks_idx) {
     visited.reset();
     utils::Randomize::instance().shuffleVector(start_nodes);
     std::queue<HypernodeID> Q;
@@ -239,7 +244,7 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<TypeTraits, OptFlo
           for (const HypernodeID& pin : hg.pins(he)) {
             if (!visited[hg.originalNodeID(pin)] && hg.partID(pin) == part &&
                 queue_weight + hg.nodeWeight(pin) <= max_part_weight) {
-              if(scheduler.tryAquireNode(pin)){
+              if(scheduler.tryAquireNode(pin, blocks_idx)){
                 Q.push(pin);
                 queue_weight += hg.nodeWeight(pin);
               }

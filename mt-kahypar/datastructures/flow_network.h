@@ -166,7 +166,8 @@ class FlowNetwork {
 
   // ################### Flow Network Construction ###################
 
-  void buildFlowGraph(HyperGraph& hypergraph, const Context& context, const PartitionID block_0, Scheduler & scheduler) {
+  void buildFlowGraph(HyperGraph& hypergraph, const Context& context, const PartitionID block_0,const PartitionID block_1,
+   Scheduler & scheduler) {
     _visited.reset();
     for (const HypernodeID& ogHn : hypernodes()) {
       const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
@@ -174,7 +175,7 @@ class FlowNetwork {
         if (!_visited[hypergraph.originalEdgeID(he)]) {
           if(true){
             //fix all pins of he's, that contain an already aquired pin (only OptScheduling)
-            static_cast<Derived*>(this)->fixAquiredHyperEdge(hypergraph, block_0, scheduler, he);
+            static_cast<Derived*>(this)->fixAquiredHyperEdge(hypergraph, block_0, block_1, scheduler, he);
           }
           if(!_contains_aquired_node[he]){
             if (isHyperedgeOfSize(hypergraph, he, 1)) {
@@ -229,7 +230,7 @@ class FlowNetwork {
 
   HyperedgeWeight build(HyperGraph& hypergraph, const Context& context, const PartitionID block_0,
     const PartitionID block_1, Scheduler & scheduler) {
-    buildFlowGraph(hypergraph, context, block_0, scheduler);
+    buildFlowGraph(hypergraph, context, block_0, block_1, scheduler);
 
     ASSERT([&]() {
           for (const HypernodeID& ogHn : hypernodes()) {
@@ -773,9 +774,11 @@ class MatchingFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
       unused(scheduler);
     }
 
-    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, Scheduler & scheduler, const HyperedgeID he){
+    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, const PartitionID block_1,
+     Scheduler & scheduler, const HyperedgeID he){
       unused(hypergraph);
       unused(block_0);
+      unused(block_1);
       unused(scheduler);
       unused(he);
     }
@@ -799,12 +802,15 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
       }  
     }
 
-    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, Scheduler & scheduler, const HyperedgeID he){
+    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, const PartitionID block_1,
+     Scheduler & scheduler, const HyperedgeID he){
       for (const HypernodeID& pin : hypergraph.pins(he)) {
         if (!this->_hypernodes.contains(hypergraph.originalNodeID(pin)) && scheduler.isAquired(pin)) {
-          this->_contains_aquired_node.set(he, true);
-          fixNodes(hypergraph, he, block_0);
-          break;
+          if(scheduler.is_block_overlap(pin, block_0, block_1)){
+            this->_contains_aquired_node.set(he, true);
+            fixNodes(hypergraph, he, block_0);
+            break;
+          }
         }
       }
     }
