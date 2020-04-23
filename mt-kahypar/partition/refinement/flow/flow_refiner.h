@@ -276,7 +276,7 @@ class FlowRefinerT final : public IRefiner{
                 // Maximum Flow algorithm returns infinity, if all
                 // hypernodes contained in the flow problem are either
                 // sources or sinks
-                if (cut_flow_network_after == FlowNetwork::kInfty) {
+                if (cut_flow_network_after == kInfty) {
                     flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
                     break;
                 }

@@ -74,7 +74,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
                                const Context& context,
                                const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler) {
     if (flow_network.isTrivialFlow()) {
-      return FlowNetwork::kInfty;
+      return kInfty;
     }
 
     utils::Timer::instance().start_timer("defaultPart", "Moving Nodes to default ", true);                
@@ -190,11 +190,11 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
           flow_network.increaseFlow(*e, f);
           Flow residual_forward_after = flow_network.residualCapacity(*e);
           Flow residual_backward_after = flow_network.residualCapacity(flow_network.reverseEdge(*e));
-          if (residual_forward_before != FlowNetwork::kInfty && residual_forward_before != residual_forward_after + f) {
+          if (residual_forward_before != kInfty && residual_forward_before != residual_forward_after + f) {
             LOG << "Residual capacity should be " << (residual_forward_before - f) << "!";
             return false;
           }
-          if (residual_backward_before != FlowNetwork::kInfty && residual_backward_before != residual_backward_after - f) {
+          if (residual_backward_before != kInfty && residual_backward_before != residual_backward_after - f) {
             LOG << "Residual capacity should be " << (residual_backward_before + f) << "!";
             return false;
           }

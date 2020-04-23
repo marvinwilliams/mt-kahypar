@@ -61,18 +61,18 @@ class FlowEdgeIterator{
     FlowEdgeIterator(FlowNet & flow_network, size_t idx)
     :_flow_network(flow_network),
      _idx(idx) {
-      if(_idx != FlowNet::kInvalidNode){
+      if(_idx != kinvalidFlowNetworkNode){
         _edge = &_flow_network.getEdge(_idx);
       }
      }
 
   public:
     static FlowEdgeIterator begin(FlowNet & flow_network, size_t idx){return FlowEdgeIterator(flow_network, idx);}
-    static FlowEdgeIterator end(FlowNet & flow_network){return FlowEdgeIterator(flow_network, FlowNet::kInvalidNode);}
+    static FlowEdgeIterator end(FlowNet & flow_network){return FlowEdgeIterator(flow_network, kinvalidFlowNetworkNode);}
   
     FlowEdgeIterator& operator++() {
         _idx = _edge->nextEdge;
-        if(_idx != FlowNet::kInvalidNode){
+        if(_idx != kinvalidFlowNetworkNode){
           _edge = &_flow_network.getEdge(_idx);
         }
         return *this;
@@ -103,9 +103,6 @@ class FlowNetwork {
   using FlowEdgeIter = FlowEdgeIterator<FlowNetwork<TypeTraits, FlowTypeTraits>>;
 
  public:
-  static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
-  static constexpr NodeID kInvalidNode = std::numeric_limits<HypernodeID>::max() / 2;
-
   FlowNetwork(const HypernodeID initial_num_nodes, const HypernodeID initial_num_edges, const size_t size) :
     _initial_num_nodes(initial_num_nodes),
     _initial_num_edges(initial_num_edges),
@@ -128,7 +125,7 @@ class FlowNetwork {
     _flow_graph_size(0),
     _flow_graph(),
     _flow_graph_idx(0),
-    _node_to_edge(size, kInvalidNode),
+    _node_to_edge(size, kinvalidFlowNetworkNode),
     _visited(size),
     _he_visited(initial_num_edges),
     _contains_aquired_node(initial_num_edges){
@@ -315,7 +312,7 @@ class FlowNetwork {
     _visited.reset();
     _contains_aquired_node.reset();
     _flow_graph_idx = 0;
-    std::fill(_node_to_edge.begin(), _node_to_edge.end(), kInvalidNode);
+    std::fill(_node_to_edge.begin(), _node_to_edge.end(), kinvalidFlowNetworkNode);
   }
 
   void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
@@ -441,19 +438,9 @@ class FlowNetwork {
   }
 
   FlowEdge & getEdge(size_t idx){
-    ASSERT(idx != kInvalidNode && idx < _flow_graph.size(), "Trying to get invalid Node!");
+    ASSERT(idx != kinvalidFlowNetworkNode && idx < _flow_graph.size(), "Trying to get invalid Node!");
     return _flow_graph[idx];
   }
-
-  /*
-  size_t getFirstFlowEdge(NodeID node){
-    return _node_to_edge[node];
-  }
-
-  FlowEdge & getEdge(size_t idx){
-    ASSERT(idx != kInvalidNode && idx < _flow_graph.size(), "Trying to get invalid Node!");
-    return _flow_graph[idx];
-  }*/
 
   // ################### Source And Sink ###################
 
@@ -663,10 +650,10 @@ class FlowNetwork {
   void addGraphEdge(HyperGraph& hypergraph, const HyperedgeID he) {
     ASSERT(hypergraph.edgeSize(he) == 2, "Hyperedge " << he << " is not a graph edge!");
 
-    HypernodeID u = kInvalidNode;
-    HypernodeID v = kInvalidNode;
+    HypernodeID u = kinvalidFlowNetworkNode;
+    HypernodeID v = kinvalidFlowNetworkNode;
     for (const HypernodeID& pin : hypergraph.pins(he)) {
-      if (u == kInvalidNode) {
+      if (u == kinvalidFlowNetworkNode) {
         u = pin;
       } else {
         v = pin;
@@ -697,10 +684,10 @@ class FlowNetwork {
       addEdge(v, hypergraph.originalNodeID(pin), kInfty);
     } else {
       if (containsNodeId(u)) {
-        ASSERT(_node_to_edge[u] == kInvalidNode, "Pin of size 1 hyperedge already added in flow graph!");
+        ASSERT(_node_to_edge[u] == kinvalidFlowNetworkNode, "Pin of size 1 hyperedge already added in flow graph!");
         addEdge(u, hypergraph.originalNodeID(pin), hypergraph.edgeWeight(he));
       } else if (containsNodeId(v)) {
-        ASSERT(_node_to_edge[v] == kInvalidNode, "Pin of size 1 hyperedge already added in flow graph!");
+        ASSERT(_node_to_edge[v] == kinvalidFlowNetworkNode, "Pin of size 1 hyperedge already added in flow graph!");
         addEdge(hypergraph.originalNodeID(pin), v, hypergraph.edgeWeight(he));
       }
     }
@@ -835,9 +822,9 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
     for (const HypernodeID& pin : hypergraph.pins(he)) {
       if (this->_hypernodes.contains(hypergraph.originalNodeID(pin))) {
         if(hypergraph.partID(pin) == block_0){
-          this->addEdge(u, pin, this->kInfty);
+          this->addEdge(u, pin, kInfty);
         }else{
-          this->addEdge(pin, v, this->kInfty);
+          this->addEdge(pin, v, kInfty);
         }
       }
     }

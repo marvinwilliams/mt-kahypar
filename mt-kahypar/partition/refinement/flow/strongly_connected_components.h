@@ -97,7 +97,7 @@ class StronglyConnectedComponents {
       }
 
       if (current_node == _roots.back()) {
-        NodeID w = KaHyParGraph::kInvalidNode;
+        NodeID w = kinvalidFlowNetworkNode;
         do {
           w = _unfinished.back();
           _unfinished.pop_back();

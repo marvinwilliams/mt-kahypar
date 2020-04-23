@@ -44,8 +44,8 @@ class ICoarsenerT {
     coarsenImpl();
   }
 
-  PartitionedHyperGraph&& uncoarsen(std::unique_ptr<IRefiner>& label_propagation,
-                 std::unique_ptr<IRefiner>& flow) {
+  PartitionedHyperGraph&& uncoarsen(std::unique_ptr<Refiner>& label_propagation,
+                 std::unique_ptr<Refiner>& flow) {
     return uncoarsenImpl(label_propagation, flow);
   }
 
@@ -64,8 +64,8 @@ class ICoarsenerT {
 
  private:
   virtual void coarsenImpl() = 0;
-  virtual PartitionedHyperGraph&& uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
-                                                std::unique_ptr<IRefiner>& flow) = 0;
+  virtual PartitionedHyperGraph&& uncoarsenImpl(std::unique_ptr<Refiner>& label_propagation,
+                                                std::unique_ptr<Refiner>& flow) = 0;
   virtual HyperGraph& coarsestHypergraphImpl() = 0;
   virtual PartitionedHyperGraph& coarsestPartitionedHypergraphImpl() = 0;
 };

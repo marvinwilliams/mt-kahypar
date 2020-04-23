@@ -59,8 +59,8 @@ class MostBalancedMinimumCut {
  public:
   MostBalancedMinimumCut(const size_t initial_size) :
     _visited(initial_size),
-    _graph_to_flow_network(initial_size, FlowNetwork::kInvalidNode),
-    _flow_network_to_graph(initial_size, FlowNetwork::kInvalidNode),
+    _graph_to_flow_network(initial_size, kinvalidFlowNetworkNode),
+    _flow_network_to_graph(initial_size, kinvalidFlowNetworkNode),
     _scc_node_weight(initial_size, 0),
     _Q(),
     _sccs(initial_size) { }
@@ -335,13 +335,13 @@ class MostBalancedMinimumCut {
         for (const HyperedgeID& he : hypergraph.incidentEdges(hypergraph.globalNodeID(hn_og))) {
           const NodeID in_he = _flow_network_to_graph.get(flow_network.mapToIncommingHyperedgeID(hypergraph, he));
           const NodeID out_he = _flow_network_to_graph.get(flow_network.mapToOutgoingHyperedgeID(hypergraph, he));
-          if (in_he != FlowNetwork::kInvalidNode) {
+          if (in_he != kinvalidFlowNetworkNode) {
             Edge e;
             e.target_node = in_he;
             e.weight = 1.0;
             adj_list[hn_node].push_back(e);
           }
-          if (out_he != FlowNetwork::kInvalidNode) {
+          if (out_he != kinvalidFlowNetworkNode) {
             Edge e;
             e.target_node = hn_node;
             e.weight = 1.0;

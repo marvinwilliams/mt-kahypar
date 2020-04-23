@@ -53,6 +53,8 @@ using NodeID = uint32_t;
 static constexpr PartitionID kInvalidPartition = -1;
 static constexpr HypernodeID kInvalidHypernode = std::numeric_limits<HypernodeID>::max();
 static constexpr HypernodeID kInvalidHyperedge = std::numeric_limits<HyperedgeID>::max();
+static constexpr NodeID kinvalidFlowNetworkNode = std::numeric_limits<NodeID>::max() / 2;
+static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
 static constexpr size_t kEdgeHashSeed = 42;
 
 struct Move {
