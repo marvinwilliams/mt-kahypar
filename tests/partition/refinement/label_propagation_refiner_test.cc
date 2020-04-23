@@ -41,7 +41,7 @@ struct TestConfig<k, kahypar::Objective::km1> {
   using Refiner = LabelPropagationRefinerT<TypeTraits, Km1Policy>;
   static constexpr PartitionID K = k;
   static constexpr kahypar::Objective OBJECTIVE = kahypar::Objective::km1;
-  static constexpr RefinementAlgorithm LP_ALGO = RefinementAlgorithm::label_propagation_km1;
+  static constexpr LabelPropagationAlgorithm LP_ALGO = LabelPropagationAlgorithm::label_propagation_km1;
 };
 
 template <PartitionID k>
@@ -50,7 +50,7 @@ struct TestConfig<k, kahypar::Objective::cut> {
   using Refiner = LabelPropagationRefinerT<TypeTraits, CutPolicy>;
   static constexpr PartitionID K = k;
   static constexpr kahypar::Objective OBJECTIVE = kahypar::Objective::cut;
-  static constexpr RefinementAlgorithm LP_ALGO = RefinementAlgorithm::label_propagation_cut;
+  static constexpr LabelPropagationAlgorithm LP_ALGO = LabelPropagationAlgorithm::label_propagation_cut;
 };
 
 template <typename Config>
@@ -91,6 +91,9 @@ class ALabelPropagationRefiner : public Test {
     // Initial Partitioning
     context.initial_partitioning.mode = InitialPartitioningMode::recursive;
     context.initial_partitioning.runs = 1;
+
+    //Flow
+    context.refinement.flow.algorithm = FlowAlgorithm::do_nothing;
 
     // Label Propagation
     context.refinement.label_propagation.algorithm = Config::LP_ALGO;
