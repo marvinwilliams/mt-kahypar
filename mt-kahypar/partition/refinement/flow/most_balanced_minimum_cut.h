@@ -282,8 +282,8 @@ class MostBalancedMinimumCut {
         }
       }
 
-      for(FlowEdge & e:flow_network.incidentEdges(u_og)){
-        const FlowEdge& reverse_edge = flow_network.reverseEdge(e);
+      for(ds::FlowEdge & e:flow_network.incidentEdges(u_og)){
+        const ds::FlowEdge& reverse_edge = flow_network.reverseEdge(e);
         const NodeID v_og = e.target;
         if (!_visited[v_og]) {
           if ((sourceSet && flow_network.residualCapacity(e)) ||
@@ -317,7 +317,7 @@ class MostBalancedMinimumCut {
       if (!_visited[node]) {
         const NodeID source = _flow_network_to_graph.get(node);
 
-        for(FlowEdge & flow_edge:flow_network.incidentEdges(node)){
+        for(ds::FlowEdge & flow_edge:flow_network.incidentEdges(node)){
           const NodeID target = flow_edge.target;
           if (flow_network.residualCapacity(flow_edge) && !_visited[target]) {
             Edge e;
