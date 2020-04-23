@@ -19,7 +19,7 @@
 namespace mt_kahypar {
 
 template< typename TypeTraits, typename FlowTypeTraits>
-class FlowRefinerT final : public IRefiner{
+class FlowRefinerT final : public IRefinerT<TypeTraits>{
     private:
         using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
         using TBB = typename TypeTraits::TBB;
