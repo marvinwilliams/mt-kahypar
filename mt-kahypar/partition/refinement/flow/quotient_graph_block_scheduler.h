@@ -38,7 +38,6 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/randomize.h"
-#include "mt-kahypar/partition/refinement/flow/flow_refiner.h"
 
 
 
@@ -120,6 +119,8 @@ class SchedulerBase {
     return static_cast<Derived*>(this)->getInitialParallelEdgesImpl();
   }
 
+
+
   std::vector<scheduling_edge> scheduleNextBlocks(const edge old_edge, const int node, tbb::parallel_do_feeder<edge>& feeder){
     return static_cast<Derived*>(this)->scheduleNextBlocksImpl(old_edge, node, feeder);
   }
@@ -145,12 +146,6 @@ class SchedulerBase {
       utils::Randomize::instance().shuffleVector(_quotient_graph[numa]);
     }
   }
-
-  
-
-  /*std::pair<ConstIncidenceIterator, ConstIncidenceIterator> qoutientGraphEdges() const {
-    return std::make_pair(_quotient_graph.cbegin(), _quotient_graph.cend());
-  }*/
 
   std::pair<ConstCutHyperedgeIterator, ConstCutHyperedgeIterator> blockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
     ASSERT(block0 < block1, V(block0) << " < " << V(block1));
@@ -510,6 +505,7 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
     for(auto block:_tasks_on_block){
       tasks += block;
     }
+    tasks /= 2;
     return tasks;
   }
 
@@ -539,6 +535,13 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
     _node_lock[node] = 0;
   }
 
+  /**
+   * Initialise _blockweights to deal with imbalance in parallel environment.
+   * Flow calculations aquire the weight of the Hypernodes they hold from both blocks and save these weights to make it possible for other blocks to calculate and optimize the imbalance.
+   * After a calculation, the modified weight gets written back to the block to make them available again. The operations are saved using a r/w lock.
+   * This method is not safe to keep a balanced Hypergraph. When two calculations try to correct an imbalance by increasing a blockweight of the same block concurrently, the imbalance can
+   * exceed epsilon. In practice this was never observed. The imbalance would be corrected in a following label propagation step.
+   **/
   void init_block_weightsImpl(){
     for (int i = 0; i < this->_context.partition.k; i++){
       for (int j = 0; j < this->_context.partition.k; j++){
@@ -595,7 +598,7 @@ class OptScheduler : public SchedulerBase<TypeTraits, OptScheduler<TypeTraits>> 
       if(temp_independence < independence){
         independence = temp_independence;
         best_edge = bestEdge{e, own_numa, i};
-      } 
+      }
     }
     if(independence < this->_context.refinement.flow.scheduling_thresh){
       _tasks_on_block[best_edge.e.first] ++;
