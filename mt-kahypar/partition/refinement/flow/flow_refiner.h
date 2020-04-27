@@ -70,7 +70,6 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
 
     private:
         bool refineImpl(HyperGraph& hypergraph,
-                        const parallel::scalable_vector<HypernodeID>&,
                         kahypar::Metrics& best_metrics) override final {
 
             FlowConfig config(hypergraph);
@@ -117,7 +116,7 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                 //LOG << "ROUND done_______________________________________________________";
 
                 HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
-                
+
                 double current_imbalance = metrics::imbalance(hypergraph, _context);
 
                 //check if the metric improved as exspected

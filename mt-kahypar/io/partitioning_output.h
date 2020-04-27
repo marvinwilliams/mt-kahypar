@@ -28,6 +28,7 @@
 #include "tbb/enumerable_thread_specific.h"
 
 #include "mt-kahypar/parallel/tbb_numa_arena.h"
+#include "mt-kahypar/parallel/memory_pool.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/metrics.h"
@@ -260,10 +261,7 @@ inline void printHypergraphInfo(const HyperGraph& hypergraph,
   }
 }
 
-inline void printCommunityInformation(const Hypergraph& hypergraph,
-                                      const ds::GraphT<Hypergraph>& graph,
-                                      const ds::Clustering& communities,
-                                      const bool show_modularity = true) {
+inline void printCommunityInformation(const Hypergraph& hypergraph) {
   PartitionID num_communities = hypergraph.numCommunities();
   std::vector<HypernodeID> community_sizes;
   std::vector<HypernodeID> community_pins;
@@ -303,9 +301,6 @@ inline void printCommunityInformation(const Hypergraph& hypergraph,
 
   LOG << "Community Information:";
   LOG << "# Communities:" << num_communities;
-  if ( show_modularity ) {
-    LOG << "# Modularity:" << metrics::modularity(graph, communities);
-  }
   internal::printCommunityStats(
     internal::createStats(community_sizes, avg_community_size, stdev_community_size),
     internal::createStats(community_pins, avg_community_pins, stdev_community_pins),
@@ -350,6 +345,17 @@ static inline void printPartitioningResults(const PartitionedHypergraph<>& hyper
 static inline void printContext(const Context& context) {
   if (context.partition.verbose_output) {
     LOG << context;
+  }
+}
+
+static inline void printMemoryPoolConsumption(const Context& context) {
+  if ( context.partition.verbose_output && context.partition.show_memory_consumption ) {
+    utils::MemoryTreeNode memory_pool_consumption("Memory Pool", utils::OutputType::MEGABYTE);
+    parallel::MemoryPool::instance().memory_consumption(&memory_pool_consumption);
+    memory_pool_consumption.finalize();
+    LOG << "\n Memory Pool Consumption:";
+    LOG << memory_pool_consumption << "\n";
+    parallel::MemoryPool::instance().explain_optimizations();
   }
 }
 

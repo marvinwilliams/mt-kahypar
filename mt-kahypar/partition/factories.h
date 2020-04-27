@@ -38,8 +38,8 @@
 #include "mt-kahypar/partition/preprocessing/community_reassignment/policies/community_assignment_objective.h"
 #include "mt-kahypar/partition/preprocessing/sparsification/i_hypergraph_sparsifier.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
-#include "mt-kahypar/partition/refinement/label_propagation_refiner.h"
 #include "mt-kahypar/partition/refinement/flow/flow_refiner.h"
+#include "mt-kahypar/partition/refinement/label_propagation/label_propagation_refiner.h"
 
 namespace mt_kahypar {
 using RedistributionFactory = kahypar::meta::Factory<CommunityAssignmentStrategy,
@@ -53,7 +53,7 @@ using HypergraphSparsifierFactory = kahypar::meta::Factory<SimiliarNetCombinerSt
                                                            IHypergraphSparsifier* (*)(const Context&, const TaskGroupID)>;
 
 using CoarsenerFactory = kahypar::meta::Factory<CoarseningAlgorithm,
-                                                ICoarsener* (*)(Hypergraph&, const Context&, const TaskGroupID)>;
+                                                ICoarsener* (*)(Hypergraph&, const Context&, const TaskGroupID, const bool)>;
 
 using MultilevelCoarsenerDispatcher = kahypar::meta::StaticMultiDispatchFactory<MultilevelCoarsener,
                                                                                 ICoarsener,

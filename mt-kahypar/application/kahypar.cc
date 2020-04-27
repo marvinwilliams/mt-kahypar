@@ -23,6 +23,7 @@
 #include "mt-kahypar/application/command_line_options.h"
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/mt_kahypar.h"
+#include "mt-kahypar/partition/registries/register_memory_pool.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/io/sql_plottools_serializer.h"
 #include "mt-kahypar/partition/context.h"
@@ -54,10 +55,22 @@ int main(int argc, char* argv[]) {
   // Initialize TBB task arenas on numa nodes
   mt_kahypar::TBBNumaArena::instance(context.shared_memory.num_threads);
 
+  #if !KAHYPAR_ENABLE_NUMA_AWARE_PARTITIONING
+  // In case, we have compiled KaHyPar in non NUMA-aware mode we set the membind policy
+  // to interleaved allocations in order to distribute allocations evenly across
+  // NUMA nodes
+  hwloc_cpuset_t cpuset = mt_kahypar::TBBNumaArena::instance().used_cpuset();
+  mt_kahypar::parallel::HardwareTopology<>::instance().activate_interleaved_membind_policy(cpuset);
+  hwloc_bitmap_free(cpuset);
+  #endif
+
   // Read Hypergraph
   mt_kahypar::Hypergraph hypergraph = mt_kahypar::io::readHypergraphFile<
     mt_kahypar::Hypergraph, mt_kahypar::HypergraphFactory>(
       context.partition.graph_filename, mt_kahypar::TBBNumaArena::GLOBAL_TASK_GROUP);
+
+  // Initialize Memory Pool
+  mt_kahypar::register_memory_pool(hypergraph, context);
 
   if ( context.partition.enable_profiler ) {
     mt_kahypar::utils::Profiler::instance(context.partition.snapshot_interval).start();
@@ -92,6 +105,7 @@ int main(int argc, char* argv[]) {
       partitioned_hypergraph, context.partition.graph_partition_filename);
   }
 
+  mt_kahypar::parallel::MemoryPool::instance().free_memory_chunks();
   mt_kahypar::TBBNumaArena::instance().terminate();
   return 0;
 }

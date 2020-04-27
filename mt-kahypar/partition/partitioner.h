@@ -132,8 +132,7 @@ inline void Partitioner::preprocess(Hypergraph& hypergraph) {
     Graph graph(hypergraph, _context.preprocessing.community_detection.edge_weight_function);
     utils::Timer::instance().stop_timer("construct_graph");
     communities = ParallelModularityLouvain<Graph>::run(graph, _context,
-      _context.shared_memory.num_threads);   // TODO(lars): give switch for PLM/SLM
-    _degree_zero_hn_remover.assignAllDegreeZeroHypernodesToSameCommunity(hypergraph, communities);
+      _context.shared_memory.num_threads);
     utils::Timer::instance().stop_timer("perform_community_detection");
 
     // Stream community ids into hypergraph
@@ -156,7 +155,7 @@ inline void Partitioner::preprocess(Hypergraph& hypergraph) {
     utils::Timer::instance().stop_timer("community_detection");
 
     if (_context.partition.verbose_output) {
-      io::printCommunityInformation(hypergraph, graph, communities, _context.partition.show_modularity);
+      io::printCommunityInformation(hypergraph);
       io::printStripe();
     }
 
@@ -172,6 +171,8 @@ inline void Partitioner::preprocess(Hypergraph& hypergraph) {
     hypergraph.setCommunityNodeMapping(std::move(community_node_mapping));
     utils::Timer::instance().enable();
   }
+
+  parallel::MemoryPool::instance().release_mem_group("Preprocessing");
 }
 
 inline void Partitioner::redistribution(Hypergraph& hypergraph) {
@@ -218,6 +219,7 @@ inline PartitionedHypergraph<> Partitioner::partition(Hypergraph& hypergraph) {
   setupContext(hypergraph, _context);
 
   io::printContext(_context);
+  io::printMemoryPoolConsumption(_context);
   io::printInputInformation(_context, hypergraph);
 
   // ################## PREPROCESSING ##################

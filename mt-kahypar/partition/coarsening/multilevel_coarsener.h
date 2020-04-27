@@ -77,8 +77,11 @@ class MultilevelCoarsenerT : public ICoarsenerT<TypeTraits>,
   static constexpr HypernodeID kInvalidHypernode = std::numeric_limits<HypernodeID>::max();
 
  public:
-  MultilevelCoarsenerT(HyperGraph& hypergraph, const Context& context, const TaskGroupID task_group_id) :
-    Base(hypergraph, context, task_group_id),
+  MultilevelCoarsenerT(HyperGraph& hypergraph,
+                       const Context& context,
+                       const TaskGroupID task_group_id,
+                       const bool top_level) :
+    Base(hypergraph, context, task_group_id, top_level),
     _rater(hypergraph, context),
     _matching_state(),
     _cluster_weight(),
@@ -189,7 +192,11 @@ class MultilevelCoarsenerT : public ICoarsenerT<TypeTraits>,
       // weights of the resulting clusters and keep track of the number of nodes left, if we would
       // contract all matched vertices.
       utils::Timer::instance().start_timer("parallel_clustering", "Parallel Clustering");
+      if ( _context.partition.show_detailed_clustering_timings ) {
+        utils::Timer::instance().start_timer("clustering_level_" + std::to_string(pass_nr), "Level " + std::to_string(pass_nr));
+      }
       _rater.resetMatches();
+      _rater.setCurrentNumberOfNodes(current_hg.initialNumNodes());
       const HypernodeID num_hns_before_pass = current_hg.initialNumNodes() - current_hg.numRemovedHypernodes();
       const HypernodeID num_pins_before_pass = current_hg.initialNumPins();
       const HypernodeID hierarchy_contraction_limit = hierarchyContractionLimit(current_hg);
@@ -241,6 +248,9 @@ class MultilevelCoarsenerT : public ICoarsenerT<TypeTraits>,
           }
         });
       });
+      if ( _context.partition.show_detailed_clustering_timings ) {
+        utils::Timer::instance().stop_timer("clustering_level_" + std::to_string(pass_nr));
+      }
       utils::Timer::instance().stop_timer("parallel_clustering");
       current_num_nodes = num_hns_before_pass -
         contracted_nodes.combine(std::plus<HypernodeID>());

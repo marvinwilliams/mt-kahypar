@@ -46,6 +46,21 @@ void fetch_sub(std::atomic<T>& x, T y) {
 template <class T>
 class AtomicWrapper : public std::atomic<T> {
  public:
+  explicit AtomicWrapper(const T value = T()) :
+    std::atomic<T>(value) { }
+
+  AtomicWrapper(const AtomicWrapper& other) :
+    std::atomic<T>(other.load()) { }
+
+  AtomicWrapper & operator= (const AtomicWrapper& other) {
+    this->store(other.load());
+    return *this;
+  }
+
+  AtomicWrapper(AtomicWrapper&& other) {
+    this->store(other.load());
+  }
+
   void operator+= (T other) {
     fetch_add(*this, other);
   }

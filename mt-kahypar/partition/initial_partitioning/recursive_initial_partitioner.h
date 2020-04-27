@@ -145,7 +145,7 @@ class RecursiveInitialPartitionerT : public IInitialPartitioner {
       _result(result),
       _task_group_id(task_group_id) {
       _coarsener = CoarsenerFactory::getInstance().createObject(
-        _result.context.coarsening.algorithm, _result.hypergraph, _result.context, _task_group_id);
+        _result.context.coarsening.algorithm, _result.hypergraph, _result.context, _task_group_id, false);
       _sparsifier = HypergraphSparsifierFactory::getInstance().createObject(
         _result.context.sparsification.similiar_net_combiner_strategy, _result.context, _task_group_id);
     }
@@ -628,6 +628,7 @@ class RecursiveInitialPartitionerT : public IInitialPartitioner {
  private:
   void initialPartitionImpl() override final {
     if (_top_level) {
+      parallel::MemoryPool::instance().deactivate_unused_memory_allocations();
       utils::Timer::instance().disable();
       utils::Stats::instance().disable();
     }
@@ -638,6 +639,7 @@ class RecursiveInitialPartitionerT : public IInitialPartitioner {
     tbb::task::spawn_root_and_wait(root_recursive_task);
 
     if (_top_level) {
+      parallel::MemoryPool::instance().activate_unused_memory_allocations();
       utils::Timer::instance().enable();
       utils::Stats::instance().enable();
     }

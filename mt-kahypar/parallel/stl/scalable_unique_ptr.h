@@ -1,7 +1,7 @@
 /*******************************************************************************
  * This file is part of KaHyPar.
  *
- * Copyright (C) 2015 Sebastian Schlag <sebastian.schlag@kit.edu>
+ * Copyright (C) 2019 Tobias Heuer <tobias.heuer@kit.edu>
  *
  * KaHyPar is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,29 +20,28 @@
 
 #pragma once
 
-#include <array>
-#include <string>
-#include <utility>
-#include <vector>
+#include <memory>
 
-#include "mt-kahypar/partition/refinement/i_refiner.h"
+#include "tbb/scalable_allocator.h"
 
 namespace mt_kahypar {
-class DoNothingRefiner final : public IRefiner {
- public:
-  template <typename ... Args>
-  explicit DoNothingRefiner(Args&& ...) noexcept { }
-  DoNothingRefiner(const DoNothingRefiner&) = delete;
-  DoNothingRefiner(DoNothingRefiner&&) = delete;
-  DoNothingRefiner & operator= (const DoNothingRefiner &) = delete;
-  DoNothingRefiner & operator= (DoNothingRefiner &&) = delete;
+namespace parallel {
 
- private:
-  void initializeImpl(PartitionedHypergraph<>&) override final { }
-
-  bool refineImpl(PartitionedHypergraph<>&,
-                  kahypar::Metrics &) override final {
-    return false;
+template<typename T>
+struct tbb_deleter {
+  void operator()(T *p) {
+    scalable_free(p);
   }
 };
-}  // namespace kahypar
+
+template<typename T>
+using tbb_unique_ptr = std::unique_ptr<T, tbb_deleter<T>>;
+
+template<typename T>
+static tbb_unique_ptr<T> make_unique(const size_t size) {
+  T* ptr = (T*) scalable_malloc(sizeof(T) * size);
+  return tbb_unique_ptr<T>(ptr, parallel::tbb_deleter<T>());
+}
+
+}  // namespace parallel
+}  // namespace mt_kahypar
