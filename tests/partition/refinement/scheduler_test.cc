@@ -237,14 +237,14 @@ TYPED_TEST(AOptScheduler, ActiveBlocks) {
 }
 
 TYPED_TEST(AOptScheduler, InitBlockWeight) {
-  this->scheduler->init_block_weightsImpl();
+  this->scheduler->init_block_weights();
   for (int i = 0; i < this->context.partition.k; i++){
     ASSERT_EQ(4 ,this->scheduler->get_not_aquired_weight(i, (i + 1)% this->context.partition.k));
   } 
 }
 
 TYPED_TEST(AOptScheduler, AquireBlockWeight) {
-  this->scheduler->init_block_weightsImpl();
+  this->scheduler->init_block_weights();
   size_t block = 0;
   size_t other = 1;
   size_t amount = 3;

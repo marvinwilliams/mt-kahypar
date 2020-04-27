@@ -218,19 +218,6 @@ static inline double localBlockImbalance(HyperGraph& hypergraph, const Context& 
   return max_balance - 1.0;
 }
 
-template<typename Scheduler>
-static inline double localBlockImbalanceParallel(const Context& context, PartitionID block_0, PartitionID block_1,
-Scheduler & scheduler, HypernodeWeight aquired_block_weight_part_0, HypernodeWeight aquired_block_weight_part_1) {
-
-  double balance_0 = ((scheduler.get_not_aquired_weight(block_0, block_1) + aquired_block_weight_part_0) /
-                        static_cast<double>(context.partition.perfect_balance_part_weights[block_0]));
-
-  double balance_1 = ((scheduler.get_not_aquired_weight(block_1, block_0) + aquired_block_weight_part_1) /
-                        static_cast<double>(context.partition.perfect_balance_part_weights[block_1]));
-
-  return std::max(balance_0, balance_1) - 1.0;
-}
-
 template< typename HyperGraph >
 static inline double avgHyperedgeDegree(const HyperGraph& hypergraph) {
   return static_cast<double>(hypergraph.initialNumPins()) / hypergraph.initialNumEdges();

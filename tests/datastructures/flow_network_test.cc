@@ -178,7 +178,7 @@ TYPED_TEST(AFlowNetworkTest, FlowRegionTest) {
   }
 }
 
-TYPED_TEST(AFlowNetworkTest, ReleaseHyperNodes) {
+TYPED_TEST(AFlowNetworkTest, Release) {
   this->scheduler->buildQuotientGraph();
   std::vector<HyperedgeID> cut_hes;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 1)) {
@@ -205,11 +205,18 @@ TYPED_TEST(AFlowNetworkTest, ReleaseHyperNodes) {
   for(HypernodeID node: aquired){
     ASSERT_TRUE(this->scheduler->isAquired(node));
   }
-  this->flow_network->releaseHyperNodes(this->hypergraph, 0, 1, *this->scheduler);
-  this->flow_network2->releaseHyperNodes(this->hypergraph, 0, 2, *this->scheduler);
+  this->flow_network->release(this->hypergraph, 0, 1, *this->scheduler);
+  this->flow_network2->release(this->hypergraph, 0, 2, *this->scheduler);
   for(HypernodeID node: aquired){
     ASSERT_FALSE(this->scheduler->isAquired(node));
   }
+  std::pair<HypernodeWeight, HypernodeWeight> weights = this->scheduler->get_aquired_part_weight(0, 1);
+  ASSERT_EQ(weights.first, 0);
+  ASSERT_EQ(weights.second, 0);
+
+  weights = this->scheduler->get_aquired_part_weight(0, 2);
+  ASSERT_EQ(weights.first, 0);
+  ASSERT_EQ(weights.second, 0);
 }
 
 TYPED_TEST(AFlowNetworkTest, FlowNetWorkBuild) {
@@ -347,13 +354,13 @@ TYPED_TEST(AFlowNetworkTest, AquiredPartWeight) {
   this->flow_network->build(this->hypergraph, this->context, 0, 1, *this->scheduler);
   this->flow_network2->build(this->hypergraph, this->context, 0, 2, *this->scheduler);
 
-  auto partweights = this->flow_network->get_aquired_part_weight(this->hypergraph, 0, 1);
-  ASSERT_EQ(partweights[0], 10);
-  ASSERT_EQ(partweights[1], 7);
+  auto partweights = this->scheduler->get_aquired_part_weight(0, 1);
+  ASSERT_EQ(partweights.first, 10);
+  ASSERT_EQ(partweights.second, 7);
   
-  partweights = this->flow_network2->get_aquired_part_weight(this->hypergraph, 0, 2);
-  ASSERT_EQ(partweights[0], 6);
-  ASSERT_EQ(partweights[1], 6);
+  partweights = this->scheduler->get_aquired_part_weight(0, 2);
+  ASSERT_EQ(partweights.first, 6);
+  ASSERT_EQ(partweights.second, 6);
 }
 
 }  //namespace ds

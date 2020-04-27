@@ -271,13 +271,13 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                 // Find minimum (S,T)-bipartition
                 const HyperedgeWeight cut_flow_network_after =
                     maximum_flow.minimumSTCut(
-                        hypergraph, flow_network, _context, block_0, block_1, scheduler);
+                        hypergraph, flow_network, _context, block_0, block_1, scheduler, cut_flow_network_before);
 
                 // Maximum Flow algorithm returns infinity, if all
                 // hypernodes contained in the flow problem are either
                 // sources or sinks
                 if (cut_flow_network_after == kInfty) {
-                    flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
+                    flow_network.release(hypergraph, block_0, block_1, scheduler);
                     break;
                 }
 
@@ -286,20 +286,12 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                         "Flow calculation should not increase cut!"
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
 
-                //TODO: make generic smh
-                double current_imbalance = 0;
-                if(_context.refinement.flow.algorithm == FlowAlgorithm::flow_opt){
-                std::vector<HypernodeWeight> aquired_part_weight = flow_network.get_aquired_part_weight(hypergraph, block_0, block_1);
-                    current_imbalance = metrics::localBlockImbalanceParallel(_context, block_0, block_1, scheduler,
-                    aquired_part_weight[0], aquired_part_weight[1]);
-                }else if(_context.refinement.flow.algorithm == FlowAlgorithm::flow_match){
-                    current_imbalance = metrics::localBlockImbalance(hypergraph, _context, block_0, block_1);
-                }
+                double new_imbalance = maximum_flow.get_new_imbalance();
 
                 //const bool equal_metric = delta == 0;
                 const bool improved_metric = delta > 0;
                 //const bool improved_imbalance = current_imbalance < old_imbalance;
-                const bool is_feasible_partition = current_imbalance <=  _context.partition.epsilon;
+                const bool is_feasible_partition = new_imbalance <=  _context.partition.epsilon;
 
                 bool current_improvement = false;
                 if (improved_metric && is_feasible_partition) {
@@ -309,15 +301,14 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                     alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
-                maximum_flow.rollback(hypergraph, flow_network, current_improvement);
-
                 // Perform moves in quotient graph in order to update
                 // cut hyperedges between adjacent blocks.
                 if (current_improvement) {
+                    auto& assignment = maximum_flow.get_assignment();
                     for (const HypernodeID& ogHn : flow_network.hypernodes()) {
                         const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
                         const PartitionID from = hypergraph.partID(hn);
-                        const PartitionID to = maximum_flow.getOriginalPartition(ogHn);
+                        const PartitionID to = assignment[ogHn]? block_1: block_0;
                         if (from != to) {
                             scheduler.changeNodePart(hn, from, to);
                         }
@@ -330,11 +321,11 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                 //
                 // always use
                 if (!improvement && cut_flow_network_before == cut_flow_network_after) {
-                    flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
+                    flow_network.release(hypergraph, block_0, block_1, scheduler);
                     break;
                 }
 
-                flow_network.releaseHyperNodes(hypergraph, block_0, block_1, scheduler);
+                flow_network.release(hypergraph, block_0, block_1, scheduler);
 
             } while (alpha > 1.0);
 

@@ -57,6 +57,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
     _visited(initial_size),
     _Q(),
     _mbmc(initial_size),
+    _new_imbalance(0),
     _original_part_id(initial_num_nodes, 0) { }
 
   virtual ~MaximumFlow() { }
@@ -72,51 +73,34 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
 
   HyperedgeWeight minimumSTCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
                                const Context& context,
-                               const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler) {
+                               const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler,
+                               const HyperedgeWeight cut_flow_network_before) {
     if (flow_network.isTrivialFlow()) {
       return kInfty;
     }
-
-    utils::Timer::instance().start_timer("defaultPart", "Moving Nodes to default ", true);                
-    const PartitionID default_part =
-      context.refinement.flow.use_most_balanced_minimum_cut ? block_0 : block_1;
-    for (const HypernodeID& ogHn : flow_network.hypernodes()) {
-      const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
-      _original_part_id[ogHn] = hypergraph.partID(hn);
-      moveHypernode(hypergraph, hn, default_part);
-    }
-    utils::Timer::instance().stop_timer("defaultPart");
-
 
     utils::Timer::instance().start_timer("maxFlow", "Calculating max Flow ", true);                
     const HyperedgeWeight cut = maximumFlow(hypergraph, flow_network);
     utils::Timer::instance().stop_timer("maxFlow");
 
-    utils::Timer::instance().start_timer("MBMC", "Finding MBMC ", true);                
-    if (context.refinement.flow.use_most_balanced_minimum_cut) {
-      _mbmc.mostBalancedMinimumCut(hypergraph, flow_network, context, block_0, block_1, scheduler);
-    } else {
-      bfs<true>(hypergraph, flow_network, block_0);
+    if(cut < cut_flow_network_before){
+      utils::Timer::instance().start_timer("MBMC", "Finding MBMC ", true);                
+      if (context.refinement.flow.use_most_balanced_minimum_cut) {
+        _mbmc.mostBalancedMinimumCut(hypergraph, flow_network, context, block_0, block_1, scheduler, _new_imbalance);
+      } else {
+        bfs<true>(hypergraph, flow_network, block_0);
+      }
+      utils::Timer::instance().stop_timer("MBMC");
     }
-    utils::Timer::instance().stop_timer("MBMC");
-
-
     return cut;
   }
 
-  void rollback(HyperGraph& hypergraph, FlowNetwork& flow_network, const bool store_part_id = false) {
-    for (const HypernodeID& ogHn : flow_network.hypernodes()) {
-      const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
-      const PartitionID from = hypergraph.partID(hn);
-      moveHypernode(hypergraph, hn, _original_part_id[ogHn]);
-      if (store_part_id) {
-        _original_part_id[ogHn] = from;
-      }
-    }
+  double get_new_imbalance(){
+    return _new_imbalance;
   }
 
-  PartitionID getOriginalPartition(const HypernodeID hn_og) const {
-    return _original_part_id[hn_og];
+  kahypar::ds::FastResetFlagArray<>& get_assignment(){
+    return _mbmc.get_assignment();
   }
 
   template <bool assign_hypernodes = false>
@@ -230,6 +214,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   std::queue<NodeID> _Q;
 
   MostBalancedMinimumCut _mbmc;
+  double _new_imbalance;
 
   std::vector<PartitionID> _original_part_id;
 };

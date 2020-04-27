@@ -248,17 +248,17 @@ class FlowNetwork {
     return cut;
   }
 
-  std::vector<HypernodeWeight> get_aquired_part_weight(HyperGraph& hypergraph, size_t block_0,size_t block_1){
-      std::vector<HypernodeWeight> part_weight(2, 0);
+  std::pair<HypernodeWeight, HypernodeWeight> get_current_part_weight(HyperGraph& hypergraph, size_t block_0,size_t block_1){
+      std::pair<HypernodeWeight, HypernodeWeight> part_weight(0, 0);
       for(auto hn: hypernodes()){
       size_t block = hypergraph.partID(hn);
-      if(block == block_0){
-          part_weight[0] += hypergraph.nodeWeight(hn);
-      }else if(block == block_1){
-          part_weight[1] += hypergraph.nodeWeight(hn);
-      } else {
-          ASSERT(false, "hypernode does not belong to block0 or block1");
-      }
+        if(block == block_0){
+            part_weight.first += hypergraph.nodeWeight(hn);
+        }else if(block == block_1){
+            part_weight.second += hypergraph.nodeWeight(hn);
+        } else {
+            ASSERT(false, "hypernode does not belong to block0 or block1");
+        }
       }
       return part_weight;
   }
@@ -315,8 +315,8 @@ class FlowNetwork {
     std::fill(_node_to_edge.begin(), _node_to_edge.end(), kinvalidFlowNetworkNode);
   }
 
-  void releaseHyperNodes(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
-    static_cast<Derived*>(this)->releaseHyperNodesImpl(hypergraph, block_0, block_1, scheduler);
+  void release(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+    static_cast<Derived*>(this)->releaseImpl(hypergraph, block_0, block_1, scheduler);
   }
 
   bool isTrivialFlow() const {
@@ -754,11 +754,18 @@ class MatchingFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
   using Scheduler = typename FlowTypeTraits::Scheduler;
 
   public:
-    void releaseHyperNodesImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
-      unused(hypergraph);
-      unused(block_0);
-      unused(block_1);
-      unused(scheduler);
+    void releaseImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+      std::pair<HypernodeWeight, HypernodeWeight> current_part_weight = this->get_current_part_weight(hypergraph,block_0, block_1);
+
+      ASSERT(current_part_weight.first + current_part_weight.second == scheduler.get_aquired_part_weight(block_0, block_1).first + 
+      scheduler.get_aquired_part_weight(block_0, block_1).second, "updated partweights incorrect!" <<
+       V(current_part_weight.first + current_part_weight.second) << 
+       V(scheduler.get_aquired_part_weight(block_0, block_1).first + 
+      scheduler.get_aquired_part_weight(block_0, block_1).second));
+      
+      //release aquired block_weight
+      scheduler.release_block_weight(block_0, block_1, current_part_weight.first);
+      scheduler.release_block_weight(block_1, block_0, current_part_weight.second);
     }
 
     void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, const PartitionID block_1,
@@ -780,10 +787,20 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
   using Scheduler = typename FlowTypeTraits::Scheduler;
 
   public:
-    void releaseHyperNodesImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
-      std::vector<HypernodeWeight> aquired_part_weight = this->get_aquired_part_weight(hypergraph,block_0, block_1);
-      scheduler.release_block_weight(block_0, block_1, aquired_part_weight[0]);
-      scheduler.release_block_weight(block_1, block_0, aquired_part_weight[1]);
+    void releaseImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+      std::pair<HypernodeWeight, HypernodeWeight> current_part_weight = this->get_current_part_weight(hypergraph,block_0, block_1);
+
+      ASSERT(current_part_weight.first + current_part_weight.second == scheduler.get_aquired_part_weight(block_0, block_1).first + 
+      scheduler.get_aquired_part_weight(block_0, block_1).second, "updated partweights incorrect!" <<
+       V(current_part_weight.first + current_part_weight.second) << 
+       V(scheduler.get_aquired_part_weight(block_0, block_1).first + 
+      scheduler.get_aquired_part_weight(block_0, block_1).second));
+
+      //release aquired block_weight
+      scheduler.release_block_weight(block_0, block_1, current_part_weight.first);
+      scheduler.release_block_weight(block_1, block_0, current_part_weight.second);
+
+      //release aquired hyperndoes
       for (const HypernodeID& hn : this->hypernodes()) {
         scheduler.releaseNode(hn);
       }  
@@ -791,6 +808,7 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
 
     void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, const PartitionID block_1,
      Scheduler & scheduler, const HyperedgeID he){
+       unused(block_1);
       for (const HypernodeID& pin : hypergraph.pins(he)) {
         if (!this->_hypernodes.contains(hypergraph.originalNodeID(pin)) && scheduler.isAquired(pin)) {
           if(scheduler.is_block_overlap(pin, block_0, block_1)){
