@@ -179,6 +179,7 @@ struct FlowParameters {
   double alpha = 16.0;
   bool use_most_balanced_minimum_cut = true;
   bool use_improvement_history = true;
+  bool fix_nodes = true;
   double scheduling_thresh = 3.0;
 };
 
@@ -189,6 +190,7 @@ inline std::ostream & operator<< (std::ostream& str, const FlowParameters& param
   str << "    Use Most Balanced Minimum Cut:    " << std::boolalpha << params.use_most_balanced_minimum_cut << std::endl;
   str << "    Use Improvement History:          " << std::boolalpha << params.use_improvement_history << std::endl;
   if(params.algorithm == FlowAlgorithm::flow_opt){
+    str << "    Fixate Nodes:                     " << std::boolalpha << params.fix_nodes << std::endl;
     str << "    Scheduling Threshold:             " << params.scheduling_thresh << std::endl;
   }
   return str;

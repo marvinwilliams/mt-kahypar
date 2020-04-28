@@ -170,7 +170,7 @@ class FlowNetwork {
       const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
       for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
         if (!_visited[hypergraph.originalEdgeID(he)]) {
-          if(true){
+          if(context.refinement.flow.fix_nodes){
             //fix all pins of he's, that contain an already aquired pin (only OptScheduling)
             static_cast<Derived*>(this)->fixAquiredHyperEdge(hypergraph, block_0, block_1, scheduler, he);
           }
@@ -762,7 +762,7 @@ class MatchingFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
        V(current_part_weight.first + current_part_weight.second) << 
        V(scheduler.get_aquired_part_weight(block_0, block_1).first + 
       scheduler.get_aquired_part_weight(block_0, block_1).second));
-      
+
       //release aquired block_weight
       scheduler.release_block_weight(block_0, block_1, current_part_weight.first);
       scheduler.release_block_weight(block_1, block_0, current_part_weight.second);
