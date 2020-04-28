@@ -33,21 +33,12 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/initial_partitioning/i_initial_partitioner.h"
 #include "mt-kahypar/partition/initial_partitioning/flat/initial_partitioning_data_container.h"
-#include "mt-kahypar/partition/preprocessing/community_reassignment/bin_packing_community_assignment.h"
-#include "mt-kahypar/partition/preprocessing/community_reassignment/i_community_assignment.h"
-#include "mt-kahypar/partition/preprocessing/community_reassignment/policies/community_assignment_objective.h"
 #include "mt-kahypar/partition/preprocessing/sparsification/i_hypergraph_sparsifier.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/flow/flow_refiner.h"
 #include "mt-kahypar/partition/refinement/label_propagation/label_propagation_refiner.h"
 
 namespace mt_kahypar {
-using RedistributionFactory = kahypar::meta::Factory<CommunityAssignmentStrategy,
-                                                     preprocessing::ICommunityAssignment* (*)(Hypergraph&, const Context&)>;
-
-using BinPackingCommunityAssignmentDispatcher = kahypar::meta::StaticMultiDispatchFactory<preprocessing::BinPackingCommunityAssignment,
-                                                                                          preprocessing::ICommunityAssignment,
-                                                                                          kahypar::meta::Typelist<ObjectivePolicyClasses> >;
 
 using HypergraphSparsifierFactory = kahypar::meta::Factory<SimiliarNetCombinerStrategy,
                                                            IHypergraphSparsifier* (*)(const Context&, const TaskGroupID)>;
@@ -70,10 +61,10 @@ using InitialPartitionerFactory = kahypar::meta::Factory<InitialPartitioningMode
 
 
 using LabelPropagationFactory = kahypar::meta::Factory<LabelPropagationAlgorithm,
-                                                       IRefiner* (*)(PartitionedHypergraph<>&, const Context&, const TaskGroupID)>;
+                                                       IRefiner<>* (*)(PartitionedHypergraph<>&, const Context&, const TaskGroupID)>;
 
 using FlowFactory = kahypar::meta::Factory<FlowAlgorithm,
-                                           IRefiner* (*)(PartitionedHypergraph<>&, const Context&, const TaskGroupID)>;
+                                           IRefiner<>* (*)(PartitionedHypergraph<>&, const Context&, const TaskGroupID)>;
 
 } // namespace mt-kahypar
 
