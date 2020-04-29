@@ -46,7 +46,7 @@ struct FlowEdge {
   Flow flow;
   Capacity capacity;
   size_t reverseEdge;
-  size_t nextEdge; 
+  size_t nextEdge;
 
   void increaseFlow(const Flow delta_flow) {
     ASSERT(flow + delta_flow <= capacity, "Cannot increase flow above capacity!");
@@ -69,7 +69,7 @@ class FlowEdgeIterator{
   public:
     static FlowEdgeIterator begin(FlowNet & flow_network, size_t idx){return FlowEdgeIterator(flow_network, idx);}
     static FlowEdgeIterator end(FlowNet & flow_network){return FlowEdgeIterator(flow_network, kinvalidFlowNetworkNode);}
-  
+
     FlowEdgeIterator& operator++() {
         _idx = _edge->nextEdge;
         if(_idx != kinvalidFlowNetworkNode){
@@ -90,17 +90,16 @@ class FlowEdgeIterator{
     size_t _idx;
 };
 
-template <typename TypeTraits, typename FlowTypeTraits>
+template <typename FlowTypeTraits>
 class FlowNetwork {
   using AdjacentList = parallel::scalable_vector<FlowEdge>;
   using ConstIncidenceIterator = parallel::scalable_vector<FlowEdge>::const_iterator;
   using IncidenceIterator = parallel::scalable_vector<FlowEdge>::iterator;
   using NodeIterator = std::pair<const NodeID*, const NodeID*>;
   using HypernodeIterator = std::pair<const HypernodeID*, const HypernodeID*>;
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using Scheduler = typename FlowTypeTraits::Scheduler;
   using Derived = typename FlowTypeTraits::FlowNetwork;
-  using FlowEdgeIter = FlowEdgeIterator<FlowNetwork<TypeTraits, FlowTypeTraits>>;
+  using FlowEdgeIter = FlowEdgeIterator<FlowNetwork<FlowTypeTraits>>;
 
  public:
   FlowNetwork(const HypernodeID initial_num_nodes, const HypernodeID initial_num_edges, const size_t size) :
@@ -163,22 +162,21 @@ class FlowNetwork {
 
   // ################### Flow Network Construction ###################
 
-  void buildFlowGraph(HyperGraph& hypergraph, const Context& context, const PartitionID block_0,const PartitionID block_1,
+  void buildFlowGraph(mt_kahypar::PartitionedHypergraph<>& hypergraph, const Context& context, const PartitionID block_0,const PartitionID block_1,
    Scheduler & scheduler) {
     _visited.reset();
-    for (const HypernodeID& ogHn : hypernodes()) {
-      const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
+    for (const HypernodeID& hn : hypernodes()) {
       for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
-        if (!_visited[hypergraph.originalEdgeID(he)]) {
+        if (!_visited[he]) {
           if(context.refinement.flow.fix_nodes){
             //fix all pins of he's, that contain an already aquired pin (only OptScheduling)
             static_cast<Derived*>(this)->fixAquiredHyperEdge(hypergraph, block_0, block_1, scheduler, he);
           }
           if(!_contains_aquired_node[he]){
-            if (isHyperedgeOfSize(hypergraph, he, 1)) {
+            if (isHyperedgeOfSize(he, 1)) {
               addHyperedge(hypergraph, context, he);
               addPin(hypergraph, he, hn);
-              _contains_graph_hyperedges.set(ogHn, true);
+              _contains_graph_hyperedges.set(hn, true);
             } else if (hypergraph.edgeSize(he) == 2) {
               // Treat hyperedges of size 2 as graph edges
               // => remove hyperedge nodes in flow network
@@ -191,30 +189,29 @@ class FlowNetwork {
             }
           }
 
-          _visited.set(hypergraph.originalEdgeID(he), true);
+          _visited.set(he, true);
         }
       }
     }
 
     for (const NodeID& node : nodes()) {
       if (interpreteHyperedge(node, false)) {
-        const HyperedgeID he_og = mapToHyperedgeID(node);
-        const HyperedgeID he = hypergraph.globalEdgeID(he_og);
-        if (hypergraph.edgeSize(he) != 2 && !isHyperedgeOfSize(hypergraph, he, 1) && !_contains_aquired_node[he]) {
+        const HyperedgeID he = mapToHyperedgeID(node);
+        if (hypergraph.edgeSize(he) != 2 && !isHyperedgeOfSize(he, 1) && !_contains_aquired_node[he]) {
           // If degree of hypernode 'pin' is smaller than 3
           // add clique between all incident hyperedges of pin.
           // Otherwise connect pin with hyperedge in flow network.
           _he_visited.reset();
           for (const HypernodeID& pin : hypergraph.pins(he)) {
-            if (_hypernodes.contains(hypergraph.originalNodeID(pin))) {
-              if (!_contains_graph_hyperedges[hypergraph.originalNodeID(pin)] &&
-                  hypergraph.nodeDegree(pin) <= 3 && !containsNodeGlobalId(hypergraph, pin)) {
-                ASSERT(!containsNodeGlobalId(hypergraph, pin), "Pin " << pin << " of HE " << he
+            if (_hypernodes.contains(pin)) {
+              if (!_contains_graph_hyperedges[pin] &&
+                  hypergraph.nodeDegree(pin) <= 3 && !_nodes.contains(pin)) {
+                ASSERT(!_nodes.contains(pin), "Pin " << pin << " of HE " << he
                                                   << " is already contained in flow problem!");
                 addClique(hypergraph, he, pin);
               } else {
                 addPin(hypergraph, he, pin);
-                ASSERT(containsNodeGlobalId(hypergraph, pin), "Pin is not contained in flow problem!");
+                ASSERT(_nodes.contains(pin), "Pin is not contained in flow problem!");
               }
             }
           }
@@ -225,17 +222,16 @@ class FlowNetwork {
     }
   }
 
-  HyperedgeWeight build(HyperGraph& hypergraph, const Context& context, const PartitionID block_0,
+  HyperedgeWeight build(mt_kahypar::PartitionedHypergraph<>& hypergraph, const Context& context, const PartitionID block_0,
     const PartitionID block_1, Scheduler & scheduler) {
     buildFlowGraph(hypergraph, context, block_0, block_1, scheduler);
 
     ASSERT([&]() {
-          for (const HypernodeID& ogHn : hypernodes()) {
-            const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
-            if (containsNodeGlobalId(hypergraph, hn) && _removed_hypernodes.contains(hypergraph.originalNodeID(hn))) {
+          for (const HypernodeID& hn : hypernodes()) {
+            if (_nodes.contains(hn) && _removed_hypernodes.contains(hn)) {
               LOG << "Flow network contains HN " << hn << " but it is marked as removed!";
               return false;
-            } else if (!containsNodeGlobalId(hypergraph, hn) && !_removed_hypernodes.contains(hypergraph.originalNodeID(hn))) {
+            } else if (!_nodes.contains(hn) && !_removed_hypernodes.contains(hn)) {
               LOG << "Flow network not contains HN " << hn << " and it is not marked as removed!";
               return false;
             }
@@ -248,7 +244,7 @@ class FlowNetwork {
     return cut;
   }
 
-  std::pair<HypernodeWeight, HypernodeWeight> get_current_part_weight(HyperGraph& hypergraph, size_t block_0,size_t block_1){
+  std::pair<HypernodeWeight, HypernodeWeight> get_current_part_weight(mt_kahypar::PartitionedHypergraph<>& hypergraph, size_t block_0,size_t block_1){
       std::pair<HypernodeWeight, HypernodeWeight> part_weight(0, 0);
       for(auto hn: hypernodes()){
       size_t block = hypergraph.partID(hn);
@@ -263,32 +259,32 @@ class FlowNetwork {
       return part_weight;
   }
 
-  void addHypernode(HyperGraph& hypergraph, const HypernodeID hn) {
-    ASSERT(!containsHypernode(hypergraph, hn), "HN " << hn << " already contained in flow problem!");
-    _hypernodes.add(hypergraph.originalNodeID(hn));
+  void addHypernode(mt_kahypar::PartitionedHypergraph<>& hypergraph, const HypernodeID hn) {
+    ASSERT(!containsHypernode(hn), "HN " << hn << " already contained in flow problem!");
+    _hypernodes.add(hn);
     for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
       if (hypergraph.edgeSize(he) == 2) {
-        _contains_graph_hyperedges.set(hypergraph.originalNodeID(hn), true);
+        _contains_graph_hyperedges.set(hn, true);
       }
       if (hypergraph.partID(hn) == _cur_block0) {
-        _pins_block0.update(hypergraph.originalEdgeID(he), 1);
+        _pins_block0.update(he, 1);
       } else if (hypergraph.partID(hn) == _cur_block1) {
-        _pins_block1.update(hypergraph.originalEdgeID(he), 1);
+        _pins_block1.update(he, 1);
       }
     }
   }
 
-  void removeHypernode(HyperGraph& hypergraph, const HypernodeID hn) {
-    ASSERT(containsHypernode(hypergraph, hn));
-    _hypernodes.remove(hypergraph.originalNodeID(hn));
+  void removeHypernode(mt_kahypar::PartitionedHypergraph<>& hypergraph, const HypernodeID hn) {
+    ASSERT(containsHypernode(hn));
+    _hypernodes.remove(hn);
     for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
       if (hypergraph.edgeSize(he) == 2) {
-        _contains_graph_hyperedges.set(hypergraph.originalNodeID(hn), false);
+        _contains_graph_hyperedges.set(hn, false);
       }
       if (hypergraph.partID(hn) == _cur_block0) {
-        _pins_block0.update(hypergraph.originalEdgeID(he), -1);
+        _pins_block0.update(he, -1);
       } else if (hypergraph.partID(hn) == _cur_block1) {
-        _pins_block1.update(hypergraph.originalEdgeID(he), -1);
+        _pins_block1.update(he, -1);
       }
     }
   }
@@ -315,7 +311,7 @@ class FlowNetwork {
     std::fill(_node_to_edge.begin(), _node_to_edge.end(), kinvalidFlowNetworkNode);
   }
 
-  void release(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+  void release(mt_kahypar::PartitionedHypergraph<>& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
     static_cast<Derived*>(this)->releaseImpl(hypergraph, block_0, block_1, scheduler);
   }
 
@@ -330,16 +326,11 @@ class FlowNetwork {
     return node < _initial_num_nodes;
   }
 
-  bool containsHypernode(HyperGraph& hypergraph, const HypernodeID hn) {
-    return _hypernodes.contains(hypergraph.originalNodeID(hn));
+  bool containsHypernode(const HypernodeID hn) {
+    return _hypernodes.contains(hn);
   }
 
-  // _hypernodes contains the orginal HypernodesIDs, because the global HypernodeID is not continious in a multiple NUMA-Node Environment
-  // to use the Hypernode IDs for operations on the Hypergraph, they have to be converted back:
-  //
-  // for (const HypernodeID& ogHn : flow_network.hypernodes()) {
-  //    const HypernodeID& hn = hg.globalNodeID(ogHn);
-  //
+
   std::pair<const HypernodeID*, const HypernodeID*> hypernodes() {
     return std::make_pair(_hypernodes.begin(), _hypernodes.end());
   }
@@ -348,12 +339,12 @@ class FlowNetwork {
     return node < _initial_num_nodes && _nodes.contains(node);
   }
 
-  NodeID mapToIncommingHyperedgeID(HyperGraph& hypergraph, const HyperedgeID he) const {
-    return _initial_num_nodes + hypergraph.originalEdgeID(he);
+  NodeID mapToIncommingHyperedgeID(const HyperedgeID he) const {
+    return _initial_num_nodes + he;
   }
 
-  NodeID mapToOutgoingHyperedgeID(HyperGraph& hypergraph, const HyperedgeID he) const {
-    return _initial_num_nodes + _initial_num_edges + hypergraph.originalEdgeID(he);
+  NodeID mapToOutgoingHyperedgeID(const HyperedgeID he) const {
+    return _initial_num_nodes + _initial_num_edges + he;
   }
 
   HyperedgeID mapToHyperedgeID(const NodeID node) const {
@@ -377,19 +368,19 @@ class FlowNetwork {
   }
 
 
-  bool isRemovedHypernode(HyperGraph& hypergraph, const HypernodeID hn) const {
-    return _removed_hypernodes.contains(hypergraph.originalNodeID(hn));
+  bool isRemovedHypernode(const HypernodeID hn) const {
+    return _removed_hypernodes.contains(hn);
   }
 
-  bool isHyperedgeOfSize(HyperGraph& hypergraph, const HyperedgeID he, const size_t size) {
-    return (_pins_block0.get(hypergraph.originalEdgeID(he)) + _pins_block1.get(hypergraph.originalEdgeID(he))) == size;
+  bool isHyperedgeOfSize(const HyperedgeID he, const size_t size) {
+    return (_pins_block0.get(he) + _pins_block1.get(he)) == size;
   }
 
-  size_t pinsNotInFlowProblem(const HyperGraph& hypergraph, const HyperedgeID he, const PartitionID block) {
+  size_t pinsNotInFlowProblem(const mt_kahypar::PartitionedHypergraph<>& hypergraph, const HyperedgeID he, const PartitionID block) {
     if (block == _cur_block0) {
-      return hypergraph.pinCountInPart(he, _cur_block0) - _pins_block0.get(hypergraph.originalEdgeID(he));
+      return hypergraph.pinCountInPart(he, _cur_block0) - _pins_block0.get(he);
     } else {
-      return hypergraph.pinCountInPart(he, _cur_block1) - _pins_block1.get(hypergraph.originalEdgeID(he));
+      return hypergraph.pinCountInPart(he, _cur_block1) - _pins_block1.get(he);
     }
   }
 
@@ -404,10 +395,6 @@ class FlowNetwork {
       _nodes.add(node);
       _num_nodes++;
     }
-  }
-
-  bool containsNodeGlobalId(HyperGraph& hypergraph, const HypernodeID node) {
-    return _nodes.contains(hypergraph.originalNodeID(node));
   }
 
   bool containsNodeId(const NodeID id) {
@@ -462,14 +449,6 @@ class FlowNetwork {
     return _sinks.size();
   }
 
-  bool isGlobalIdSource(HyperGraph& hypergraph, const NodeID node) {
-    return _sources.contains(hypergraph.originalNodeID(node));
-  }
-
-  bool isGlobalIdSink(HyperGraph& hypergraph, const NodeID node) {
-    return _sinks.contains(hypergraph.originalNodeID(node));
-  }
-
   bool isIdSource(const NodeID node) {
     return _sources.contains(node);
   }
@@ -487,15 +466,14 @@ class FlowNetwork {
   }
 
  protected:
-  HyperedgeWeight buildSourcesAndSinks(HyperGraph& hypergraph, const Context& context, const PartitionID block_0, const PartitionID block_1) {
+  HyperedgeWeight buildSourcesAndSinks(mt_kahypar::PartitionedHypergraph<>& hypergraph, const Context& context, const PartitionID block_0, const PartitionID block_1) {
     _visited.reset();
     HyperedgeWeight cut = 0;
-    for (const HypernodeID& ogHn : hypernodes()) {
-      const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
+    for (const HypernodeID& hn : hypernodes()) {
       for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
-        if (!_visited[hypergraph.originalEdgeID(he)] && !_contains_aquired_node[he]) {
-          const size_t pins_u_block0 = _pins_block0.get(hypergraph.originalEdgeID(he));
-          const size_t pins_u_block1 = _pins_block1.get(hypergraph.originalEdgeID(he));
+        if (!_visited[he] && !_contains_aquired_node[he]) {
+          const size_t pins_u_block0 = _pins_block0.get(he);
+          const size_t pins_u_block1 = _pins_block1.get(he);
           const size_t pins_not_u_block0 = hypergraph.pinCountInPart(he, block_0) - pins_u_block0;
           const size_t pins_not_u_block1 = hypergraph.pinCountInPart(he, block_1) - pins_u_block1;
           const size_t connectivity = (pins_u_block0 + pins_not_u_block0 > 0) + (pins_u_block1 + pins_not_u_block1 > 0);
@@ -508,10 +486,10 @@ class FlowNetwork {
             //         block_0 and block_1
             //         => add incoming hyperedge node as source
             //            and outgoing hyperedge node as sink
-            ASSERT(containsNodeId(mapToIncommingHyperedgeID(hypergraph, he)), "Source is not contained in flow problem!");
-            ASSERT(containsNodeId(mapToOutgoingHyperedgeID(hypergraph, he)), "Sink is not contained in flow problem!");
-            addSourceWithId(mapToIncommingHyperedgeID(hypergraph, he));
-            addSinkWithId(mapToOutgoingHyperedgeID(hypergraph, he));
+            ASSERT(containsNodeId(mapToIncommingHyperedgeID(he)), "Source is not contained in flow problem!");
+            ASSERT(containsNodeId(mapToOutgoingHyperedgeID(he)), "Sink is not contained in flow problem!");
+            addSourceWithId(mapToIncommingHyperedgeID(he));
+            addSinkWithId(mapToOutgoingHyperedgeID(he));
           } else {
             // Hyperedge he is a cut hyperedge of the hypergraph.
             // => if he contains pins from block_0 not contained
@@ -521,14 +499,14 @@ class FlowNetwork {
             //   in the flow problem, we add the outgoing hyperedge
             //   node as sink
             if (pins_not_u_block0 > 0) {
-              ASSERT(containsNodeId(mapToIncommingHyperedgeID(hypergraph, he)), "Source is not contained in flow problem!"<< V(pins_not_u_block0)
+              ASSERT(containsNodeId(mapToIncommingHyperedgeID(he)), "Source is not contained in flow problem!"<< V(pins_not_u_block0)
               << V(pins_not_u_block1)<< V(pins_u_block0)<< V(pins_u_block1));
-              addSourceWithId(mapToIncommingHyperedgeID(hypergraph, he));
+              addSourceWithId(mapToIncommingHyperedgeID(he));
             }
             if (pins_not_u_block1 > 0) {
-              ASSERT(containsNodeId(mapToOutgoingHyperedgeID(hypergraph, he)), "Sink is not contained in flow problem!"<< V(pins_not_u_block0)
+              ASSERT(containsNodeId(mapToOutgoingHyperedgeID(he)), "Sink is not contained in flow problem!"<< V(pins_not_u_block0)
               << V(pins_not_u_block1)<< V(pins_u_block0)<< V(pins_u_block1));
-              addSinkWithId(mapToOutgoingHyperedgeID(hypergraph, he));
+              addSinkWithId(mapToOutgoingHyperedgeID(he));
             }
           }
 
@@ -538,7 +516,7 @@ class FlowNetwork {
             cut += hypergraph.edgeWeight(he);
           }
 
-          _visited.set(hypergraph.originalEdgeID(he), true);
+          _visited.set(he, true);
         }
       }
     }
@@ -546,7 +524,7 @@ class FlowNetwork {
     return cut;
   }
 
-  bool isRemovableFromCut(HyperGraph& hypergraph, const HyperedgeID he, const PartitionID block_0, const PartitionID block_1) {
+  bool isRemovableFromCut(mt_kahypar::PartitionedHypergraph<>& hypergraph, const HyperedgeID he, const PartitionID block_0, const PartitionID block_1) {
     if (hypergraph.connectivity(he) > 2) {
       return false;
     }
@@ -577,7 +555,7 @@ class FlowNetwork {
 
     e1.reverseEdge = _flow_graph_idx + 1;
     e2.reverseEdge = _flow_graph_idx;
- 
+
     if(_flow_graph_idx + 1 < _flow_graph_size ){
       _flow_graph[_flow_graph_idx] = e1;
       _node_to_edge[u] = _flow_graph_idx++;
@@ -610,15 +588,15 @@ class FlowNetwork {
    * Add a hyperedge to flow problem
    * Edge e' -> e''
    */
-  void addHyperedge(HyperGraph& hypergraph, const Context& context, const HyperedgeID he, bool ignoreHESizeOne = false) {
-    const NodeID u = mapToIncommingHyperedgeID(hypergraph, he);
-    const NodeID v = mapToOutgoingHyperedgeID(hypergraph, he);
-    if (!ignoreHESizeOne && isHyperedgeOfSize(hypergraph, he, 1)) {
+  void addHyperedge(mt_kahypar::PartitionedHypergraph<>& hypergraph, const Context& context, const HyperedgeID he, bool ignoreHESizeOne = false) {
+    const NodeID u = mapToIncommingHyperedgeID(he);
+    const NodeID v = mapToOutgoingHyperedgeID(he);
+    if (!ignoreHESizeOne && isHyperedgeOfSize(he, 1)) {
       // Check if he is really a hyperedge of size 1 in flow problem
       ASSERT([&]() {
             size_t num_flow_hns = 0;
             for (const HypernodeID& pin : hypergraph.pins(he)) {
-              if (containsHypernode(hypergraph, pin)) {
+              if (containsHypernode(pin)) {
                 num_flow_hns++;
               }
             }
@@ -647,7 +625,7 @@ class FlowNetwork {
     }
   }
 
-  void addGraphEdge(HyperGraph& hypergraph, const HyperedgeID he) {
+  void addGraphEdge(mt_kahypar::PartitionedHypergraph<>& hypergraph, const HyperedgeID he) {
     ASSERT(hypergraph.edgeSize(he) == 2, "Hyperedge " << he << " is not a graph edge!");
 
     HypernodeID u = kinvalidFlowNetworkNode;
@@ -660,15 +638,15 @@ class FlowNetwork {
       }
     }
 
-    ASSERT(containsHypernode(hypergraph, u) || containsHypernode(hypergraph, v),
+    ASSERT(containsHypernode(u) || containsHypernode(v),
            "Hyperedge " << he << " is not in contained in the flow problem!");
-    if (containsHypernode(hypergraph, v)) {
+    if (containsHypernode(v)) {
       std::swap(u, v);
     }
-    addNodeId(hypergraph.originalNodeID(u));
+    addNodeId(u);
 
-    if (containsHypernode(hypergraph, v)) {
-      addEdge(hypergraph.originalNodeID(u), hypergraph.originalNodeID(v), hypergraph.edgeWeight(he), true);
+    if (containsHypernode(v)) {
+      addEdge(u, v, hypergraph.edgeWeight(he), true);
     }
   }
 
@@ -676,39 +654,39 @@ class FlowNetwork {
    * Connecting a hyperedge with its pin
    * Edges e'' -> v and v -> e'
    */
-  void addPin(HyperGraph& hypergraph, const HyperedgeID he, const HypernodeID pin) {
-    const NodeID u = mapToIncommingHyperedgeID(hypergraph, he);
-    const NodeID v = mapToOutgoingHyperedgeID(hypergraph, he);
+  void addPin(mt_kahypar::PartitionedHypergraph<>& hypergraph, const HyperedgeID he, const HypernodeID pin) {
+    const NodeID u = mapToIncommingHyperedgeID(he);
+    const NodeID v = mapToOutgoingHyperedgeID(he);
     if (containsNodeId(u) && containsNodeId(v)) {
-      addEdge(hypergraph.originalNodeID(pin), u, kInfty);
-      addEdge(v, hypergraph.originalNodeID(pin), kInfty);
+      addEdge(pin, u, kInfty);
+      addEdge(v, pin, kInfty);
     } else {
       if (containsNodeId(u)) {
         ASSERT(_node_to_edge[u] == kinvalidFlowNetworkNode, "Pin of size 1 hyperedge already added in flow graph!");
-        addEdge(u, hypergraph.originalNodeID(pin), hypergraph.edgeWeight(he));
+        addEdge(u, pin, hypergraph.edgeWeight(he));
       } else if (containsNodeId(v)) {
         ASSERT(_node_to_edge[v] == kinvalidFlowNetworkNode, "Pin of size 1 hyperedge already added in flow graph!");
-        addEdge(hypergraph.originalNodeID(pin), v, hypergraph.edgeWeight(he));
+        addEdge(pin, v, hypergraph.edgeWeight(he));
       }
     }
-    ASSERT(!(containsNodeId(u) || containsNodeId(v)) || containsNodeGlobalId(hypergraph, pin),
+    ASSERT(!(containsNodeId(u) || containsNodeId(v)) || _nodes.contains(pin),
            "Pin " << pin << " should be added to flow graph!" << V(containsNodeId(u)) << V(containsNodeId(v))
-           << V(containsNodeGlobalId(hypergraph, pin)) << V(hypergraph.originalNodeID(pin)));
+           << V(_nodes.contains(pin)) << V(pin));
   }
 
   /*
    * Connecting the outgoing hyperedge node of he to all incomming
    * hyperedge nodes of incident hyperedges of hn.
    */
-  void addClique(HyperGraph& hypergraph, const HyperedgeID he, const HypernodeID hn) {
+  void addClique(mt_kahypar::PartitionedHypergraph<>& hypergraph, const HyperedgeID he, const HypernodeID hn) {
     ASSERT(hypergraph.nodeDegree(hn) <= 3,
            "Hypernode " << hn << " should not be removed from flow problem!");
-    _removed_hypernodes.add(hypergraph.originalNodeID(hn));
-    _he_visited.set(hypergraph.originalEdgeID(he), true);
+    _removed_hypernodes.add(hn);
+    _he_visited.set(he, true);
     for (const HyperedgeID& target : hypergraph.incidentEdges(hn)) {
-      if (!_he_visited[hypergraph.originalEdgeID(target)]) {
-        addEdge(mapToOutgoingHyperedgeID(hypergraph, he), mapToIncommingHyperedgeID(hypergraph, target), kInfty);
-        _he_visited.set(hypergraph.originalEdgeID(target), true);
+      if (!_he_visited[target]) {
+        addEdge(mapToOutgoingHyperedgeID(he), mapToIncommingHyperedgeID(target), kInfty);
+        _he_visited.set(target, true);
       }
     }
   }
@@ -732,11 +710,11 @@ class FlowNetwork {
   kahypar::ds::FastResetArray<size_t> _pins_block1;
   PartitionID _cur_block0;
   PartitionID _cur_block1;
-  kahypar::ds::FastResetFlagArray<> _contains_graph_hyperedges;  
+  kahypar::ds::FastResetFlagArray<> _contains_graph_hyperedges;
   size_t _flow_graph_size;
   AdjacentList _flow_graph;
   size_t _flow_graph_idx;
-  
+
   parallel::scalable_vector<size_t> _node_to_edge;
 
   kahypar::ds::FastResetFlagArray<> _visited;
@@ -745,22 +723,21 @@ class FlowNetwork {
 
 };
 
-template <typename TypeTraits, typename FlowTypeTraits>
-class MatchingFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
-  using Base = FlowNetwork<TypeTraits,FlowTypeTraits>;
+template <typename FlowTypeTraits>
+class MatchingFlowNetwork:public FlowNetwork<FlowTypeTraits>  {
+  using Base = FlowNetwork<FlowTypeTraits>;
   using Base::Base;
 
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using Scheduler = typename FlowTypeTraits::Scheduler;
 
   public:
-    void releaseImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+    void releaseImpl(mt_kahypar::PartitionedHypergraph<>& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
       std::pair<HypernodeWeight, HypernodeWeight> current_part_weight = this->get_current_part_weight(hypergraph,block_0, block_1);
 
-      ASSERT(current_part_weight.first + current_part_weight.second == scheduler.get_aquired_part_weight(block_0, block_1).first + 
+      ASSERT(current_part_weight.first + current_part_weight.second == scheduler.get_aquired_part_weight(block_0, block_1).first +
       scheduler.get_aquired_part_weight(block_0, block_1).second, "updated partweights incorrect!" <<
-       V(current_part_weight.first + current_part_weight.second) << 
-       V(scheduler.get_aquired_part_weight(block_0, block_1).first + 
+       V(current_part_weight.first + current_part_weight.second) <<
+       V(scheduler.get_aquired_part_weight(block_0, block_1).first +
       scheduler.get_aquired_part_weight(block_0, block_1).second));
 
       //release aquired block_weight
@@ -768,7 +745,7 @@ class MatchingFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
       scheduler.release_block_weight(block_1, block_0, current_part_weight.second);
     }
 
-    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, const PartitionID block_1,
+    void fixAquiredHyperEdge(mt_kahypar::PartitionedHypergraph<>& hypergraph, const PartitionID block_0, const PartitionID block_1,
      Scheduler & scheduler, const HyperedgeID he){
       unused(hypergraph);
       unused(block_0);
@@ -778,22 +755,21 @@ class MatchingFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
     }
 };
 
-template <typename TypeTraits, typename FlowTypeTraits>
-class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
-  using Base = FlowNetwork<TypeTraits,FlowTypeTraits>;
+template <typename FlowTypeTraits>
+class OptFlowNetwork:public FlowNetwork<FlowTypeTraits>  {
+  using Base = FlowNetwork<FlowTypeTraits>;
   using Base::Base;
 
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using Scheduler = typename FlowTypeTraits::Scheduler;
 
   public:
-    void releaseImpl(HyperGraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
+    void releaseImpl(mt_kahypar::PartitionedHypergraph<>& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
       std::pair<HypernodeWeight, HypernodeWeight> current_part_weight = this->get_current_part_weight(hypergraph,block_0, block_1);
 
-      ASSERT(current_part_weight.first + current_part_weight.second == scheduler.get_aquired_part_weight(block_0, block_1).first + 
+      ASSERT(current_part_weight.first + current_part_weight.second == scheduler.get_aquired_part_weight(block_0, block_1).first +
       scheduler.get_aquired_part_weight(block_0, block_1).second, "updated partweights incorrect!" <<
-       V(current_part_weight.first + current_part_weight.second) << 
-       V(scheduler.get_aquired_part_weight(block_0, block_1).first + 
+       V(current_part_weight.first + current_part_weight.second) <<
+       V(scheduler.get_aquired_part_weight(block_0, block_1).first +
       scheduler.get_aquired_part_weight(block_0, block_1).second));
 
       //release aquired block_weight
@@ -803,14 +779,14 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
       //release aquired hyperndoes
       for (const HypernodeID& hn : this->hypernodes()) {
         scheduler.releaseNode(hn);
-      }  
+      }
     }
 
-    void fixAquiredHyperEdge(HyperGraph& hypergraph, const PartitionID block_0, const PartitionID block_1,
+    void fixAquiredHyperEdge(mt_kahypar::PartitionedHypergraph<>& hypergraph, const PartitionID block_0, const PartitionID block_1,
      Scheduler & scheduler, const HyperedgeID he){
        unused(block_1);
       for (const HypernodeID& pin : hypergraph.pins(he)) {
-        if (!this->_hypernodes.contains(hypergraph.originalNodeID(pin)) && scheduler.isAquired(pin)) {
+        if (!this->_hypernodes.contains(pin) && scheduler.isAquired(pin)) {
           if(scheduler.is_block_overlap(pin, block_0, block_1)){
             this->_contains_aquired_node.set(he, true);
             fixNodes(hypergraph, he, block_0);
@@ -821,12 +797,12 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
     }
 
   private:
-    void fixNodes(HyperGraph& hypergraph, HyperedgeID he, const PartitionID block_0){
-    const size_t pins_u_block0 = this->_pins_block0.get(hypergraph.originalEdgeID(he));
-    const size_t pins_u_block1 = this->_pins_block1.get(hypergraph.originalEdgeID(he));
+    void fixNodes(mt_kahypar::PartitionedHypergraph<>& hypergraph, HyperedgeID he, const PartitionID block_0){
+    const size_t pins_u_block0 = this->_pins_block0.get(he);
+    const size_t pins_u_block1 = this->_pins_block1.get(he);
 
-    const NodeID u = this->mapToIncommingHyperedgeID(hypergraph, he);
-    const NodeID v = this->mapToOutgoingHyperedgeID(hypergraph, he);
+    const NodeID u = this->mapToIncommingHyperedgeID(he);
+    const NodeID v = this->mapToOutgoingHyperedgeID(he);
 
     if(pins_u_block0 > 0){
       this->addNodeId(u);
@@ -838,7 +814,7 @@ class OptFlowNetwork:public FlowNetwork<TypeTraits,FlowTypeTraits>  {
     }
 
     for (const HypernodeID& pin : hypergraph.pins(he)) {
-      if (this->_hypernodes.contains(hypergraph.originalNodeID(pin))) {
+      if (this->_hypernodes.contains(pin)) {
         if(hypergraph.partID(pin) == block_0){
           this->addEdge(u, pin, kInfty);
         }else{

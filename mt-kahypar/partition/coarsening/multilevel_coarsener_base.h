@@ -203,8 +203,8 @@ class MultilevelCoarsenerBase {
     _hierarchies.emplace_back(std::move(contracted_hg), std::move(communities));
   }
 
-  PartitionedHyperGraph&& doUncoarsen(std::unique_ptr<Refiner>& label_propagation,
-                                      std::unique_ptr<Refiner>& flow) {
+  PartitionedHypergraph<>&& doUncoarsen(std::unique_ptr<IRefiner<>>& label_propagation,
+                                        std::unique_ptr<IRefiner<>>& flow) {
     PartitionedHypergraph<>& current_hg = currentPartitionedHypergraph();
     int64_t num_nodes = current_hg.initialNumNodes();
     int64_t num_edges = current_hg.initialNumEdges();

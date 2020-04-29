@@ -34,13 +34,7 @@ using ::testing::Test;
 namespace mt_kahypar {
 namespace ds {
 
-using TypeTraits = TestTypeTraits<1>;
-using HyperGraph = typename TypeTraits::HyperGraph;
-using HyperGraphFactory = typename TypeTraits::HyperGraphFactory;
-using PartitionedHyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-using TBB = typename TypeTraits::TBB;
-
-
+using PartitionedHyperGraph = mt_kahypar::PartitionedHypergraph<>;
 
 #define INCOMING(X) flowNetwork.mapToIncommingHyperedgeID(X)
 #define OUTGOING(X) flowNetwork.mapToOutgoingHyperedgeID(X)
@@ -58,7 +52,7 @@ public:
     using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 
   AFlowNetworkTest() :
-    hg(HyperGraphFactory::construct(TBB::GLOBAL_TASK_GROUP,
+    hg(HypergraphFactory::construct(TBBNumaArena::GLOBAL_TASK_GROUP,
       80 , 13, { { 0, 20},
                 {1, 2, 22},
                 {3, 8, 22},
@@ -83,12 +77,11 @@ public:
         context.setupPartWeights(80);
         context.refinement.flow.alpha = 32;
 
-        hypergraph = PartitionedHyperGraph(4, TBB::GLOBAL_TASK_GROUP, hg);
+        hypergraph = PartitionedHyperGraph(4, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
 
         // Assign part ids
-        for ( HypernodeID original_hn = 0; original_hn < 80; ++original_hn ) {
-            const HypernodeID hn = hypergraph.globalNodeID(original_hn);
-            hypergraph.setNodePart(hn, original_hn / 20);
+        for ( HypernodeID hn = 0; hn < 80; ++hn ) {
+            hypergraph.setNodePart(hn, hn / 20);
         }
         hypergraph.initializeNumCutHyperedges();
 
@@ -112,7 +105,7 @@ public:
                     visited, scheduler);
     }
 
-  HyperGraph hg;
+  Hypergraph hg;
   PartitionedHyperGraph hypergraph;
   Context context;
   kahypar::ds::FastResetFlagArray<> visited;
@@ -122,15 +115,14 @@ public:
   std::unique_ptr<Scheduler> scheduler;
 };
 
-template <typename TypeTraits>
 struct FlowTestOptTypeTraits{
-    using Scheduler = OptScheduler<TypeTraits>;
-    using RegionBuildPolicy = OptFlowRegionBuildPolicy<TypeTraits>;
-    using FlowNetwork = ds::OptFlowNetwork<TypeTraits, FlowTestOptTypeTraits>;
-    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<TypeTraits, FlowTestOptTypeTraits>;
+    using Scheduler = OptScheduler;
+    using RegionBuildPolicy = OptFlowRegionBuildPolicy;
+    using FlowNetwork = ds::OptFlowNetwork<FlowTestOptTypeTraits>;
+    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<FlowTestOptTypeTraits>;
 };
 
-typedef ::testing::Types<FlowTestOptTypeTraits<TypeTraits>> OptConfig;
+typedef ::testing::Types<FlowTestOptTypeTraits> OptConfig;
 
 TYPED_TEST_CASE(AFlowNetworkTest, OptConfig);
 
@@ -148,11 +140,11 @@ TYPED_TEST(AFlowNetworkTest, FlowRegionTest) {
   std::vector<HypernodeID> contained = {0,1, 2, 3, 6, 7, 8, 10, 11, 12, 20, 21, 22, 26, 31, 32, 33};
   std::vector<HypernodeID> not_contained = {4, 5, 9, 13, 14, 15, 16, 17, 18, 19, 23, 24, 25, 27, 28, 29, 30, 34, 35, 36, 37, 38, 39};
   for(HypernodeID node: contained){
-    ASSERT_TRUE(this->flow_network->containsHypernode(this->hypergraph, node));
+    ASSERT_TRUE(this->flow_network->containsHypernode(node));
     ASSERT_TRUE(this->scheduler->isAquired(node));
   }
   for(HypernodeID node: not_contained){
-    ASSERT_FALSE(this->flow_network->containsHypernode(this->hypergraph, node));
+    ASSERT_FALSE(this->flow_network->containsHypernode(node));
     ASSERT_FALSE(this->scheduler->isAquired(node));
   }
 
@@ -169,11 +161,11 @@ TYPED_TEST(AFlowNetworkTest, FlowRegionTest) {
   contained = {4, 13, 14, 16, 17, 18, 40, 41, 45, 50, 51, 56};
   not_contained = {5, 9, 15, 19};
   for(HypernodeID node: contained){
-    ASSERT_TRUE(this->flow_network2->containsHypernode(this->hypergraph, node));
+    ASSERT_TRUE(this->flow_network2->containsHypernode(node));
     ASSERT_TRUE(this->scheduler->isAquired(node));
   }
   for(HypernodeID node: not_contained){
-    ASSERT_FALSE(this->flow_network2->containsHypernode(this->hypergraph, node));
+    ASSERT_FALSE(this->flow_network2->containsHypernode(node));
     ASSERT_FALSE(this->scheduler->isAquired(node));
   }
 }
@@ -241,14 +233,14 @@ TYPED_TEST(AFlowNetworkTest, FlowNetWorkBuild) {
                   this->hypergraph, this->context, *this->flow_network2,
                   cut_hes2, this->context.refinement.flow.alpha, 0, 2,
                   this->visited, *this->scheduler);
-  
+
   this->flow_network->build(this->hypergraph, this->context, 0, 1, *this->scheduler);
 
   ASSERT_EQ(this->flow_network->numNodes(), 18);
   ASSERT_EQ(this->flow_network->numEdges(), 26);
   ASSERT_EQ(this->flow_network->numUndirectedEdges(), 3);
   ASSERT_EQ(this->flow_network->totalWeightHyperedges(), 8);
-  ASSERT_TRUE(this->flow_network->isRemovedHypernode(this->hypergraph, 21));
+  ASSERT_TRUE(this->flow_network->isRemovedHypernode(21));
 
   this->flow_network2->build(this->hypergraph, this->context, 0, 2, *this->scheduler);
 
@@ -256,7 +248,7 @@ TYPED_TEST(AFlowNetworkTest, FlowNetWorkBuild) {
   ASSERT_EQ(this->flow_network2->numEdges(), 12);
   ASSERT_EQ(this->flow_network2->numUndirectedEdges(), 2);
   ASSERT_EQ(this->flow_network2->totalWeightHyperedges(), 4);
-  ASSERT_TRUE(this->flow_network2->isRemovedHypernode(this->hypergraph, 51));
+  ASSERT_TRUE(this->flow_network2->isRemovedHypernode(51));
 }
 
 TYPED_TEST(AFlowNetworkTest, SourcesAndSinks) {
@@ -281,7 +273,7 @@ TYPED_TEST(AFlowNetworkTest, SourcesAndSinks) {
                   this->hypergraph, this->context, *this->flow_network2,
                   cut_hes2, this->context.refinement.flow.alpha, 0, 2,
                   this->visited, *this->scheduler);
-  
+
   this->flow_network->build(this->hypergraph, this->context, 0, 1, *this->scheduler);
   this->flow_network2->build(this->hypergraph, this->context, 0, 2, *this->scheduler);
 
@@ -314,15 +306,15 @@ TYPED_TEST(AFlowNetworkTest, IncidentEdges) {
                   this->hypergraph, this->context, *this->flow_network2,
                   cut_hes2, this->context.refinement.flow.alpha, 0, 2,
                   this->visited, *this->scheduler);
-  
+
   this->flow_network->build(this->hypergraph, this->context, 0, 1, *this->scheduler);
   this->flow_network2->build(this->hypergraph, this->context, 0, 2, *this->scheduler);
 
-  std::set<size_t> targets = {86, 99, 89}; 
+  std::set<size_t> targets = {86, 99, 89};
   for(auto e:this->flow_network->incidentEdges(12)){
     ASSERT_TRUE(targets.find(e.target) != targets.end());
   }
-  targets = {50, 89}; 
+  targets = {50, 89};
   for(auto e:this->flow_network2->incidentEdges(14)){
     ASSERT_TRUE(targets.find(e.target) != targets.end());
   }
@@ -350,14 +342,14 @@ TYPED_TEST(AFlowNetworkTest, AquiredPartWeight) {
                   this->hypergraph, this->context, *this->flow_network2,
                   cut_hes2, this->context.refinement.flow.alpha, 0, 2,
                   this->visited, *this->scheduler);
-  
+
   this->flow_network->build(this->hypergraph, this->context, 0, 1, *this->scheduler);
   this->flow_network2->build(this->hypergraph, this->context, 0, 2, *this->scheduler);
 
   auto partweights = this->scheduler->get_aquired_part_weight(0, 1);
   ASSERT_EQ(partweights.first, 10);
   ASSERT_EQ(partweights.second, 7);
-  
+
   partweights = this->scheduler->get_aquired_part_weight(0, 2);
   ASSERT_EQ(partweights.first, 6);
   ASSERT_EQ(partweights.second, 6);

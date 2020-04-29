@@ -29,18 +29,11 @@ namespace mt_kahypar {
 
 using ::testing::Test;
 
-using TypeTraits = ds::TestTypeTraits<1>;
-using HyperGraph = typename TypeTraits::HyperGraph;
-using HyperGraphFactory = typename TypeTraits::HyperGraphFactory;
-using PartitionedHyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-using TBB = typename TypeTraits::TBB;
-
-
 template<typename Scheduler>
 class AOptScheduler : public Test {
  public:
   AOptScheduler() :
-    hg(HyperGraphFactory::construct(TBB::GLOBAL_TASK_GROUP,
+    hg(HypergraphFactory::construct(TBBNumaArena::GLOBAL_TASK_GROUP,
       32 , 8, { { 0, 1,  2,  3,  8,  9,  10,  11 },
                 {0, 20},
                 {0, 24},
@@ -57,42 +50,39 @@ class AOptScheduler : public Test {
     context.partition.epsilon = 0.0;
     context.setupPartWeights(32);
 
-    hypergraph = PartitionedHyperGraph(8, TBB::GLOBAL_TASK_GROUP, hg);
+    hypergraph = PartitionedHypergraph<>(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
 
     // Assign part ids
-    for ( HypernodeID original_hn = 0; original_hn < 32; ++original_hn ) {
-      const HypernodeID hn = hypergraph.globalNodeID(original_hn);
-      hypergraph.setNodePart(hn, original_hn / 4);
+    for ( HypernodeID hn = 0; hn < 32; ++hn ) {
+      hypergraph.setNodePart(hn, hn / 4);
     }
     hypergraph.initializeNumCutHyperedges();
 
     scheduler = std::make_unique<Scheduler>(hypergraph, context);
   }
 
-  HyperGraph hg;
-  PartitionedHyperGraph hypergraph;
+  Hypergraph hg;
+  PartitionedHypergraph<> hypergraph;
   Context context;
 
   std::unique_ptr<Scheduler> scheduler;
 };
 
-typedef ::testing::Types<OptScheduler<TypeTraits>> OptConfig;
+typedef ::testing::Types<OptScheduler> OptConfig;
 
 TYPED_TEST_CASE(AOptScheduler, OptConfig);
 
 
 TYPED_TEST(AOptScheduler, GetInitialEdgesOpt) {
   this->scheduler->buildQuotientGraph();
-  std::vector<std::vector<edge>> initial_edges = this->scheduler->getInitialParallelEdges();
-  std::vector<std::vector<edge>> right_init_edges = { {std::make_pair(0, 2), std::make_pair(6, 7),
-                                                      std::make_pair(4, 5), std::make_pair(1, 3),
-                                                       std::make_pair(3, 7), std::make_pair(0, 5),
-                                                       std::make_pair(1, 7),std::make_pair(0, 6)} };
-  for (size_t i = 0; i < initial_edges.size(); i++) {
-    for (size_t j = 0; j < initial_edges[i].size(); j++){    
-      ASSERT_EQ(initial_edges[i][j].first, right_init_edges[i][j].first);
-      ASSERT_EQ(initial_edges[i][j].second, right_init_edges[i][j].second);
-    }
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
+  std::vector<edge> right_init_edges = { std::make_pair(0, 2), std::make_pair(6, 7),
+                                         std::make_pair(4, 5), std::make_pair(1, 3),
+                                         std::make_pair(3, 7), std::make_pair(0, 5),
+                                         std::make_pair(1, 7),std::make_pair(0, 6)} ;
+  for (size_t i = 0; i < initial_edges.size(); i++){
+    ASSERT_EQ(initial_edges[i].first, right_init_edges[i].first);
+    ASSERT_EQ(initial_edges[i].second, right_init_edges[i].second);
   }
 }
 
@@ -174,15 +164,7 @@ TYPED_TEST(AOptScheduler, HasCorrectCutHyperedgesAfterMove) {
     ASSERT_EQ(e, 7);
   }
 
-  
-}
 
-TYPED_TEST(AOptScheduler, GetNumberOfActiveTasks) {
-  this->scheduler->buildQuotientGraph();
-  std::vector<std::vector<edge>> initial_edges = this->scheduler->getInitialParallelEdges();
-  size_t tasks_should = initial_edges[0].size();
-  size_t tasks = this->scheduler->getNumberOfActiveTasks();
-  ASSERT_EQ(tasks_should, tasks);
 }
 
 TYPED_TEST(AOptScheduler, AquireNodeTest) {
@@ -226,7 +208,7 @@ TYPED_TEST(AOptScheduler, ActiveBlocks) {
   this->scheduler->buildQuotientGraph();
   ASSERT_EQ(this->context.partition.k , this->scheduler->getNumberOfActiveBlocks());
 
-  std::vector<std::vector<edge>> initial_edges = this->scheduler->getInitialParallelEdges();
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
   ASSERT_EQ(0 , this->scheduler->getNumberOfActiveBlocks());
 
   this->scheduler->setActiveBlock(0, true);
@@ -240,7 +222,7 @@ TYPED_TEST(AOptScheduler, InitBlockWeight) {
   this->scheduler->init_block_weights();
   for (int i = 0; i < this->context.partition.k; i++){
     ASSERT_EQ(4 ,this->scheduler->get_not_aquired_weight(i, (i + 1)% this->context.partition.k));
-  } 
+  }
 }
 
 TYPED_TEST(AOptScheduler, AquireBlockWeight) {
@@ -261,7 +243,7 @@ template<typename Scheduler>
 class AMatchScheduler : public Test {
  public:
   AMatchScheduler() :
-    hg(HyperGraphFactory::construct(TBB::GLOBAL_TASK_GROUP,
+    hg(HypergraphFactory::construct(TBBNumaArena::GLOBAL_TASK_GROUP,
       32 , 8, { { 0, 1,  2,  3,  8,  9,  10,  11 },
                 {0, 20},
                 {0, 24},
@@ -278,40 +260,37 @@ class AMatchScheduler : public Test {
     context.partition.epsilon = 0.0;
     context.setupPartWeights(32);
 
-    hypergraph = PartitionedHyperGraph(8, TBB::GLOBAL_TASK_GROUP, hg);
+    hypergraph = PartitionedHypergraph<>(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
 
     // Assign part ids
-    for ( HypernodeID original_hn = 0; original_hn < 32; ++original_hn ) {
-      const HypernodeID hn = hypergraph.globalNodeID(original_hn);
-      hypergraph.setNodePart(hn, original_hn / 4);
+    for ( HypernodeID hn = 0; hn < 32; ++hn ) {
+      hypergraph.setNodePart(hn, hn / 4);
     }
     hypergraph.initializeNumCutHyperedges();
 
     scheduler = std::make_unique<Scheduler>(hypergraph, context);
   }
 
-  HyperGraph hg;
-  PartitionedHyperGraph hypergraph;
+  Hypergraph hg;
+  PartitionedHypergraph<> hypergraph;
   Context context;
 
   std::unique_ptr<Scheduler> scheduler;
 };
 
-typedef ::testing::Types<MatchingScheduler<TypeTraits>> MatchConfig;
+typedef ::testing::Types<MatchingScheduler> MatchConfig;
 
 TYPED_TEST_CASE(AMatchScheduler, MatchConfig);
 
 
 TYPED_TEST(AMatchScheduler, GetInitialEdgesMatch) {
   this->scheduler->buildQuotientGraph();
-  std::vector<std::vector<edge>> initial_edges = this->scheduler->getInitialParallelEdges();
-  std::vector<std::vector<edge>> right_init_edges = { {std::make_pair(0, 2), std::make_pair(6, 7) ,
-                                                       std::make_pair(4, 5), std::make_pair(1, 3)} };
-  for (size_t i = 0; i < initial_edges.size(); i++) {
-    for (size_t j = 0; j < initial_edges[i].size(); j++){    
-      ASSERT_EQ(initial_edges[i][j].first, right_init_edges[i][j].first);
-      ASSERT_EQ(initial_edges[i][j].second, right_init_edges[i][j].second);
-    }
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
+  std::vector<edge> right_init_edges = { std::make_pair(0, 2), std::make_pair(6, 7) ,
+                                         std::make_pair(4, 5), std::make_pair(1, 3)};
+  for (size_t i = 0; i < initial_edges.size(); i++){
+    ASSERT_EQ(initial_edges[i].first, right_init_edges[i].first);
+    ASSERT_EQ(initial_edges[i].second, right_init_edges[i].second);
   }
 }
 

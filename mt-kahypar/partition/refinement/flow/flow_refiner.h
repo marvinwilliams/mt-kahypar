@@ -18,12 +18,9 @@
 
 namespace mt_kahypar {
 
-template< typename TypeTraits, typename FlowTypeTraits>
-class FlowRefinerT final : public IRefinerT<TypeTraits>{
+template<typename FlowTypeTraits>
+class FlowRefiner final : public IRefiner<>{
     private:
-        using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-        using TBB = typename TypeTraits::TBB;
-        using HwTopology = typename TypeTraits::HwTopology;
         using Scheduler = typename FlowTypeTraits::Scheduler;
         using RegionBuildPolicy =  typename FlowTypeTraits::RegionBuildPolicy;
         using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
@@ -31,12 +28,12 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
         using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
-        using MaximumFlow = IBFS<TypeTraits, FlowTypeTraits>;
+        using MaximumFlow = IBFS<FlowTypeTraits>;
         using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
         using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
 
         struct FlowConfig {
-            explicit FlowConfig(HyperGraph& hg) :
+            explicit FlowConfig(PartitionedHypergraph<>& hg) :
                 hypergraph(hg),
                 flow_network(
                    hypergraph.initialNumNodes(), hypergraph.initialNumEdges(),
@@ -46,30 +43,30 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                    hypergraph.initialNumNodes()),
                 visited(hypergraph.initialNumNodes() + hypergraph.initialNumEdges()) { }
 
-            HyperGraph& hypergraph;
+            PartitionedHypergraph<>& hypergraph;
             ThreadLocalFlowNetwork flow_network;
             ThreadLocalMaximumFlow maximum_flow;
             ThreadLocalFastResetFlagArray visited;
         };
 
     public:
-        explicit FlowRefinerT(HyperGraph&,
+        explicit FlowRefiner(PartitionedHypergraph<>&,
                               const Context& context,
                               const TaskGroupID task_group_id) :
             _context(context),
             _task_group_id(task_group_id),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
             _round_delta(0),
-            _start_new_parallel_do(TBB::instance().num_used_numa_nodes()) { }
+            _start_new_parallel_do(TBBNumaArena::instance().num_used_numa_nodes()) { }
 
-        FlowRefinerT(const FlowRefinerT&) = delete;
-        FlowRefinerT(FlowRefinerT&&) = delete;
+        FlowRefiner(const FlowRefiner&) = delete;
+        FlowRefiner(FlowRefiner&&) = delete;
 
-        FlowRefinerT& operator= (const FlowRefinerT&) = delete;
-        FlowRefinerT& operator= (FlowRefinerT&&) = delete;
+        FlowRefiner& operator= (const FlowRefiner&) = delete;
+        FlowRefiner& operator= (FlowRefiner&&) = delete;
 
     private:
-        bool refineImpl(HyperGraph& hypergraph,
+        bool refineImpl(PartitionedHypergraph<>& hypergraph,
                         kahypar::Metrics& best_metrics) override final {
 
             FlowConfig config(hypergraph);
@@ -99,19 +96,13 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                 _round_delta = 0;
 
                 //parallel here
-                TBB::instance().execute_parallel_on_all_numa_nodes(TBBNumaArena::GLOBAL_TASK_GROUP, [&](const int node) {
-                    tbb::parallel_do(scheduling_edges[node],
-                    [&](Edge e,
-                        tbb::parallel_do_feeder<Edge>& feeder){
-                            parallelFlowCalculation(
-                                config, e, node, current_round,
-                                improvement, scheduler, feeder);
-                        });
-                });
-
-                while(scheduler.getNumberOfActiveTasks() > 0){
-                    TBB::instance().wait(0);
-                }
+                tbb::parallel_do(scheduling_edges,
+                [&](Edge e,
+                    tbb::parallel_do_feeder<Edge>& feeder){
+                        parallelFlowCalculation(
+                            config, e, current_round,
+                            improvement, scheduler, feeder);
+                    });
 
                 //LOG << "ROUND done_______________________________________________________";
 
@@ -121,9 +112,9 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                     current_metric = metrics::objective(hypergraph, _context.partition.objective);
                 } else{
                     current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
-                } 
+                }
                 // best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
-                
+
                 double current_imbalance = metrics::imbalance(hypergraph, _context);
 
                 //check if the metric improved as exspected
@@ -149,13 +140,12 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
         }
 
 
-        void initializeImpl(HyperGraph&) override final {
+        void initializeImpl(PartitionedHypergraph<>&) override final {
 
         }
 
         void parallelFlowCalculation(FlowConfig& config,
                                      const Edge& edge,
-                                     const int node,
                                      const size_t& current_round,
                                      bool& improvement,
                                      Scheduler& scheduler,
@@ -170,9 +160,7 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
             //            second iteration of active block scheduling
             if (_context.refinement.flow.use_improvement_history &&
                 current_round > 1 && _num_improvements[block_0][block_1] == 0) {
-                scheduleNextBlocks(
-                    config, edge, node, current_round,
-                    improvement,scheduler, feeder);
+                scheduler.scheduleNextBlocks(edge, feeder);
                 //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
                 return;
             }
@@ -185,37 +173,8 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                 _num_improvements[block_0][block_1]++;
             }
 
-            scheduleNextBlocks(
-                config, edge, node, current_round,
-                improvement,scheduler, feeder);
+            scheduler.scheduleNextBlocks(edge, feeder);
             //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
-        }
-
-        void scheduleNextBlocks(FlowConfig& config,
-                                Edge old_edge,
-                                int node,
-                                const size_t & current_round,
-                                bool & improvement,
-                                Scheduler & scheduler,
-                                tbb::parallel_do_feeder<Edge>& feeder) {
-            //start new tasks on this numa node
-            auto sched_edges = scheduler.scheduleNextBlocks(old_edge, node, feeder);
-            //start new parallel do on stalled numa nodes
-            for(const auto sched_edge:sched_edges){
-                _start_new_parallel_do[sched_edge.first] = std::vector<Edge>{sched_edge.second};
-                int numa_to_start = sched_edge.first;
-                TBB::instance().numa_task_arena(numa_to_start).execute([&] {
-                    TBB::instance().numa_task_group(TBBNumaArena::GLOBAL_TASK_GROUP, numa_to_start).run([&, numa_to_start] {
-                        tbb::parallel_do(_start_new_parallel_do[numa_to_start],
-                            [&](Edge e,
-                                tbb::parallel_do_feeder<Edge>& newfeeder){
-                                    parallelFlowCalculation(
-                                        config, e, numa_to_start, current_round,
-                                        improvement, scheduler, newfeeder);
-                        });
-                    });
-                });
-            }
         }
 
         bool executeAdaptiveFlow(FlowConfig& config,
@@ -225,7 +184,7 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
             HyperedgeWeight thread_local_delta = 0;
-            HyperGraph& hypergraph = config.hypergraph;
+            PartitionedHypergraph<>& hypergraph = config.hypergraph;
             FlowNetwork& flow_network = config.flow_network.local();
             MaximumFlow& maximum_flow = config.maximum_flow.local();
             kahypar::ds::FastResetFlagArray<>& visited = config.visited.local();
@@ -311,10 +270,9 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
                 // cut hyperedges between adjacent blocks.
                 if (current_improvement) {
                     auto& assignment = maximum_flow.get_assignment();
-                    for (const HypernodeID& ogHn : flow_network.hypernodes()) {
-                        const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
+                    for (const HypernodeID& hn : flow_network.hypernodes()) {
                         const PartitionID from = hypergraph.partID(hn);
-                        const PartitionID to = assignment[ogHn]? block_1: block_0;
+                        const PartitionID to = assignment[hn]? block_1: block_0;
                         if (from != to) {
                             scheduler.changeNodePart(hn, from, to);
                         }
@@ -351,23 +309,21 @@ class FlowRefinerT final : public IRefinerT<TypeTraits>{
     std::vector<std::vector<Edge>> _start_new_parallel_do;
 };
 
-template <typename TypeTraits>
 struct FlowMatchingTypeTraits{
-    using Scheduler = MatchingScheduler<TypeTraits>;
-    using RegionBuildPolicy = MatchingFlowRegionBuildPolicy<TypeTraits>;
-    using FlowNetwork = ds::MatchingFlowNetwork<TypeTraits, FlowMatchingTypeTraits>;
-    using MostBalancedMinimumCut = MatchingMostBalancedMinimumCut<TypeTraits, FlowMatchingTypeTraits>;
+    using Scheduler = MatchingScheduler;
+    using RegionBuildPolicy = MatchingFlowRegionBuildPolicy;
+    using FlowNetwork = ds::MatchingFlowNetwork<FlowMatchingTypeTraits>;
+    using MostBalancedMinimumCut = MatchingMostBalancedMinimumCut<FlowMatchingTypeTraits>;
 };
 
-template <typename TypeTraits>
 struct FlowOptTypeTraits{
-    using Scheduler = OptScheduler<TypeTraits>;
-    using RegionBuildPolicy = OptFlowRegionBuildPolicy<TypeTraits>;
-    using FlowNetwork = ds::OptFlowNetwork<TypeTraits, FlowOptTypeTraits>;
-    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<TypeTraits, FlowOptTypeTraits>;
+    using Scheduler = OptScheduler;
+    using RegionBuildPolicy = OptFlowRegionBuildPolicy;
+    using FlowNetwork = ds::OptFlowNetwork<FlowOptTypeTraits>;
+    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<FlowOptTypeTraits>;
 };
 
-using FlowRefinerMatch = FlowRefinerT<GlobalTypeTraits, FlowMatchingTypeTraits<GlobalTypeTraits>>;
-using FlowRefinerOpt = FlowRefinerT<GlobalTypeTraits, FlowOptTypeTraits<GlobalTypeTraits>>;
+using FlowRefinerMatch = FlowRefiner<FlowMatchingTypeTraits>;
+using FlowRefinerOpt = FlowRefiner<FlowOptTypeTraits>;
 
 } //namespace mt_kahypar

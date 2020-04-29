@@ -35,11 +35,11 @@
     return new refiner(hypergraph, context, task_group_id);                                                            \
   })
 
-#define REGISTER_FLOW_REFINER(id, refiner, t)                                                                        \
-  static kahypar::meta::Registrar<FlowFactory> JOIN(register_ ## refiner, t)(                                        \
-    id,                                                                                                              \
-    [](PartitionedHypergraph<>& hypergraph, const Context& context, const TaskGroupID task_group_id) -> IRefiner* {  \
-    return new refiner(hypergraph, context, task_group_id);                                                          \
+#define REGISTER_FLOW_REFINER(id, refiner, t)                                                                          \
+  static kahypar::meta::Registrar<FlowFactory> JOIN(register_ ## refiner, t)(                                          \
+    id,                                                                                                                \
+    [](PartitionedHypergraph<>& hypergraph, const Context& context, const TaskGroupID task_group_id) -> IRefiner<>* {  \
+    return new refiner(hypergraph, context, task_group_id);                                                            \
   })
 
 

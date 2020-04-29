@@ -44,9 +44,8 @@
 #include "mt-kahypar/partition/refinement/flow/most_balanced_minimum_cut.h"
 
 namespace mt_kahypar {
-template <typename TypeTraits, typename FlowTypeTraits>
+template <typename FlowTypeTraits>
 class MaximumFlow {
-using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
 using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 using Scheduler = typename FlowTypeTraits::Scheduler;
 using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
@@ -69,9 +68,9 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   MaximumFlow& operator= (MaximumFlow&&) = delete;
 
 
-  virtual Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) = 0;
+  virtual Flow maximumFlow(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) = 0;
 
-  HyperedgeWeight minimumSTCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
+  HyperedgeWeight minimumSTCut(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network,
                                const Context& context,
                                const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler,
                                const HyperedgeWeight cut_flow_network_before) {
@@ -79,12 +78,12 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
       return kInfty;
     }
 
-    utils::Timer::instance().start_timer("maxFlow", "Calculating max Flow ", true);                
+    utils::Timer::instance().start_timer("maxFlow", "Calculating max Flow ", true);
     const HyperedgeWeight cut = maximumFlow(hypergraph, flow_network);
     utils::Timer::instance().stop_timer("maxFlow");
 
     if(cut < cut_flow_network_before){
-      utils::Timer::instance().start_timer("MBMC", "Finding MBMC ", true);                
+      utils::Timer::instance().start_timer("MBMC", "Finding MBMC ", true);
       if (context.refinement.flow.use_most_balanced_minimum_cut) {
         _mbmc.mostBalancedMinimumCut(hypergraph, flow_network, context, block_0, block_1, scheduler, _new_imbalance);
       } else {
@@ -104,7 +103,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   }
 
   template <bool assign_hypernodes = false>
-  bool bfs(HyperGraph& hypergraph, FlowNetwork& flow_network, const PartitionID block = 0) {
+  bool bfs(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network, const PartitionID block = 0) {
     bool augmenting_path_exists = false;
     _parent.resetUsedEntries();
     _visited.reset();
@@ -128,10 +127,9 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
 
           moveHypernode(hypergraph, u_og, block);
         } else if (flow_network.interpreteHyperedge(u_og)) {
-          const HyperedgeID he_og = flow_network.mapToHyperedgeID(u_og);
-          const HyperedgeID he = hypergraph.globalNodeID(he_og);
+          const HyperedgeID he = flow_network.mapToHyperedgeID(u_og);
           for (const HypernodeID& pin : hypergraph.pins(he)) {
-            if (flow_network.containsHypernode(hypergraph, pin)) {
+            if (flow_network.containsHypernode(pin)) {
               moveHypernode(hypergraph, pin, block);
             }
           }
@@ -150,7 +148,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
           _visited.set(v, true);
           _Q.push(v);
         }
-      }    
+      }
     }
     return augmenting_path_exists;
   }
@@ -162,7 +160,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   FRIEND_TEST(AMaximumFlow, AugmentAlongPath);
 
   Flow augment(FlowNetwork& flow_network, const NodeID cur, const Flow min_flow = FlowNetwork::kInfty) {
-    if (flow_network.isGlobalIdSource(cur) || min_flow == 0) {
+    if (flow_network.isIdSource(cur) || min_flow == 0) {
       return min_flow;
     } else {
       ds::FlowEdge* e = _parent.get(cur);
@@ -198,7 +196,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
     }
   }
 
-  void moveHypernode(HyperGraph& hypergraph, const HypernodeID hn, const PartitionID to) {
+  void moveHypernode(PartitionedHypergraph<>& hypergraph, const HypernodeID hn, const PartitionID to) {
     ASSERT(hypergraph.partID(hn) != -1, "Hypernode " << hn << " should be assigned to a part");
     const PartitionID from = hypergraph.partID(hn);
     if (from != to ) { //&& !hypergraph.isFixedVertex(hn)
@@ -219,12 +217,11 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   std::vector<PartitionID> _original_part_id;
 };
 
-template <typename TypeTraits, typename FlowTypeTraits>
-class BoykovKolmogorov : public MaximumFlow<TypeTraits, FlowTypeTraits>{
-  using Base = MaximumFlow<TypeTraits, FlowTypeTraits>;
+template <typename FlowTypeTraits>
+class BoykovKolmogorov : public MaximumFlow<FlowTypeTraits>{
+  using Base = MaximumFlow<FlowTypeTraits>;
   using FlowGraph = maxflow::Graph<int, int, int>;
  private:
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 
  public:
@@ -241,7 +238,7 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, FlowTypeTraits>{
   BoykovKolmogorov(BoykovKolmogorov&&) = delete;
   BoykovKolmogorov& operator= (BoykovKolmogorov&&) = delete;
 
-  Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) {
+  Flow maximumFlow(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
     unused(hypergraph);
     mapToExternalFlowNetwork();
 
@@ -274,10 +271,10 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, FlowTypeTraits>{
     for (const NodeID& node : flow_network.nodes()) {
       const NodeID id = _flow_graph.add_node();
       _flow_network_mapping[node] = id;
-      if (flow_network.isGlobalIdSource(node)) {
+      if (flow_network.isIdSource(node)) {
         _flow_graph.add_tweights(id, infty, 0);
       }
-      if (flow_network.isGlobalIdSink(node)) {
+      if (flow_network.isIdSink(node)) {
         _flow_graph.add_tweights(id, 0, infty);
       }
     }
@@ -307,12 +304,11 @@ class BoykovKolmogorov : public MaximumFlow<TypeTraits, FlowTypeTraits>{
 };
 
 
-template <typename TypeTraits, typename FlowTypeTraits>
-class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits>{
-  using Base = MaximumFlow<TypeTraits, FlowTypeTraits>;
+template <typename FlowTypeTraits>
+class IBFS : public MaximumFlow<FlowTypeTraits>{
+  using Base = MaximumFlow<FlowTypeTraits>;
   using FlowGraph = maxflow::IBFSGraph;
  private:
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 
 
@@ -330,7 +326,7 @@ class IBFS : public MaximumFlow<TypeTraits, FlowTypeTraits>{
   IBFS(IBFS&&) = delete;
   IBFS& operator= (IBFS&&) = delete;
 
-  Flow maximumFlow(HyperGraph& hypergraph, FlowNetwork& flow_network) {
+  Flow maximumFlow(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
     unused(hypergraph);
     mapToExternalFlowNetwork(flow_network);
 

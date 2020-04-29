@@ -258,14 +258,9 @@ po::options_description createRefinementOptionsDescription(Context& context,
       &context.initial_partitioning.refinement.label_propagation.hyperedge_size_activation_threshold))->value_name("<size_t>"),
     "If a vertex moves during LP only neighbors that are part of hyperedge with size less\n"
     "this threshold are activated.");
-<<<<<<< HEAD
 
   if ( !initial_partitioning ) {
     options.add_options()
-      ("r-lp-numa-aware",
-      po::value<bool>(&context.refinement.label_propagation.numa_aware)->value_name("<bool>"),
-      "If true, label propagation is executed numa friendly (which means that nodes are processed on its numa nodes)\n"
-      "(default false)")
       ("r-flow-type",
       po::value<std::string>()->value_name("<string>")->notifier(
         [&](const std::string& type) {
@@ -282,16 +277,10 @@ po::options_description createRefinementOptionsDescription(Context& context,
       po::value<bool>(&context.refinement.flow.use_most_balanced_minimum_cut)->value_name("<bool>"),
       "If true, most balanced minimum cut heuristic is used during flow refinement\n"
       "(default false)")
-      ("r-fix-nodes",
-      po::value<bool>(&context.refinement.flow.fix_nodes)->value_name("<bool>"),
-      "If true, Nodes that are in an already aquired Hyperedge are fixated.\n"
-      "(default true)")
       ("r-scheduling-thresh",
       po::value<double>(&context.refinement.flow.scheduling_thresh)->value_name("<double>"),
       "Controls how many threads can make a flow-calculation with the same block.");
   }
-=======
->>>>>>> master
   return options;
 }
 

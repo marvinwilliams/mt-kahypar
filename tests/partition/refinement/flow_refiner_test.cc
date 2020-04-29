@@ -36,17 +36,15 @@ template <PartitionID k, typename FlowTypeTraits>
 struct TestConfig { };
 
 template <PartitionID k>
-struct TestConfig<k, FlowOptTypeTraits<TestTypeTraits<1>>> {
-  using TypeTraits = ds::TestTypeTraits<1>;
-  using Refiner = FlowRefinerT<TypeTraits, FlowOptTypeTraits<TestTypeTraits<1>>>;
+struct TestConfig<k, FlowOptTypeTraits> {
+  using Refiner = FlowRefiner<FlowOptTypeTraits>;
   static constexpr PartitionID K = k;
   static constexpr FlowAlgorithm FLOW_ALGO = FlowAlgorithm::flow_opt;
 };
 
 template <PartitionID k>
-struct TestConfig<k, FlowMatchingTypeTraits<TestTypeTraits<1>>> {
-  using TypeTraits = ds::TestTypeTraits<1>;
-  using Refiner = FlowRefinerT<TypeTraits, FlowOptTypeTraits<TestTypeTraits<1>>>;
+struct TestConfig<k, FlowMatchingTypeTraits> {
+  using Refiner = FlowRefiner<FlowOptTypeTraits>;
   static constexpr PartitionID K = k;
   static constexpr FlowAlgorithm FLOW_ALGO = FlowAlgorithm::flow_match;
 };
@@ -54,12 +52,6 @@ struct TestConfig<k, FlowMatchingTypeTraits<TestTypeTraits<1>>> {
 template <typename Config>
 class AFlowRefiner : public Test {
   using Refiner = typename Config::Refiner;
-  using TypeTraits = typename Config::TypeTraits;
-  using HyperGraph = typename TypeTraits::HyperGraph;
-  using HyperGraphFactory = typename TypeTraits::HyperGraphFactory;
-  using PartitionedHyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
-  using TBB = typename TypeTraits::TBB;
-  using HwTopology = typename TypeTraits::HwTopology;
 
   static size_t num_threads;
 
@@ -78,11 +70,6 @@ class AFlowRefiner : public Test {
     context.partition.k = Config::K;
     context.partition.verbose_output = false;
 
-    // Preprocessing
-    context.preprocessing.use_community_redistribution = true;
-    context.preprocessing.community_redistribution.assignment_strategy = CommunityAssignmentStrategy::bin_packing;
-    context.preprocessing.community_redistribution.assignment_objective = CommunityAssignmentObjective::pin_objective;
-
     // Shared Memory
     context.shared_memory.num_threads = num_threads;
 
@@ -96,34 +83,29 @@ class AFlowRefiner : public Test {
     // Label Propagation
     context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
     context.initial_partitioning.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
-    #ifdef KAHYPAR_TRAVIS_BUILD
-    context.refinement.label_propagation.numa_aware = false;
-    #else
-    context.refinement.label_propagation.numa_aware = true;
-    #endif
 
     // Read hypergraph
-    hypergraph = io::readHypergraphFile<HyperGraph, HyperGraphFactory>(
-      "../test_instances/unweighted_ibm01.hgr", TBB::GLOBAL_TASK_GROUP);
-    partitioned_hypergraph = PartitionedHyperGraph(
-      context.partition.k, TBB::GLOBAL_TASK_GROUP, hypergraph);
+    hypergraph = io::readHypergraphFile(
+      "../test_instances/unweighted_ibm01.hgr", TBBNumaArena::GLOBAL_TASK_GROUP);
+    partitioned_hypergraph = PartitionedHypergraph<>(
+      context.partition.k, TBBNumaArena::GLOBAL_TASK_GROUP, hypergraph);
     context.setupPartWeights(hypergraph.totalWeight());
     initialPartition();
 
-    refiner = std::make_unique<Refiner>(partitioned_hypergraph, context, TBB::GLOBAL_TASK_GROUP);
+    refiner = std::make_unique<Refiner>(partitioned_hypergraph, context, TBBNumaArena::GLOBAL_TASK_GROUP);
     refiner->initialize(partitioned_hypergraph);
   }
 
   static void SetUpTestSuite() {
-    TBB::instance(num_threads);
+    TBBNumaArena::instance(num_threads);
   }
 
   void initialPartition() {
     Context ip_context(context);
     ip_context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
-    InitialPartitioningDataContainerT<TypeTraits> ip_data(partitioned_hypergraph, ip_context, TBB::GLOBAL_TASK_GROUP);
-    BFSInitialPartitionerT<TypeTraits>& initial_partitioner = *new(tbb::task::allocate_root())
-      BFSInitialPartitionerT<TypeTraits>(InitialPartitioningAlgorithm::bfs, ip_data, ip_context);
+    InitialPartitioningDataContainer ip_data(partitioned_hypergraph, ip_context, TBBNumaArena::GLOBAL_TASK_GROUP);
+    BFSInitialPartitioner& initial_partitioner = *new(tbb::task::allocate_root())
+      BFSInitialPartitioner(InitialPartitioningAlgorithm::bfs, ip_data, ip_context);
     tbb::task::spawn_root_and_wait(initial_partitioner);
     ip_data.apply();
     metrics.km1 = metrics::km1(partitioned_hypergraph);
@@ -131,46 +113,46 @@ class AFlowRefiner : public Test {
     metrics.imbalance = metrics::imbalance(partitioned_hypergraph, context);
   }
 
-  HyperGraph hypergraph;
-  PartitionedHyperGraph partitioned_hypergraph;
+  Hypergraph hypergraph;
+  PartitionedHypergraph<> partitioned_hypergraph;
   Context context;
   std::unique_ptr<Refiner> refiner;
   kahypar::Metrics metrics;
 };
 
 template <typename Config>
-size_t AFlowRefiner<Config>::num_threads = HwTopology::instance().num_cpus();
+size_t AFlowRefiner<Config>::num_threads = HardwareTopology::instance().num_cpus();
 
 static constexpr double EPS = 0.05;
 
-typedef ::testing::Types<TestConfig<2, FlowOptTypeTraits<TestTypeTraits<1>>>,
-                         TestConfig<4, FlowOptTypeTraits<TestTypeTraits<1>>>,
-                         TestConfig<8, FlowOptTypeTraits<TestTypeTraits<1>>>,
-                         TestConfig<2, FlowMatchingTypeTraits<TestTypeTraits<1>>>,
-                         TestConfig<4, FlowMatchingTypeTraits<TestTypeTraits<1>>>,
-                         TestConfig<8, FlowMatchingTypeTraits<TestTypeTraits<1>>> > TestConfigs;
+typedef ::testing::Types<TestConfig<2, FlowOptTypeTraits>,
+                         TestConfig<4, FlowOptTypeTraits>,
+                         TestConfig<8, FlowOptTypeTraits>,
+                         TestConfig<2, FlowMatchingTypeTraits>,
+                         TestConfig<4, FlowMatchingTypeTraits>,
+                         TestConfig<8, FlowMatchingTypeTraits> > TestConfigs;
 
 TYPED_TEST_CASE(AFlowRefiner, TestConfigs);
 
 TYPED_TEST(AFlowRefiner, UpdatesImbalanceCorrectly) {
-  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
+  this->refiner->refine(this->partitioned_hypergraph, this->metrics);
   ASSERT_DOUBLE_EQ(metrics::imbalance(this->partitioned_hypergraph, this->context), this->metrics.imbalance);
 }
 
 TYPED_TEST(AFlowRefiner, DoesNotViolateBalanceConstraint) {
-  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
+  this->refiner->refine(this->partitioned_hypergraph, this->metrics);
   ASSERT_LE(this->metrics.imbalance, this->context.partition.epsilon + EPS);
 }
 
 TYPED_TEST(AFlowRefiner, UpdatesMetricsCorrectly) {
-  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
+  this->refiner->refine(this->partitioned_hypergraph, this->metrics);
   ASSERT_EQ(metrics::objective(this->partitioned_hypergraph, this->context.partition.objective),
             this->metrics.getMetric(kahypar::Mode::direct_kway, this->context.partition.objective));
 }
 
 TYPED_TEST(AFlowRefiner, DoesNotWorsenSolutionQuality) {
   HyperedgeWeight objective_before = metrics::objective(this->partitioned_hypergraph, this->context.partition.objective);
-  this->refiner->refine(this->partitioned_hypergraph, { }, this->metrics);
+  this->refiner->refine(this->partitioned_hypergraph, this->metrics);
   ASSERT_LE(this->metrics.getMetric(kahypar::Mode::direct_kway, this->context.partition.objective), objective_before);
 }
 }  // namespace mt_kahypar

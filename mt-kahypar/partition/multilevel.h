@@ -101,7 +101,7 @@ class RefinementTask : public tbb::task {
       LabelPropagationFactory::getInstance().createObject(
         _context.refinement.label_propagation.algorithm,
         coarsest_partitioned_hypergraph, _context, _task_group_id);
-    std::unique_ptr<IRefiner> flow =
+    std::unique_ptr<IRefiner<>> flow =
       FlowFactory::getInstance().createObject(
         _context.refinement.flow.algorithm,
         coarsest_partitioned_hypergraph, _context, _task_group_id);

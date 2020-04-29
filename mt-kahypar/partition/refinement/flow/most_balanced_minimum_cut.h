@@ -47,10 +47,9 @@ namespace mt_kahypar {
 using KaHyParGraph = kahypar::ds::Graph;
 using kahypar::ds::Edge;
 
-template <typename TypeTraits, typename FlowTypeTraits>
+template <typename FlowTypeTraits>
 class MostBalancedMinimumCut {
  private:
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
   using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
   using Scheduler = typename FlowTypeTraits::Scheduler;
   using Derived = typename FlowTypeTraits::MostBalancedMinimumCut;
@@ -73,7 +72,7 @@ class MostBalancedMinimumCut {
   MostBalancedMinimumCut& operator= (const MostBalancedMinimumCut&) = delete;
   MostBalancedMinimumCut& operator= (MostBalancedMinimumCut&&) = delete;
 
-  void mostBalancedMinimumCut(HyperGraph& hypergraph, FlowNetwork& flow_network,
+  void mostBalancedMinimumCut(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network,
                               const Context& context,
                               const PartitionID block_0, const PartitionID block_1, Scheduler& scheduler, double& new_imbalance) {
     reset();
@@ -85,7 +84,7 @@ class MostBalancedMinimumCut {
     //check if fixed weights already exceed the limit
     HypernodeWeight not_aq_first = scheduler.get_not_aquired_weight(block_0, block_1);
     HypernodeWeight not_aq_second = scheduler.get_not_aquired_weight(block_1, block_0);
-    std::pair<HypernodeWeight, HypernodeWeight> fixed_per_part = std::make_pair(_fixed_part_weights.first + not_aq_first, 
+    std::pair<HypernodeWeight, HypernodeWeight> fixed_per_part = std::make_pair(_fixed_part_weights.first + not_aq_first,
     _fixed_part_weights.second + not_aq_second);
     if(fixed_per_part.first > context.partition.max_part_weights[block_0] ||
      fixed_per_part.second > context.partition.max_part_weights[block_1]){
@@ -110,7 +109,7 @@ class MostBalancedMinimumCut {
       const NodeID flow_u_og = _graph_to_flow_network.get(u_og);
       if (flow_network.isHypernode(flow_u_og)) {
         scc_to_flow_network[contraction_mapping[u_og]].push_back(flow_u_og);
-        _scc_node_weight.update(contraction_mapping[u_og], hypergraph.nodeWeight(hypergraph.globalNodeID(flow_u_og)));
+        _scc_node_weight.update(contraction_mapping[u_og], hypergraph.nodeWeight(flow_u_og));
       }
     }
 
@@ -176,30 +175,28 @@ class MostBalancedMinimumCut {
 
     // add most balanced minimum cut to assignment
     for (const NodeID& u : dag.nodes()) {
-      for (const NodeID& v_og : scc_to_flow_network[u]) {
-        _node_assignment.set(hypergraph.globalNodeID(v_og), best_partition_id[u]);
+      for (const NodeID& v : scc_to_flow_network[u]) {
+        _node_assignment.set(v, best_partition_id[u]);
       }
     }
 
      ASSERT([&]() {
       kahypar::ds::FastResetFlagArray<> moved(hypergraph.initialNumNodes());
-      for(const HypernodeID& ogHn : flow_network.hypernodes()) {
-          const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
+      for(const HypernodeID& hn : flow_network.hypernodes()) {
           const PartitionID from = hypergraph.partID(hn);
-          const PartitionID to = _node_assignment[ogHn]? block_1: block_0;
+          const PartitionID to = _node_assignment[hn] ? block_1: block_0;
           if (from != to) {
               hypergraph.changeNodePart(hn, from, to);
               moved.set(hn, true);
           }
       }
 
-      for (const HypernodeID& ogHn : flow_network.hypernodes()) {
-          const HypernodeID& hn = hypergraph.globalNodeID(ogHn);
+      for (const HypernodeID& hn : flow_network.hypernodes()) {
           if(moved[hn]){
             const PartitionID from = hypergraph.partID(hn);
             const PartitionID to = from == block_0? block_1: block_0;
             hypergraph.changeNodePart(hn, from, to);
-            moved.set(hn, true);    
+            moved.set(hn, true);
           }
       }
       return true;
@@ -239,7 +236,7 @@ class MostBalancedMinimumCut {
    * @t_param sourceSet Indicates, if BFS start from source or sink set
    */
   template <bool sourceSet>
-  void markAllReachableNodesAsVisited(HyperGraph& hypergraph, FlowNetwork& flow_network) {
+  void markAllReachableNodesAsVisited(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
     auto start_set_iterator = sourceSet ? flow_network.sources() : flow_network.sinks();
     for (const NodeID& node : start_set_iterator) {
       _Q.push(node);
@@ -248,24 +245,22 @@ class MostBalancedMinimumCut {
     }
 
     while (!_Q.empty()) {
-      const NodeID u_og = _Q.front();
+      const NodeID u = _Q.front();
 
       _Q.pop();
 
-      if (flow_network.interpreteHyperedge(u_og, sourceSet)) {
-        const HyperedgeID he_og = flow_network.mapToHyperedgeID(u_og);
-        const HyperedgeID he = hypergraph.globalEdgeID(he_og);
+      if (flow_network.interpreteHyperedge(u, sourceSet)) {
+        const HyperedgeID he = flow_network.mapToHyperedgeID(u);
         for (const HypernodeID& pin : hypergraph.pins(he)) {
-          if (flow_network.containsHypernode(hypergraph, pin)) {
-            if (flow_network.isRemovedHypernode(hypergraph, pin)) {
-              HypernodeID og_pin = hypergraph.originalNodeID(pin);
+          if (flow_network.containsHypernode(pin)) {
+            if (flow_network.isRemovedHypernode(pin)) {
               if(!_visited[pin]){
-                _visited.set(og_pin, true);
+                _visited.set(pin, true);
                 if (!sourceSet){
                   _node_assignment.set(pin, true);
-                  _fixed_part_weights.second += hypergraph.nodeWeight(og_pin);
+                  _fixed_part_weights.second += hypergraph.nodeWeight(pin);
                 }else{
-                  _fixed_part_weights.first += hypergraph.nodeWeight(og_pin);
+                  _fixed_part_weights.first += hypergraph.nodeWeight(pin);
                 }
               }
             }
@@ -273,23 +268,23 @@ class MostBalancedMinimumCut {
         }
       }
 
-      for(ds::FlowEdge & e:flow_network.incidentEdges(u_og)){
+      for(ds::FlowEdge & e:flow_network.incidentEdges(u)){
         const ds::FlowEdge& reverse_edge = flow_network.reverseEdge(e);
-        const NodeID v_og = e.target;
-        if (!_visited[v_og]) {
+        const NodeID v = e.target;
+        if (!_visited[v]) {
           if ((sourceSet && flow_network.residualCapacity(e)) ||
               (!sourceSet && flow_network.residualCapacity(reverse_edge))) {
-            _Q.push(v_og);
-            _visited.set(v_og, true);
-            assign_and_add_weight(hypergraph, v_og, sourceSet, flow_network);
+            _Q.push(v);
+            _visited.set(v, true);
+            assign_and_add_weight(hypergraph, v, sourceSet, flow_network);
           }
         }
       }
     }
   }
 
-  
-  void assign_and_add_weight(HyperGraph& hypergraph, HypernodeID node, bool sourceSet, FlowNetwork& flow_network){
+
+  void assign_and_add_weight(PartitionedHypergraph<>& hypergraph, HypernodeID node, bool sourceSet, FlowNetwork& flow_network){
     if (flow_network.interpreteHypernode(node)){
       if (!sourceSet){
         _node_assignment.set(node, true);
@@ -300,7 +295,7 @@ class MostBalancedMinimumCut {
     }
   }
 
-  KaHyParGraph buildResidualGraph(HyperGraph& hypergraph, FlowNetwork& flow_network) {
+  KaHyParGraph buildResidualGraph(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
     size_t cur_graph_node = 0;
     for (const NodeID& node : flow_network.nodes()) {
       if (!_visited[node]) {
@@ -333,12 +328,12 @@ class MostBalancedMinimumCut {
       }
     }
 
-    for (const HypernodeID& hn_og : flow_network.removedHypernodes()) {
-      if (!_visited[hn_og]) {
-        const NodeID hn_node = _flow_network_to_graph.get(hn_og);
-        for (const HyperedgeID& he : hypergraph.incidentEdges(hypergraph.globalNodeID(hn_og))) {
-          const NodeID in_he = _flow_network_to_graph.get(flow_network.mapToIncommingHyperedgeID(hypergraph, he));
-          const NodeID out_he = _flow_network_to_graph.get(flow_network.mapToOutgoingHyperedgeID(hypergraph, he));
+    for (const HypernodeID& hn : flow_network.removedHypernodes()) {
+      if (!_visited[hn]) {
+        const NodeID hn_node = _flow_network_to_graph.get(hn);
+        for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
+          const NodeID in_he = _flow_network_to_graph.get(flow_network.mapToIncommingHyperedgeID(he));
+          const NodeID out_he = _flow_network_to_graph.get(flow_network.mapToOutgoingHyperedgeID(he));
           if (in_he != kinvalidFlowNetworkNode) {
             Edge e;
             e.target_node = in_he;
@@ -429,24 +424,22 @@ private:
   StronglyConnectedComponents _sccs;
 };
 
-template <typename TypeTraits, typename FlowTypeTraits>
-class MatchingMostBalancedMinimumCut : public MostBalancedMinimumCut<TypeTraits, FlowTypeTraits> {
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+template <typename FlowTypeTraits>
+class MatchingMostBalancedMinimumCut : public MostBalancedMinimumCut<FlowTypeTraits> {
   using Scheduler = typename FlowTypeTraits::Scheduler;
   using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
-  using Base = MostBalancedMinimumCut<TypeTraits, FlowTypeTraits>;
+  using Base = MostBalancedMinimumCut<FlowTypeTraits>;
 
   using Base::Base;
 };
 
-template <typename TypeTraits, typename FlowTypeTraits>
-class OptMostBalancedMinimumCut : public MostBalancedMinimumCut<TypeTraits, FlowTypeTraits> {
-  using HyperGraph = typename TypeTraits::template PartitionedHyperGraph<>;
+template <typename FlowTypeTraits>
+class OptMostBalancedMinimumCut : public MostBalancedMinimumCut<FlowTypeTraits> {
   using Scheduler = typename FlowTypeTraits::Scheduler;
   using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
-  using Base = MostBalancedMinimumCut<TypeTraits, FlowTypeTraits>;
+  using Base = MostBalancedMinimumCut<FlowTypeTraits>;
 
-  using Base::Base;  
+  using Base::Base;
 };
 
 }  // namespace mt_kahypar
