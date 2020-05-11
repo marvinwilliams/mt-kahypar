@@ -166,9 +166,10 @@ class SchedulerBase {
                           _block_pair_cut_he[block0][block1].cend());
   }
 
-  void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to) {
+  template<typename F>
+  void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to, const F& objective_delta) {
     if (from != to) {
-      bool success = _hg.changeNodePart(hn, from, to);
+      bool success = _hg.changeNodePart(hn, from, to, objective_delta);
       unused(success);
       ASSERT(success);
 

@@ -21,6 +21,7 @@ namespace mt_kahypar {
 template<typename FlowTypeTraits>
 class FlowRefiner final : public IRefiner<>{
     private:
+        using HyperGraph = PartitionedHypergraph<>;
         using Scheduler = typename FlowTypeTraits::Scheduler;
         using RegionBuildPolicy =  typename FlowTypeTraits::RegionBuildPolicy;
         using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
@@ -29,11 +30,13 @@ class FlowRefiner final : public IRefiner<>{
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
         using MaximumFlow = IBFS<FlowTypeTraits>;
+        using GainPolicy = Km1Policy<HyperGraph>;
         using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
         using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
+        using ThreadLocalGain = tbb::enumerable_thread_specific<GainPolicy>;
 
         struct FlowConfig {
-            explicit FlowConfig(PartitionedHypergraph<>& hg) :
+            explicit FlowConfig(PartitionedHypergraph<>& hg, const Context& context) :
                 hypergraph(hg),
                 flow_network(
                    hypergraph.initialNumNodes(), hypergraph.initialNumEdges(),
@@ -41,12 +44,14 @@ class FlowRefiner final : public IRefiner<>{
                 maximum_flow(
                    hypergraph.initialNumNodes() + 2 * hypergraph.initialNumEdges(),
                    hypergraph.initialNumNodes()),
-                visited(hypergraph.initialNumNodes() + hypergraph.initialNumEdges()) { }
+                visited(hypergraph.initialNumNodes() + hypergraph.initialNumEdges()),
+                gain(context) { }
 
             PartitionedHypergraph<>& hypergraph;
             ThreadLocalFlowNetwork flow_network;
             ThreadLocalMaximumFlow maximum_flow;
             ThreadLocalFastResetFlagArray visited;
+            ThreadLocalGain gain;
         };
 
     public:
@@ -69,7 +74,7 @@ class FlowRefiner final : public IRefiner<>{
         bool refineImpl(PartitionedHypergraph<>& hypergraph,
                         kahypar::Metrics& best_metrics) override final {
 
-            FlowConfig config(hypergraph);
+            FlowConfig config(hypergraph, _context);
 
             // Initialize Quotient Graph
             // 1.) Contains edges between each adjacent block of the partition
@@ -106,14 +111,7 @@ class FlowRefiner final : public IRefiner<>{
 
                 //LOG << "ROUND done_______________________________________________________";
 
-                HyperedgeWeight current_metric;
-                if(!_context.refinement.flow.fix_nodes && _context.refinement.flow.algorithm == FlowAlgorithm::flow_opt){
-                    //deltas do not sum up to the objective in case the nodes are not fixated
-                    current_metric = metrics::objective(hypergraph, _context.partition.objective);
-                } else{
-                    current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
-                }
-                // best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
+                HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;        
 
                 double current_imbalance = metrics::imbalance(hypergraph, _context);
 
@@ -188,6 +186,7 @@ class FlowRefiner final : public IRefiner<>{
             FlowNetwork& flow_network = config.flow_network.local();
             MaximumFlow& maximum_flow = config.maximum_flow.local();
             kahypar::ds::FastResetFlagArray<>& visited = config.visited.local();
+            GainPolicy gain = config.gain.local();
 
 
             do {
@@ -246,38 +245,53 @@ class FlowRefiner final : public IRefiner<>{
                     break;
                 }
 
-                const HyperedgeWeight delta = cut_flow_network_before - cut_flow_network_after;
+                const HyperedgeWeight flownetwork_delta = cut_flow_network_before - cut_flow_network_after;
                 ASSERT(cut_flow_network_before >= cut_flow_network_after,
                         "Flow calculation should not increase cut!"
                         << V(cut_flow_network_before) << V(cut_flow_network_after));
 
                 double new_imbalance = maximum_flow.get_new_imbalance();
 
-                //const bool equal_metric = delta == 0;
-                const bool improved_metric = delta > 0;
+                //const bool equal_metric = flownetwork_delta == 0;
+                const bool flownetwork_improved_metric = flownetwork_delta > 0;
                 //const bool improved_imbalance = current_imbalance < old_imbalance;
                 const bool is_feasible_partition = new_imbalance <=  _context.partition.epsilon;
 
-                bool current_improvement = false;
-                if (improved_metric && is_feasible_partition) {
-                    improvement = true;
-                    current_improvement = true;
-                    thread_local_delta += delta;
-                    alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
-                }
+                // This function is passed as lambda to the changeNodePart function and used
+                // to calculate the "real" delta of a move (in terms of the used objective function).
+                auto objective_delta = [&](const HyperedgeID he,
+                                        const HyperedgeWeight edge_weight,
+                                        const HypernodeID edge_size,
+                                        const HypernodeID pin_count_in_from_part_after,
+                                        const HypernodeID pin_count_in_to_part_after) {
+                                        gain.computeDeltaForHyperedge(he, edge_weight, edge_size,
+                                                                        pin_count_in_from_part_after, pin_count_in_to_part_after);
+                                    };
 
+                HyperedgeWeight real_delta = 0;
                 // Perform moves in quotient graph in order to update
                 // cut hyperedges between adjacent blocks.
-                if (current_improvement) {
+                if (flownetwork_improved_metric && is_feasible_partition) {
                     auto& assignment = maximum_flow.get_assignment();
                     for (const HypernodeID& hn : flow_network.hypernodes()) {
                         const PartitionID from = hypergraph.partID(hn);
                         const PartitionID to = assignment[hn]? block_1: block_0;
                         if (from != to) {
-                            scheduler.changeNodePart(hn, from, to);
+                            HyperedgeWeight delta_before = gain.localDelta();
+                            scheduler.changeNodePart(hn, from, to, objective_delta);
+                            real_delta += delta_before - gain.localDelta();
                         }
                     }
                 }
+
+                ASSERT(real_delta >= 0 , "Moves had negativ impact on metric");
+
+                if (real_delta > 0) {
+                    improvement = true;
+                    thread_local_delta += real_delta;
+                    alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
+                    
+                } 
 
                 // Heuristic 2: If no improvement was found, but the cut before and
                 //              after is equal, we assume that the partition is close
