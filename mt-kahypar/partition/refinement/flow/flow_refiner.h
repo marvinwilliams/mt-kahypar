@@ -282,6 +282,10 @@ class FlowRefiner final : public IRefiner<>{
                             real_delta += delta_before - gain.localDelta();
                         }
                     }
+                    // Set improvement to true to keep blocks active due to
+                    // possible improvements
+                    // only increase alpha if there was an actual improvement
+                    improvement = true;
                 }
 
                 ASSERT(real_delta >= 0 , "Moves had negativ impact on metric");
@@ -290,8 +294,7 @@ class FlowRefiner final : public IRefiner<>{
                     improvement = true;
                     thread_local_delta += real_delta;
                     alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
-                    
-                } 
+                }
 
                 // Heuristic 2: If no improvement was found, but the cut before and
                 //              after is equal, we assume that the partition is close
