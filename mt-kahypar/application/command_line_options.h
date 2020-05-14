@@ -277,6 +277,10 @@ po::options_description createRefinementOptionsDescription(Context& context,
       po::value<bool>(&context.refinement.flow.use_most_balanced_minimum_cut)->value_name("<bool>"),
       "If true, most balanced minimum cut heuristic is used during flow refinement\n"
       "(default false)")
+      ("r-fix-nodes",
+      po::value<bool>(&context.refinement.flow.fix_nodes)->value_name("<bool>"),
+      "If true, Nodes that are in an already aquired Hyperedge are fixated.\n"
+      "(default true)")
       ("r-scheduling-thresh",
       po::value<double>(&context.refinement.flow.scheduling_thresh)->value_name("<double>"),
       "Controls how many threads can make a flow-calculation with the same block.");
