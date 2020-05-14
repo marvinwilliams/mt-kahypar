@@ -282,14 +282,14 @@ class FlowRefiner final : public IRefiner<>{
                             real_delta += delta_before - gain.localDelta();
                         }
                     }
-                    improvement = true;
-                    alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
                 ASSERT(real_delta >= 0 , "Moves had negativ impact on metric");
 
                 if (real_delta > 0) {
                     thread_local_delta += real_delta;
+                    improvement = true;
+                    alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
                 // Heuristic 2: If no improvement was found, but the cut before and
