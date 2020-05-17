@@ -182,6 +182,7 @@ class FlowRefiner final : public IRefiner<>{
             bool improvement = false;
             double alpha = _context.refinement.flow.alpha * 2.0;
             HyperedgeWeight thread_local_delta = 0;
+            size_t times_no_real_improvement = 0;
             PartitionedHypergraph<>& hypergraph = config.hypergraph;
             FlowNetwork& flow_network = config.flow_network.local();
             MaximumFlow& maximum_flow = config.maximum_flow.local();
@@ -282,14 +283,25 @@ class FlowRefiner final : public IRefiner<>{
                             real_delta += delta_before - gain.localDelta();
                         }
                     }
+                    
+                    // Heuristic: Abort Round if there are to many flownetwork improvements without a
+                    //            real improvement to prevent a busy deadlock.
+                    if(real_delta == 0){
+                        if(++times_no_real_improvement > 5){
+                            flow_network.release(hypergraph, block_0, block_1, scheduler);
+                            break;
+                        }
+                    }
+
+                    improvement = true;
+                    alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
                 ASSERT(real_delta >= 0 , "Moves had negativ impact on metric");
 
+                // update local delta
                 if (real_delta > 0) {
                     thread_local_delta += real_delta;
-                    improvement = true;
-                    alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                 }
 
                 // Heuristic 2: If no improvement was found, but the cut before and
