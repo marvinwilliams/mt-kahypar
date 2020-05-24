@@ -180,6 +180,7 @@ struct FlowParameters {
   bool use_most_balanced_minimum_cut = true;
   bool use_improvement_history = true;
   bool fix_nodes = true;
+  bool only_real = true;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const FlowParameters& params) {
@@ -190,6 +191,7 @@ inline std::ostream & operator<< (std::ostream& str, const FlowParameters& param
   str << "    Use Improvement History:          " << std::boolalpha << params.use_improvement_history << std::endl;
   if(params.algorithm == FlowAlgorithm::flow_opt){
     str << "    Fixate Nodes:                     " << std::boolalpha << params.fix_nodes << std::endl;
+    str << "    Only real Improvements:           " << std::boolalpha << params.only_real << std::endl;
   }
   return str;
 }

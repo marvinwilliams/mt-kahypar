@@ -280,6 +280,10 @@ po::options_description createRefinementOptionsDescription(Context& context,
       ("r-fix-nodes",
       po::value<bool>(&context.refinement.flow.fix_nodes)->value_name("<bool>"),
       "If true, Nodes that are in an already aquired Hyperedge are fixated.\n"
+      "(default true)")
+      ("r-only-real-improvement",
+      po::value<bool>(&context.refinement.flow.only_real)->value_name("<bool>"),
+      "If true, the flow calculation only continues when there is a real improvement.\n"
       "(default true)");
   }
   return options;

@@ -95,6 +95,8 @@ static inline std::string serialize(const PartitionedHypergraph<>& hypergraph,
         << " flow_algorithm=" << context.refinement.flow.algorithm
         << " flow_use_most_balanced_minimum_cut=" << std::boolalpha << context.refinement.flow.use_most_balanced_minimum_cut
         << " flow_use_improvement_history=" << std::boolalpha << context.refinement.flow.use_improvement_history
+        << " flow_fixate_nodes=" << std::boolalpha << context.refinement.flow.fix_nodes
+        << " flow_only_real_improvements=" << std::boolalpha << context.refinement.flow.only_real
         << " num_threads=" << context.shared_memory.num_threads
         << " use_localized_random_shuffle=" << context.shared_memory.use_localized_random_shuffle
         << " shuffle_block_size=" << context.shared_memory.shuffle_block_size;

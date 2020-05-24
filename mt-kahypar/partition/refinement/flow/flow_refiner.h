@@ -293,8 +293,10 @@ class FlowRefiner final : public IRefiner<>{
                         }
                     }
 
-                    improvement = true;
-                    alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
+                    if(!_context.refinement.flow.only_real){
+                        improvement = true;
+                        alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
+                    }
                 }
 
                 ASSERT(real_delta >= 0 , "Moves had negativ impact on metric");
@@ -302,6 +304,10 @@ class FlowRefiner final : public IRefiner<>{
                 // update local delta
                 if (real_delta > 0) {
                     thread_local_delta += real_delta;
+                    if(_context.refinement.flow.only_real){
+                        improvement = true;
+                        alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
+                    }
                 }
 
                 // Heuristic 2: If no improvement was found, but the cut before and
