@@ -450,7 +450,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
       }
     }
 
-    if(independence < this->_context.refinement.flow.scheduling_thresh) {
+    if(independence < std::numeric_limits<size_t>::max()) {
       _tasks_on_block[best_edge.e.first] ++;
       _tasks_on_block[best_edge.e.second] ++;
       this->removeElement(best_edge.index, this->_round_edges);
