@@ -286,12 +286,12 @@ class FlowRefiner final : public IRefiner<>{
                     
                     // Heuristic: Abort Round if there are to many flownetwork improvements without a
                     //            real improvement to prevent a busy deadlock.
-                    /*if(real_delta == 0){
+                    if(real_delta == 0){
                         if(++times_no_real_improvement > 5){
                             flow_network.release(hypergraph, block_0, block_1, scheduler);
                             break;
                         }
-                    }*/
+                    }
 
                     if(!_context.refinement.flow.only_real){
                         improvement = true;
