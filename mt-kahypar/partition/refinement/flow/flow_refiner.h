@@ -311,10 +311,10 @@ class FlowRefiner final : public IRefiner<>{
                 } else if(real_delta < 0){
                     //reverse changes
                     for(auto move:moves){
-                        scheduler.changeNodePart(move.first, move.second.second, move.second.first, nullptr);
+                        scheduler.changeNodePart(move.first, move.second.second, move.second.first, objective_delta);
                     }
                 }
-
+                
                 // Heuristic 2: If no improvement was found, but the cut before and
                 //              after is equal, we assume that the partition is close
                 //              to the optimum and break the adaptive flow iterations.
