@@ -270,6 +270,7 @@ class FlowRefiner final : public IRefiner<>{
                                     };
 
                 HyperedgeWeight real_delta = 0;
+                std::vector<std::pair<HypernodeID, std::pair<PartitionID, PartitionID>>> moves;
                 // Perform moves in quotient graph in order to update
                 // cut hyperedges between adjacent blocks.
                 if (flownetwork_improved_metric && is_feasible_partition) {
@@ -281,6 +282,7 @@ class FlowRefiner final : public IRefiner<>{
                             HyperedgeWeight delta_before = gain.localDelta();
                             scheduler.changeNodePart(hn, from, to, objective_delta);
                             real_delta += delta_before - gain.localDelta();
+                            moves.push_back(std::make_pair(hn, std::make_pair(from, to)));
                         }
                     }
                     
@@ -298,15 +300,18 @@ class FlowRefiner final : public IRefiner<>{
                         alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                     }
                 }
-
-                ASSERT(real_delta >= 0 , "Moves had negativ impact on metric");
-
-                // update local delta
+                
                 if (real_delta > 0) {
+                    // update local delta
                     thread_local_delta += real_delta;
                     if(_context.refinement.flow.only_real){
                         improvement = true;
                         alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
+                    }
+                } else if(real_delta < 0){
+                    //reverse changes
+                    for(auto move:moves){
+                        scheduler.changeNodePart(move.first, move.second.second, move.second.first, nullptr);
                     }
                 }
 
