@@ -190,8 +190,9 @@ class SchedulerBase {
     }
   }
 
-  void setActiveBlock(size_t blockId, bool active){
-    _active_blocks[blockId] = active;
+  void setBlocksActive(PartitionID block_0, PartitionID block_1){
+    _active_blocks[block_0] = true;
+    _active_blocks[block_1] = true;
   }
 
   size_t getNumberOfActiveBlocks(){

@@ -211,11 +211,8 @@ TYPED_TEST(AOptScheduler, ActiveBlocks) {
   std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
   ASSERT_EQ(0 , this->scheduler->getNumberOfActiveBlocks());
 
-  this->scheduler->setActiveBlock(0, true);
-  this->scheduler->setActiveBlock(1, true);
+  this->scheduler->setBlocksActive(0, 1);
   ASSERT_EQ(2 , this->scheduler->getNumberOfActiveBlocks());
-  this->scheduler->setActiveBlock(0, false);
-  ASSERT_EQ(1 , this->scheduler->getNumberOfActiveBlocks());
 }
 
 TYPED_TEST(AOptScheduler, InitBlockWeight) {

@@ -7,6 +7,7 @@
 
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/flow/quotient_graph_block_scheduler.h"
+#include "mt-kahypar/partition/refinement/flow/one_round_scheduler.h"
 #include "mt-kahypar/partition/refinement/flow/flow_region_build_policy.h"
 #include "mt-kahypar/partition/refinement/flow/maximum_flow.h"
 
@@ -91,14 +92,15 @@ class FlowRefiner final : public IRefiner<>{
             bool improvement = false;
             size_t active_blocks = _context.partition.k;
             size_t current_round = 1;
+            scheduler.init_block_weights();
 
             utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
-            while (active_blocks >= 2) {
-
+            _round_delta = 0;
+            do{
+                
                 scheduler.randomShuffleQoutientEdges();
                 auto scheduling_edges = scheduler.getInitialParallelEdges();
-                scheduler.init_block_weights();
-                _round_delta = 0;
+                                
 
                 //parallel here
                 tbb::parallel_do(scheduling_edges,
@@ -111,27 +113,30 @@ class FlowRefiner final : public IRefiner<>{
 
                 //LOG << "ROUND done_______________________________________________________";
 
-                HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;        
-
-                double current_imbalance = metrics::imbalance(hypergraph, _context);
-
-                //check if the metric improved as exspected
-                ASSERT(current_metric == metrics::objective(hypergraph, _context.partition.objective),
-                        "Sum of deltas is not the global improvement!"
-                        << V(_context.partition.objective)
-                        << V(metrics::objective(hypergraph, _context.partition.objective))
-                        << V(_round_delta)
-                        << V(current_metric));
-
-                //Update bestmetrics
-                best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
-                best_metrics.imbalance = current_imbalance;
+                
 
                 //update number of active blocks
                 active_blocks = scheduler.getNumberOfActiveBlocks();
 
                 current_round++;
-            }
+            }while (active_blocks >= 2);
+
+            HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;        
+
+            double current_imbalance = metrics::imbalance(hypergraph, _context);
+
+            //check if the metric improved as exspected
+            ASSERT(current_metric == metrics::objective(hypergraph, _context.partition.objective),
+                    "Sum of deltas is not the global improvement!"
+                    << V(_context.partition.objective)
+                    << V(metrics::objective(hypergraph, _context.partition.objective))
+                    << V(_round_delta)
+                    << V(current_metric));
+
+            //Update bestmetrics
+            best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
+            best_metrics.imbalance = current_imbalance;
+
             utils::Timer::instance().stop_timer("flow_refinement");
             //LOG << "REFINEMENT done_______________________________________________________";
             return improvement;
@@ -166,8 +171,7 @@ class FlowRefiner final : public IRefiner<>{
             const bool improved = executeAdaptiveFlow(config, block_0, block_1, scheduler);
             if (improved) {
                 improvement = true;
-                scheduler.setActiveBlock(block_0, true);
-                scheduler.setActiveBlock(block_1, true);
+                scheduler.setBlocksActive(block_0, block_1);
                 _num_improvements[block_0][block_1]++;
             }
 
@@ -353,7 +357,8 @@ struct FlowMatchingTypeTraits{
 };
 
 struct FlowOptTypeTraits{
-    using Scheduler = OptScheduler;
+    //using Scheduler = OptScheduler;
+    using Scheduler = OneRoundScheduler;
     using RegionBuildPolicy = OptFlowRegionBuildPolicy;
     using FlowNetwork = ds::OptFlowNetwork<FlowOptTypeTraits>;
     using MostBalancedMinimumCut = OptMostBalancedMinimumCut<FlowOptTypeTraits>;
