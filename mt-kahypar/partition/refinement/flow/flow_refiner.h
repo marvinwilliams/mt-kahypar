@@ -89,7 +89,6 @@ class FlowRefiner final : public IRefiner<>{
 
             // Active Block Scheduling
             bool improvement = false;
-            size_t current_round = 1;
             scheduler.init_block_weights();
 
             utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
@@ -103,11 +102,10 @@ class FlowRefiner final : public IRefiner<>{
                 [&](Edge e,
                     tbb::parallel_do_feeder<Edge>& feeder){
                         parallelFlowCalculation(
-                            config, e, current_round,
+                            config, e,
                             improvement, scheduler, feeder);
                     });
                 //LOG << "ROUND done_______________________________________________________";
-                current_round++;
             }while (scheduler.hasNextRound());
 
             HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;        
@@ -138,7 +136,6 @@ class FlowRefiner final : public IRefiner<>{
 
         void parallelFlowCalculation(FlowConfig& config,
                                      const Edge& edge,
-                                     const size_t& current_round,
                                      bool& improvement,
                                      Scheduler& scheduler,
                                      tbb::parallel_do_feeder<Edge>& feeder) {
@@ -151,7 +148,7 @@ class FlowRefiner final : public IRefiner<>{
             //            we ignore the refinement for these block in the
             //            second iteration of active block scheduling
             if (_context.refinement.flow.use_improvement_history &&
-                current_round > 1 && _num_improvements[block_0][block_1] == 0) {
+                scheduler.getCurrentRound(block_0, block_1) > 0 && _num_improvements[block_0][block_1] == 0) {
                 scheduler.scheduleNextBlocks(edge, feeder);
                 //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
                 return;

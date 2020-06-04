@@ -98,6 +98,10 @@ class SchedulerBase {
     static_cast<Derived*>(this)->scheduleNextBlocksImpl(old_edge, feeder);
   }
 
+  size_t getCurrentRound(PartitionID block_0, PartitionID block_1){
+    return static_cast<Derived*>(this)->getCurrentRoundImpl(block_0, block_1);
+  }
+
   bool tryAquireNode(HypernodeID node, const int blocks_idx){
     return static_cast<Derived*>(this)->tryAquireNodeImpl(node, blocks_idx);
   }
@@ -287,7 +291,8 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
   public:
   MatchingScheduler(PartitionedHypergraph<>& hypergraph, const Context& context) :
     Base(hypergraph, context),
-    _active_blocks(_context.partition.k, true){}
+    _active_blocks(_context.partition.k, true),
+    _current_round(0){}
 
   std::vector<edge> getInitialParallelEdgesImpl(){
     //push edges from active blocks in _round_edges
@@ -340,6 +345,12 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
     }
   }
 
+  size_t getCurrentRoundImpl(PartitionID block_0, PartitionID block_1){
+    unused(block_0);
+    unused(block_1);
+    return _current_round;
+  }
+
   bool tryAquireNodeImpl(HypernodeID node,const int blocks_idx){
     unused(node);
     unused(blocks_idx);
@@ -367,10 +378,12 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
         active_blocks++;
       }
     }
+    _current_round++;
     return (active_blocks >= 2);
   }
 
   std::vector<bool> _active_blocks;
+  size_t _current_round;
 };
 
 class OptScheduler : public SchedulerBase<OptScheduler> {
@@ -381,7 +394,8 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
     Base(hypergraph, context),
     _tasks_on_block(context.partition.k, 0),
     _node_lock(hypergraph.initialNumNodes(), false),
-    _active_blocks(_context.partition.k, true){}
+    _active_blocks(_context.partition.k, true),
+    _current_round(0){}
 
 
   std::vector<edge> getInitialParallelEdgesImpl(){
@@ -415,6 +429,12 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
     if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
       feeder.add(e);
     }
+  }
+
+  size_t getCurrentRoundImpl(PartitionID block_0, PartitionID block_1){
+    unused(block_0);
+    unused(block_1);
+    return _current_round;
   }
 
   /**
@@ -455,6 +475,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
         active_blocks++;
       }
     }
+    _current_round++;
     return (active_blocks >= 2);
   }
 
@@ -491,6 +512,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
   std::vector<size_t> _tasks_on_block;
   std::vector<tbb::atomic<int>> _node_lock;
   std::vector<bool> _active_blocks;
+  size_t _current_round;
 };
 
 class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
@@ -552,6 +574,10 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
         }
     }
     utils::Timer::instance().stop_timer("schedNext");
+  }
+
+  size_t getCurrentRoundImpl(PartitionID block_0, PartitionID block_1){
+    return _current_rounds[block_0][block_1];
   }
 
   void setBlocksActiveImpl(PartitionID block_0, PartitionID block_1){
