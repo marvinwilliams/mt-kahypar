@@ -56,7 +56,7 @@ class OneRoundScheduler {
     _quotient_graph(),
     _round_edges(),
     _finished(false),
-    _current_rounds(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+    _current_rounds(context.partition.k, std::vector<int>(context.partition.k, -1)),
     _active_blocks(1 , std::vector<tbb::atomic<bool>>(context.partition.k, false)),
     _active_blocks_mutex(),
     _max_round(0),
@@ -136,11 +136,11 @@ class OneRoundScheduler {
         edge e = getMostIndependentEdge();
         if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
         feeder.add(e);
-        utils::Timer::instance().stop_timer("maxFlow");
+        utils::Timer::instance().stop_timer("schedNext");
         return;
         }
     }
-    utils::Timer::instance().stop_timer("maxFlow");
+    utils::Timer::instance().stop_timer("schedNext");
   }
 
   /**
@@ -215,7 +215,7 @@ class OneRoundScheduler {
                 else
                     edges_to_schedule.push_back(std::make_pair(block_0, i));
             }
-        } 
+        }
     }
     //if block_1 was not active before, add the eges for the next round
     if(!old_block_1){
@@ -246,8 +246,8 @@ class OneRoundScheduler {
   }
 
   //return zero to stop while loop in flow refiner after one iteration
-  size_t getNumberOfActiveBlocks(){
-    return 0;
+  size_t hasNextRound(){
+    return false;
   }
 
   /**
@@ -347,6 +347,7 @@ class OneRoundScheduler {
         size_t round = ++_current_rounds[best_edge.e.first][best_edge.e.second];
         if(round > _max_round){
             _active_blocks.push_back(std::vector<tbb::atomic<bool>>(_context.partition.k, false));
+            _max_round = round;
         }
         _running_edges[best_edge.e.first][best_edge.e.second] = true;
         return best_edge.e;
@@ -381,7 +382,7 @@ class OneRoundScheduler {
   //holds all eges, that are executed in that round (both blocks are active)
   std::vector<edge> _round_edges;
   tbb::atomic<bool> _finished;
-  std::vector<std::vector<size_t>> _current_rounds;
+  std::vector<std::vector<int>> _current_rounds;
   std::vector<std::vector<tbb::atomic<bool>>> _active_blocks;
   tbb::spin_mutex _active_blocks_mutex;
   size_t _max_round;

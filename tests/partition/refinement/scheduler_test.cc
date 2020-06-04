@@ -206,13 +206,13 @@ TYPED_TEST(AOptScheduler, BlockOverlapTest) {
 
 TYPED_TEST(AOptScheduler, ActiveBlocks) {
   this->scheduler->buildQuotientGraph();
-  ASSERT_EQ(this->context.partition.k , this->scheduler->getNumberOfActiveBlocks());
+  ASSERT_EQ(true , this->scheduler->hasNextRound());
 
   std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
-  ASSERT_EQ(0 , this->scheduler->getNumberOfActiveBlocks());
+  ASSERT_EQ(false , this->scheduler->hasNextRound());
 
   this->scheduler->setBlocksActive(0, 1);
-  ASSERT_EQ(2 , this->scheduler->getNumberOfActiveBlocks());
+  ASSERT_EQ(true , this->scheduler->hasNextRound());
 }
 
 TYPED_TEST(AOptScheduler, InitBlockWeight) {

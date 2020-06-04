@@ -50,6 +50,7 @@ REGISTER_LP_REFINER(LabelPropagationAlgorithm::label_propagation_km1, LabelPropa
 REGISTER_LP_REFINER(LabelPropagationAlgorithm::do_nothing, DoNothingRefiner, 1);
 REGISTER_FLOW_REFINER(FlowAlgorithm::flow_match, FlowRefinerMatch, Km1);
 REGISTER_FLOW_REFINER(FlowAlgorithm::flow_opt, FlowRefinerOpt, Km1);
+REGISTER_FLOW_REFINER(FlowAlgorithm::flow_one_round, FlowRefinerOneRound, Km1);
 REGISTER_FLOW_REFINER(FlowAlgorithm::do_nothing, DoNothingRefiner, 2);
 
 } // namespace mt_kahypar

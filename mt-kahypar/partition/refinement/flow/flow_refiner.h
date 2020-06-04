@@ -7,7 +7,6 @@
 
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/flow/quotient_graph_block_scheduler.h"
-#include "mt-kahypar/partition/refinement/flow/one_round_scheduler.h"
 #include "mt-kahypar/partition/refinement/flow/flow_region_build_policy.h"
 #include "mt-kahypar/partition/refinement/flow/maximum_flow.h"
 
@@ -90,17 +89,14 @@ class FlowRefiner final : public IRefiner<>{
 
             // Active Block Scheduling
             bool improvement = false;
-            size_t active_blocks = _context.partition.k;
             size_t current_round = 1;
             scheduler.init_block_weights();
 
             utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
             _round_delta = 0;
-            do{
-                
+            do{       
                 scheduler.randomShuffleQoutientEdges();
-                auto scheduling_edges = scheduler.getInitialParallelEdges();
-                                
+                auto scheduling_edges = scheduler.getInitialParallelEdges();                                
 
                 //parallel here
                 tbb::parallel_do(scheduling_edges,
@@ -110,16 +106,9 @@ class FlowRefiner final : public IRefiner<>{
                             config, e, current_round,
                             improvement, scheduler, feeder);
                     });
-
                 //LOG << "ROUND done_______________________________________________________";
-
-                
-
-                //update number of active blocks
-                active_blocks = scheduler.getNumberOfActiveBlocks();
-
                 current_round++;
-            }while (active_blocks >= 2);
+            }while (scheduler.hasNextRound());
 
             HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;        
 
@@ -357,14 +346,21 @@ struct FlowMatchingTypeTraits{
 };
 
 struct FlowOptTypeTraits{
-    //using Scheduler = OptScheduler;
-    using Scheduler = OneRoundScheduler;
+    using Scheduler = OptScheduler;
     using RegionBuildPolicy = OptFlowRegionBuildPolicy;
     using FlowNetwork = ds::OptFlowNetwork<FlowOptTypeTraits>;
     using MostBalancedMinimumCut = OptMostBalancedMinimumCut<FlowOptTypeTraits>;
 };
 
+struct FlowOneRoundTypeTraits{
+    using Scheduler = OneRoundScheduler;
+    using RegionBuildPolicy = OptFlowRegionBuildPolicy;
+    using FlowNetwork = ds::OptFlowNetwork<FlowOneRoundTypeTraits>;
+    using MostBalancedMinimumCut = OptMostBalancedMinimumCut<FlowOneRoundTypeTraits>;
+};
+
 using FlowRefinerMatch = FlowRefiner<FlowMatchingTypeTraits>;
 using FlowRefinerOpt = FlowRefiner<FlowOptTypeTraits>;
+using FlowRefinerOneRound = FlowRefiner<FlowOneRoundTypeTraits>;
 
 } //namespace mt_kahypar

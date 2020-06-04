@@ -607,7 +607,7 @@ class FlowNetwork {
            pinsNotInFlowProblem(hypergraph, he, _cur_block1) > 0) ||
           (context.partition.objective == kahypar::Objective::cut &&
            !isRemovableFromCut(hypergraph, he, _cur_block0, _cur_block1))||
-           context.refinement.flow.algorithm == FlowAlgorithm::flow_opt) {
+           context.refinement.flow.algorithm != FlowAlgorithm::flow_match) {
         addEdge(u, v, hypergraph.edgeWeight(he));
       } else {
         if (pinsNotInFlowProblem(hypergraph, he, _cur_block0) > 0) {
