@@ -574,6 +574,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
         edge e = getMostIndependentEdge();
         if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
         feeder.add(e);
+        active_tasks++;
       }else{
         return;
       } 
