@@ -692,7 +692,7 @@ private:
       for (int i = 0; i < _context.partition.k; i++){
           tasks += _tasks_on_block[i];
       }
-      return tasks;
+      return tasks / 2;
   }
 
   struct bestEdge{
