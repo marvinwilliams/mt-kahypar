@@ -157,7 +157,7 @@ class FlowRefiner final : public IRefiner<>{
             const bool improved = executeAdaptiveFlow(config, block_0, block_1, scheduler);
             if (improved) {
                 improvement = true;
-                scheduler.setBlocksActive(block_0, block_1);
+                scheduler.setBlocksActive(block_0, block_1, feeder);
                 _num_improvements[block_0][block_1]++;
             }
 

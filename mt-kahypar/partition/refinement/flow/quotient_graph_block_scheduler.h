@@ -185,8 +185,8 @@ class SchedulerBase {
     }
   }
 
-  void setBlocksActive(PartitionID block_0, PartitionID block_1){
-    static_cast<Derived*>(this)->setBlocksActiveImpl(block_0, block_1);
+  void setBlocksActive(PartitionID block_0, PartitionID block_1, tbb::parallel_do_feeder<edge>& feeder){
+    static_cast<Derived*>(this)->setBlocksActiveImpl(block_0, block_1, feeder);
   }
 
   bool hasNextRound(){
@@ -366,7 +366,8 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
     unused(node);
   }
 
-  void setBlocksActiveImpl(PartitionID block_0, PartitionID block_1){
+  void setBlocksActiveImpl(PartitionID block_0, PartitionID block_1, tbb::parallel_do_feeder<edge>& feeder){
+    unused(feeder);
     _active_blocks[block_0] = true;
     _active_blocks[block_1] = true;
   }
@@ -463,7 +464,8 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
     _node_lock[node] = 0;
   }
 
-  void setBlocksActiveImpl(PartitionID block_0, PartitionID block_1){
+  void setBlocksActiveImpl(PartitionID block_0, PartitionID block_1, tbb::parallel_do_feeder<edge>& feeder){
+    unused(feeder);
     _active_blocks[block_0] = true;
     _active_blocks[block_1] = true;
   }
@@ -528,7 +530,8 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     _max_round(0),
     _running_edges(context.partition.k, std::vector<bool>(context.partition.k, false)),
     _tasks_on_block(context.partition.k, 0),
-    _node_lock(hypergraph.initialNumNodes(), false){}
+    _node_lock(hypergraph.initialNumNodes(), false),
+    _num_threads(TBBNumaArena::instance().total_number_of_threads()){}
 
   std::vector<edge> getInitialParallelEdgesImpl(){
     //push edges from active blocks in _round_edges
@@ -536,8 +539,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
         _round_edges.push_back(edge);
     }
     std::vector<edge> initial_edges;
-    const size_t num_threads = TBBNumaArena::instance().total_number_of_threads();
-    for (size_t i = 0; i < num_threads; i++){
+    for (size_t i = 0; i < _num_threads; i++){
       edge e = getMostIndependentEdge();
       if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
         initial_edges.push_back(e);
@@ -559,28 +561,30 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     if(_active_blocks[round][old_edge.first] && _active_blocks[round][old_edge.second]){
         _round_edges.push_back(old_edge);
     }
-
-    if(getNumberOfActiveTasks() == 0 && _round_edges.empty())
-        _finished = true;
     }//unlock here
 
-    while(!_finished){
-        tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
+    scheduleTillNumThreads(feeder);
+    utils::Timer::instance().stop_timer("schedNext");
+  }
+
+  void scheduleTillNumThreads(tbb::parallel_do_feeder<edge>& feeder){
+    tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
+    size_t active_tasks = getNumberOfActiveTasks();
+    while(active_tasks < _num_threads){
         edge e = getMostIndependentEdge();
         if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
         feeder.add(e);
-        utils::Timer::instance().stop_timer("schedNext");
+      }else{
         return;
-        }
+      } 
     }
-    utils::Timer::instance().stop_timer("schedNext");
   }
 
   size_t getCurrentRoundImpl(PartitionID block_0, PartitionID block_1){
     return _current_rounds[block_0][block_1];
   }
 
-  void setBlocksActiveImpl(PartitionID block_0, PartitionID block_1){
+  void setBlocksActiveImpl(PartitionID block_0, PartitionID block_1, tbb::parallel_do_feeder<edge>& feeder){
     size_t round = _current_rounds[block_0][block_1];
     bool old_block_0 = _active_blocks[round][block_0].fetch_and_store(true);
     bool old_block_1 = _active_blocks[round][block_1].fetch_and_store(true);
@@ -612,7 +616,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
         } 
     }
     if(!edges_to_schedule.empty()){
-        tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
+        {tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
         for(auto edge:edges_to_schedule){
             for(auto r_edge:_round_edges){
                 if(r_edge == edge)
@@ -624,6 +628,8 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
             _round_edges.push_back(edge);
             edge_already_contained:;
         }
+        }//unlock
+        scheduleTillNumThreads(feeder);
     }
   }
 
@@ -709,5 +715,6 @@ private:
 
   std::vector<size_t> _tasks_on_block;
   std::vector<tbb::atomic<int>> _node_lock;
+  size_t _num_threads;
 };
 }  // namespace mt-kahypar
