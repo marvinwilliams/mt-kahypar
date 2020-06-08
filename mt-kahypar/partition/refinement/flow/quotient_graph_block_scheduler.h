@@ -297,7 +297,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
   std::vector<edge> getInitialParallelEdgesImpl(){
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
-      if(this->_active_blocks[edge.first] && this->_active_blocks[edge.second]) {
+      if(this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) {
         this->_round_edges.push_back(edge);
       }
     }
@@ -380,7 +380,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
       }
     }
     _current_round++;
-    return (active_blocks >= 2);
+    return (active_blocks >= 1);
   }
 
   std::vector<bool> _active_blocks;
@@ -402,7 +402,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
   std::vector<edge> getInitialParallelEdgesImpl(){
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
-      if(this->_active_blocks[edge.first] && this->_active_blocks[edge.second]) {
+      if(this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) {
         this->_round_edges.push_back(edge);
       }
     }
@@ -478,7 +478,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
       }
     }
     _current_round++;
-    return (active_blocks >= 2);
+    return (active_blocks >= 1);
   }
 
   private:
@@ -541,7 +541,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     std::vector<edge> initial_edges;
     for (size_t i = 0; i < _num_threads; i++){
       edge e = getMostIndependentEdge();
-      if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
+      if(e.first != kInvalidPartition || e.second != kInvalidPartition) {
         initial_edges.push_back(e);
       }
     }
@@ -596,7 +596,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     if(!old_block_0){
         tbb::spin_mutex::scoped_lock lock{_active_blocks_mutex};
         for (int i = 0; i < _context.partition.k; i++){
-            if(_active_blocks[round][i] && i != block_0 && i != block_1){
+            if(i != block_0 && i != block_1){
                 if(i < block_0)
                     edges_to_schedule.push_back(std::make_pair(i, block_0));
                 else
@@ -608,7 +608,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     if(!old_block_1){
         tbb::spin_mutex::scoped_lock lock{_active_blocks_mutex};
         for (int i = 0; i < _context.partition.k; i++){
-            if(_active_blocks[round][i] && i != block_0 && i != block_1){
+            if(i != block_0 && i != block_1){
                 if(i < block_1)
                     edges_to_schedule.push_back(std::make_pair(i, block_1));
                 else
