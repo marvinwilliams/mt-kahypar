@@ -62,7 +62,13 @@ class FlowRefiner final : public IRefiner<>{
             _task_group_id(task_group_id),
             _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
             _round_delta(0),
-            _start_new_parallel_do(TBBNumaArena::instance().num_used_numa_nodes()) { }
+            _start_new_parallel_do(TBBNumaArena::instance().num_used_numa_nodes()),
+            _times_per_block(context.partition.k, std::vector<double>(context.partition.k, 0)),
+            _improved_per_block(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+            _rounds_per_block(context.partition.k, std::vector<size_t>(context.partition.k, 0)) {
+                utils::Stats::instance().add_stat("blocks_refined", 0);
+                utils::Stats::instance().add_stat("time_per_block", double(0));
+             }
 
         FlowRefiner(const FlowRefiner&) = delete;
         FlowRefiner(FlowRefiner&&) = delete;
@@ -75,7 +81,7 @@ class FlowRefiner final : public IRefiner<>{
                         kahypar::Metrics& best_metrics) override final {
 
             FlowConfig config(hypergraph, _context);
-
+            resetStats();
             // Initialize Quotient Graph
             // 1.) Contains edges between each adjacent block of the partition
             // 2.) Contains for each edge all hyperedges, which are cut in the
@@ -125,10 +131,11 @@ class FlowRefiner final : public IRefiner<>{
             best_metrics.imbalance = current_imbalance;
 
             utils::Timer::instance().stop_timer("flow_refinement");
+            //printStats();
             //LOG << "REFINEMENT done_______________________________________________________";
+            updateStats();
             return improvement;
         }
-
 
         void initializeImpl(PartitionedHypergraph<>&) override final {
 
@@ -141,7 +148,9 @@ class FlowRefiner final : public IRefiner<>{
                                      tbb::parallel_do_feeder<Edge>& feeder) {
             const PartitionID block_0 = edge.first;
             const PartitionID block_1 = edge.second;
+            _rounds_per_block[block_0][block_1] ++;
 
+            auto start = std::chrono::high_resolution_clock::now();
             //LOG<< V(sched_getcpu()) << "computing:" V(block_0) << "and" << V(block_1);
 
             // Heuristic: If a flow refinement never improved a bipartition,
@@ -149,6 +158,9 @@ class FlowRefiner final : public IRefiner<>{
             //            second iteration of active block scheduling
             if (_context.refinement.flow.use_improvement_history &&
                 scheduler.getCurrentRound(block_0, block_1) > 0 && _num_improvements[block_0][block_1] == 0) {
+                auto finish = std::chrono::high_resolution_clock::now();
+                std::chrono::duration<double> elapsed = finish - start;
+                _times_per_block[block_0][block_1] += elapsed.count();
                 scheduler.scheduleNextBlocks(edge, feeder);
                 //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
                 return;
@@ -160,7 +172,9 @@ class FlowRefiner final : public IRefiner<>{
                 scheduler.setBlocksActive(block_0, block_1, feeder);
                 _num_improvements[block_0][block_1]++;
             }
-
+            auto finish = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = finish - start;
+            _times_per_block[block_0][block_1] += elapsed.count();
             scheduler.scheduleNextBlocks(edge, feeder);
             //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
         }
@@ -294,6 +308,7 @@ class FlowRefiner final : public IRefiner<>{
                 if (real_delta > 0) {
                     // update local delta
                     thread_local_delta += real_delta;
+                    _improved_per_block[block_0][block_1] += real_delta;
                     if(_context.refinement.flow.only_real){
                         improvement = true;
                         alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
@@ -301,7 +316,7 @@ class FlowRefiner final : public IRefiner<>{
                 } else if(real_delta < 0){
                     //reverse changes
                     for(auto move:moves){
-                        scheduler.changeNodePart(move.first, move.second.second, move.second.first, objective_delta);
+                        scheduler.changeNodePart(move.first, move.second.second, move.second.first);
                     }
                 }
                 
@@ -326,6 +341,44 @@ class FlowRefiner final : public IRefiner<>{
 
             return improvement;
         }
+        void printStats(){
+            for (int i = 0; i < _context.partition.k; i++){
+                for (int j = 0; j < _context.partition.k; j++){
+                    if(i < j){
+                        LOG << "[" << i << "," << j << "]:" << _times_per_block[i][j] << " improved:" << _improved_per_block[i][j]
+                        << " rounds:" << _rounds_per_block[i][j];
+                    }   
+                }
+            }
+        }
+
+        void updateStats(){
+            int blocks_refined = 0;
+            double time_per_block = 0;
+            for (int i = 0; i < _context.partition.k; i++){
+                for (int j = 0; j < _context.partition.k; j++){
+                    if(i < j){
+                        time_per_block += _times_per_block[i][j];
+                        blocks_refined += _rounds_per_block[i][j];
+                    }   
+                }
+            }
+            time_per_block = time_per_block / (double) blocks_refined;
+            utils::Stats::instance().update_stat("blocks_refined", blocks_refined);
+            utils::Stats::instance().update_stat("time_per_block", time_per_block);
+        }
+
+        void resetStats(){
+            for (int i = 0; i < _context.partition.k; i++){
+                for (int j = 0; j < _context.partition.k; j++){
+                    if(i < j){
+                        _times_per_block[i][j] = 0;
+                        _rounds_per_block[i][j] = 0;
+                        _improved_per_block[i][j] = 0;
+                    }   
+                }
+            }
+        }
 
     const Context& _context;
     const TaskGroupID _task_group_id;
@@ -333,6 +386,9 @@ class FlowRefiner final : public IRefiner<>{
     std::vector<std::vector<size_t> > _num_improvements;
     tbb::atomic<HyperedgeWeight> _round_delta;
     std::vector<std::vector<Edge>> _start_new_parallel_do;
+    std::vector<std::vector<double>> _times_per_block;
+    std::vector<std::vector<size_t>> _improved_per_block;
+    std::vector<std::vector<size_t>> _rounds_per_block;
 };
 
 struct FlowMatchingTypeTraits{
