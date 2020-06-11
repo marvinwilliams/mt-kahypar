@@ -325,10 +325,10 @@ class FlowRefiner final : public IRefiner<>{
                 //              to the optimum and break the adaptive flow iterations.
                 //
                 // always use
-                if (!improvement && cut_flow_network_before == cut_flow_network_after) {
+                /*if (!improvement && real_delta == 0) {
                     flow_network.release(hypergraph, block_0, block_1, scheduler);
                     break;
-                }
+                }*/
 
                 flow_network.release(hypergraph, block_0, block_1, scheduler);
 
