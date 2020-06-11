@@ -46,6 +46,7 @@ using edge = std::pair<PartitionID, PartitionID>;
 using scheduling_edge = std::pair<int, edge>;
 using ConstIncidenceIterator = std::vector<edge>::const_iterator;
 using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
+using DeltaFunction = std::function<void (const HyperedgeID, const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID)>;
 
 template <typename Derived = Mandatory>
 class SchedulerBase {
@@ -161,10 +162,9 @@ class SchedulerBase {
                           _block_pair_cut_he[block0][block1].cend());
   }
 
-  template<typename F>
-  void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to, const F& objective_delta) {
+  void changeNodePart(const HypernodeID hn, const PartitionID from, const PartitionID to, const DeltaFunction& delta_func = NOOP_FUNC) {
     if (from != to) {
-      bool success = _hg.changeNodePart(hn, from, to, objective_delta);
+      bool success = _hg.changeNodePart(hn, from, to, delta_func);
       unused(success);
       ASSERT(success);
 
@@ -558,7 +558,8 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     _running_edges[old_edge.first][old_edge.second] = false;
 
     size_t round = _current_rounds[old_edge.first][old_edge.second];
-    if(_active_blocks[round][old_edge.first] && _active_blocks[round][old_edge.second]){
+    if((_active_blocks[round][old_edge.first] || _active_blocks[round][old_edge.second]) && 
+    _block_pair_cut_he.size() > 0){
         _round_edges.push_back(old_edge);
     }
     }//unlock here
@@ -571,14 +572,28 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
     size_t active_tasks = getNumberOfActiveTasks();
     while(active_tasks < _num_threads){
-        edge e = getMostIndependentEdge();
-        if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
+      edge e = getMostIndependentEdge();
+      if(e.first != kInvalidPartition && e.second != kInvalidPartition) {
         feeder.add(e);
         active_tasks++;
+        //printRunningBlock();
       }else{
         return;
+      }
+    }
+  }
+
+  void printRunningBlock(){
+    std::string printline = "";
+    for (int i = 0; i < _context.partition.k; i++){
+      for (int j = 0; j < _context.partition.k; j++){
+        if(_running_edges[i][j]){
+          printline += "[" + std::to_string(i) + "," + std::to_string(j) + "]:" + std::to_string(_current_rounds[i][j]) + ", ";
+        }
       } 
     }
+    printline += "\n";
+    std::cout << printline;
   }
 
   size_t getCurrentRoundImpl(PartitionID block_0, PartitionID block_1){
@@ -619,15 +634,18 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     if(!edges_to_schedule.empty()){
         {tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
         for(auto edge:edges_to_schedule){
+            //if the edge is already contained in roundedges it will be scheduled for this round when it calls scheduleNextBlock 
             for(auto r_edge:_round_edges){
                 if(r_edge == edge)
-                    goto edge_already_contained;
+                    goto not_adding;
             }
-            if(_running_edges[edge.first][edge.second])
-                goto edge_already_contained;
+            //if it is already running it will be scheduled for this round when it calls scheduleNextBlock
+            //if the the blocks are not adjacent dont schedule
+            if(_running_edges[edge.first][edge.second] || _block_pair_cut_he[edge.first][edge.second].size() == 0)
+                goto not_adding;
 
             _round_edges.push_back(edge);
-            edge_already_contained:;
+            not_adding:;
         }
         }//unlock
         scheduleTillNumThreads(feeder);
@@ -669,7 +687,7 @@ private:
     bestEdge best_edge;
     size_t independence = std::numeric_limits<size_t>::max();
 
-    for(int i = _round_edges.size() - 1; i >= 0; i--){
+    for(size_t i = 0; i < _round_edges.size(); i++){
         edge e = _round_edges[i];
         size_t temp_independence = std::max(_tasks_on_block[e.first], _tasks_on_block[e.second]);
         if(temp_independence < independence){
@@ -704,7 +722,7 @@ private:
 
   struct bestEdge{
     edge e;
-    int index;
+    size_t index;
   };
 
   tbb::atomic<bool> _finished;

@@ -47,7 +47,7 @@ class AOptScheduler : public Test {
     scheduler() {
 
     context.partition.k = 8;
-    context.partition.epsilon = 0.0;
+    context.partition.epsilon = 0.03;
     context.setupPartWeights(32);
 
     hypergraph = PartitionedHypergraph<>(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
@@ -211,7 +211,13 @@ TYPED_TEST(AOptScheduler, ActiveBlocks) {
   std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
   ASSERT_EQ(false , this->scheduler->hasNextRound());
 
-  this->scheduler->setBlocksActive(0, 1);
+  std::list<edge> set_active_edges{std::make_pair(0,1)};
+  tbb::parallel_do(set_active_edges,
+                [&](edge e,
+                    tbb::parallel_do_feeder<edge>& feeder){
+                        this->scheduler->setBlocksActive(e.first, e.second, feeder);
+                    });
+
   ASSERT_EQ(true , this->scheduler->hasNextRound());
 }
 
@@ -234,6 +240,36 @@ TYPED_TEST(AOptScheduler, AquireBlockWeight) {
   ASSERT_EQ(3 ,this->scheduler->get_not_aquired_weight(block, other));
   other = 2;
   ASSERT_EQ(3 ,this->scheduler->get_not_aquired_weight(block, other));
+}
+
+TYPED_TEST(AOptScheduler, ScheduleNextBlock) {
+  size_t num_threads = TBBNumaArena::instance().total_number_of_threads();
+  this->scheduler->buildQuotientGraph();
+  ASSERT_EQ(true , this->scheduler->hasNextRound());
+
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
+
+  std::list<edge> schedule_next_edges{std::make_pair(0,2)};
+  tbb::parallel_do(schedule_next_edges,
+                [&](edge e,
+                    tbb::parallel_do_feeder<edge>& feeder){
+                      if(e.first == 0 && e.second == 2){
+                        this->scheduler->scheduleNextBlocks(e, feeder);
+                      }else{
+                        if(num_threads == 1){
+                          ASSERT_EQ(e.first, 6);
+                          ASSERT_EQ(e.second, 7);
+                        }else if(num_threads == 2){
+                          ASSERT_EQ(e.first, 4);
+                          ASSERT_EQ(e.second, 5);
+                        }else if(num_threads == 4){
+                          ASSERT_EQ(e.first, 3);
+                          ASSERT_EQ(e.second, 7);
+                        } else if(num_threads == 8){
+                          
+                        }
+                      }
+                    });
 }
 
 template<typename Scheduler>
@@ -291,5 +327,122 @@ TYPED_TEST(AMatchScheduler, GetInitialEdgesMatch) {
   }
 }
 
+TYPED_TEST(AMatchScheduler, ScheduleNextBlock) {
+  this->scheduler->buildQuotientGraph();
+
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
+
+  std::list<edge> schedule_next_edges{std::make_pair(0,2), std::make_pair(6,7)};
+  tbb::parallel_do(schedule_next_edges,
+                [&](edge e,
+                    tbb::parallel_do_feeder<edge>& feeder){
+                      if((e.first == 0 && e.second == 2) || (e.first == 6 && e.second == 7)){
+                        this->scheduler->scheduleNextBlocks(e, feeder);
+                      }else{
+                        ASSERT_EQ(e.first, 0);
+                        ASSERT_EQ(e.second, 6);
+                      }
+                    });
+}
+
+TYPED_TEST(AMatchScheduler, ActiveBlocks) {
+  this->scheduler->buildQuotientGraph();
+  ASSERT_EQ(true , this->scheduler->hasNextRound());
+
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
+  ASSERT_EQ(false , this->scheduler->hasNextRound());
+
+  std::list<edge> set_active_edges{std::make_pair(0,1)};
+  tbb::parallel_do(set_active_edges,
+                [&](edge e,
+                    tbb::parallel_do_feeder<edge>& feeder){
+                        this->scheduler->setBlocksActive(e.first, e.second, feeder);
+                    });
+
+  ASSERT_EQ(true , this->scheduler->hasNextRound());
+}
+
+template<typename Scheduler>
+class AOneRoundScheduler : public Test {
+ public:
+  AOneRoundScheduler() :
+    hg(HypergraphFactory::construct(TBBNumaArena::GLOBAL_TASK_GROUP,
+      32 , 8, { { 0, 1,  2,  3,  8,  9,  10,  11 },
+                {0, 20},
+                {0, 24},
+                { 4, 5, 6, 7, 12, 13, 14, 15 },
+                {4, 28},
+                {12, 28},
+                {16, 20},
+                {24,28} })),
+    hypergraph(),
+    context(),
+    scheduler() {
+
+    context.partition.k = 8;
+    context.partition.epsilon = 0.0;
+    context.setupPartWeights(32);
+
+    hypergraph = PartitionedHypergraph<>(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
+
+    // Assign part ids
+    for ( HypernodeID hn = 0; hn < 32; ++hn ) {
+      hypergraph.setNodePart(hn, hn / 4);
+    }
+    hypergraph.initializeNumCutHyperedges();
+
+    scheduler = std::make_unique<Scheduler>(hypergraph, context);
+  }
+
+  Hypergraph hg;
+  PartitionedHypergraph<> hypergraph;
+  Context context;
+
+  std::unique_ptr<Scheduler> scheduler;
+};
+
+typedef ::testing::Types<OneRoundScheduler> OneRoundConfig;
+
+TYPED_TEST_CASE(AOneRoundScheduler, OneRoundConfig);
+
+
+TYPED_TEST(AOneRoundScheduler, GetInitialEdgesOne) {
+  this->scheduler->buildQuotientGraph();
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
+  std::vector<edge> right_init_edges = { std::make_pair(0, 2), std::make_pair(6, 7),
+                                         std::make_pair(4, 5), std::make_pair(1, 3),
+                                         std::make_pair(3, 7), std::make_pair(0, 5),
+                                         std::make_pair(1, 7),std::make_pair(0, 6)} ;
+  for (size_t i = 0; i < initial_edges.size(); i++){
+    ASSERT_EQ(initial_edges[i].first, right_init_edges[i].first);
+    ASSERT_EQ(initial_edges[i].second, right_init_edges[i].second);
+  }
+}
+
+TYPED_TEST(AOneRoundScheduler, ScheduleNextBlock) {
+  this->scheduler->buildQuotientGraph();
+  ASSERT_EQ(false , this->scheduler->hasNextRound());
+
+  std::vector<edge> initial_edges = this->scheduler->getInitialParallelEdges();
+  ASSERT_EQ(false , this->scheduler->hasNextRound());
+
+  std::list<edge> set_active_edges{std::make_pair(0,2)};
+  tbb::parallel_do(set_active_edges,
+                [&](edge e,
+                    tbb::parallel_do_feeder<edge>& feeder){
+                        this->scheduler->setBlocksActive(e.first, e.second, feeder);
+                    });
+
+  int round = 0;
+  std::list<edge> schedule_next_edges{std::make_pair(0,2)};
+  tbb::parallel_do(schedule_next_edges,
+                [&](edge e,
+                    tbb::parallel_do_feeder<edge>& feeder){
+                      LOG << e.first << e.second << this->scheduler->getCurrentRound(e.first, e.second);
+                      ASSERT_EQ(round, this->scheduler->getCurrentRound(e.first, e.second));
+                      round++;
+                      this->scheduler->scheduleNextBlocks(e, feeder);
+                    });
+}
 
 }//namespace Mt-KaHyPar
