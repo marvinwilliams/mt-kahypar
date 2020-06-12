@@ -65,7 +65,8 @@ class SchedulerBase {
     _schedule_mutex(),
     _block_weights(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)),
     _rw_locks(context.partition.k),
-    _local_he_visited(_hg.initialNumEdges()) { }
+    _local_he_visited(_hg.initialNumEdges()),
+    _num_improvements(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)){ }
 
   SchedulerBase(const SchedulerBase&) = delete;
   SchedulerBase(SchedulerBase&&) = delete;
@@ -193,6 +194,10 @@ class SchedulerBase {
     static_cast<Derived*>(this)->setBlocksActiveImpl(block_0, block_1, feeder);
   }
 
+  void setImprovement(PartitionID block_0, PartitionID block_1){
+    _num_improvements[block_0][block_1]++;
+  }
+
   bool hasNextRound(){
     return static_cast<Derived*>(this)->hasNextRoundImpl();
   }
@@ -290,6 +295,7 @@ class SchedulerBase {
   parallel::scalable_vector<parallel::scalable_vector<size_t>> _block_weights;
   parallel::scalable_vector<tbb::spin_rw_mutex> _rw_locks;
   ThreadLocalFastResetFlagArray _local_he_visited;
+  parallel::scalable_vector<parallel::scalable_vector<size_t> > _num_improvements;
 };
 
 class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
@@ -298,12 +304,14 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
   MatchingScheduler(PartitionedHypergraph<>& hypergraph, const Context& context) :
     Base(hypergraph, context),
     _active_blocks(_context.partition.k, true),
-    _current_round(0){}
+    _current_round(-1){}
 
   parallel::scalable_vector<edge> getInitialParallelEdgesImpl(){
+    _current_round++;
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
-      if(this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) {
+      if((this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) &&
+      (_current_round == 0 || _num_improvements[edge.first][edge.second] > 0)) {
         this->_round_edges.push_back(edge);
       }
     }
@@ -385,12 +393,11 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
         active_blocks++;
       }
     }
-    _current_round++;
     return (active_blocks >= 1);
   }
 
   parallel::scalable_vector<bool> _active_blocks;
-  size_t _current_round;
+  int _current_round;
 };
 
 class OptScheduler : public SchedulerBase<OptScheduler> {
@@ -402,13 +409,15 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
     _tasks_on_block(context.partition.k, 0),
     _node_lock(hypergraph.initialNumNodes(), false),
     _active_blocks(_context.partition.k, true),
-    _current_round(0){}
+    _current_round(-1){}
 
 
   parallel::scalable_vector<edge> getInitialParallelEdgesImpl(){
+    _current_round++;
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
-      if(this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) {
+      if((this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) &&
+      (_current_round == 0 || _num_improvements[edge.first][edge.second] > 0)) {
         this->_round_edges.push_back(edge);
       }
     }
@@ -483,7 +492,6 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
         active_blocks++;
       }
     }
-    _current_round++;
     return (active_blocks >= 1);
   }
 
@@ -520,7 +528,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
   parallel::scalable_vector<size_t> _tasks_on_block;
   parallel::scalable_vector<tbb::atomic<int>> _node_lock;
   parallel::scalable_vector<bool> _active_blocks;
-  size_t _current_round;
+  int _current_round;
 };
 
 class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
@@ -563,7 +571,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
 
     size_t round = _current_rounds[old_edge.first][old_edge.second];
     if((_active_blocks[round][old_edge.first] || _active_blocks[round][old_edge.second]) && 
-    _block_pair_cut_he.size() > 0){
+    _block_pair_cut_he.size() > 0 && this->_num_improvements[old_edge.first][old_edge.second] > 0){
         _round_edges.push_back(old_edge);
     }
     }//unlock here
@@ -637,6 +645,10 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     if(!edges_to_schedule.empty()){
         {tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
         for(auto edge:edges_to_schedule){
+            //Heuristic: dont schedule in next round when it wasnt improved
+            if(this->_num_improvements[edge.first][edge.second] == 0){
+              goto not_adding;
+            }
             //if the edge is already contained in roundedges it will be scheduled for this round when it calls scheduleNextBlock 
             for(auto r_edge:_round_edges){
                 if(r_edge == edge)

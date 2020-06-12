@@ -155,25 +155,13 @@ class FlowRefiner final : public IRefiner<>{
             auto start = std::chrono::high_resolution_clock::now();
             //LOG<< V(sched_getcpu()) << "computing:" V(block_0) << "and" << V(block_1);
 
-            // Heuristic: If a flow refinement never improved a bipartition,
-            //            we ignore the refinement for these block in the
-            //            second iteration of active block scheduling
-            if (_context.refinement.flow.use_improvement_history &&
-                scheduler.getCurrentRound(block_0, block_1) > 0 && _num_improvements[block_0][block_1] == 0) {
-                auto finish = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> elapsed = finish - start;
-                _times_per_block[block_0][block_1] += elapsed.count();
-                scheduler.scheduleNextBlocks(edge, feeder);
-                //LOG << "Done with job on Numa Node" << sched_edge.first << " , Blocks:" << sched_edge.second.first << " " << sched_edge.second.second;
-                return;
-            }
-
             const bool improved = executeAdaptiveFlow(config, block_0, block_1, scheduler);
             if (improved) {
                 improvement = true;
-                scheduler.setBlocksActive(block_0, block_1, feeder);
-                _num_improvements[block_0][block_1]++;
+                scheduler.setImprovement(block_0, block_1);
+                scheduler.setBlocksActive(block_0, block_1, feeder);   
             }
+            
             auto finish = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> elapsed = finish - start;
             _times_per_block[block_0][block_1] += elapsed.count();
