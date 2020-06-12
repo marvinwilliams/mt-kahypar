@@ -197,19 +197,22 @@ class FlowRefiner final : public IRefiner<>{
 
 
             do {
+                utils::Timer::instance().start_timer("resetNetwork", "Reset FlowNetwork ", true);
                 _iterations_per_block[block_0][block_1] ++;
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
-                //const double old_imbalance = metrics::localBlockImbalance(
-                //hypergraph, _context, block_0, block_1);
+                utils::Timer::instance().stop_timer("resetNetwork");
 
                 // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
+                utils::Timer::instance().start_timer("getCutHe", "Get Cut He's ", true);
                 parallel::scalable_vector<HyperedgeID> cut_hes;
                 HyperedgeWeight cut_weight = 0;
                 for (const HyperedgeID& he : scheduler.blockPairCutHyperedges(block_0, block_1)) {
                     cut_weight += hypergraph.edgeWeight(he);
                     cut_hes.push_back(he);
                 }
+                utils::Timer::instance().stop_timer("getCutHe");
+
 
                 // Heurist 1: Don't execute 2way flow refinement for adjacent blocks
                 //            in the quotient graph with a small cut
@@ -245,6 +248,7 @@ class FlowRefiner final : public IRefiner<>{
                     maximum_flow.minimumSTCut(
                         hypergraph, flow_network, _context, block_0, block_1, scheduler, cut_flow_network_before);
 
+                utils::Timer::instance().start_timer("apply", "Applying Improvement ", true);
                 // Maximum Flow algorithm returns infinity, if all
                 // hypernodes contained in the flow problem are either
                 // sources or sinks
@@ -296,8 +300,9 @@ class FlowRefiner final : public IRefiner<>{
                     // Heuristic: Abort Round if there are to many flownetwork improvements without a
                     //            real improvement to prevent a busy deadlock.
                     if(real_delta <= 0){
-                        if(++times_no_real_improvement > 5){
+                        if(++times_no_real_improvement > 3){
                             flow_network.release(hypergraph, block_0, block_1, scheduler);
+                            utils::Timer::instance().stop_timer("apply");
                             break;
                         }
                     }
@@ -322,7 +327,8 @@ class FlowRefiner final : public IRefiner<>{
                         scheduler.changeNodePart(move.first, move.second.second, move.second.first);
                     }
                 }
-                
+                utils::Timer::instance().stop_timer("apply");
+
                 // Heuristic 2: If no improvement was found, but the cut before and
                 //              after is equal, we assume that the partition is close
                 //              to the optimum and break the adaptive flow iterations.
