@@ -44,8 +44,8 @@
 namespace mt_kahypar {
 using edge = std::pair<PartitionID, PartitionID>;
 using scheduling_edge = std::pair<int, edge>;
-using ConstIncidenceIterator = std::vector<edge>::const_iterator;
-using ConstCutHyperedgeIterator = std::vector<HyperedgeID>::const_iterator;
+using ConstIncidenceIterator = parallel::scalable_vector<edge>::const_iterator;
+using ConstCutHyperedgeIterator = parallel::scalable_vector<HyperedgeID>::const_iterator;
 using DeltaFunction = std::function<void (const HyperedgeID, const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID)>;
 
 template <typename Derived = Mandatory>
@@ -60,11 +60,12 @@ class SchedulerBase {
     _locked_blocks(_context.partition.k, false),
 
     _block_pair_cut_he(context.partition.k,
-                       std::vector<std::vector<HyperedgeID> >(context.partition.k,
-                                                              std::vector<HyperedgeID>())),
+                       parallel::scalable_vector<parallel::scalable_vector<HyperedgeID> >(context.partition.k,
+                                                              parallel::scalable_vector<HyperedgeID>())),
     _schedule_mutex(),
-    _block_weights(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
-    _rw_locks(context.partition.k) { }
+    _block_weights(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)),
+    _rw_locks(context.partition.k),
+    _local_he_visited(_hg.initialNumEdges()) { }
 
   SchedulerBase(const SchedulerBase&) = delete;
   SchedulerBase(SchedulerBase&&) = delete;
@@ -91,12 +92,15 @@ class SchedulerBase {
     }
   }
 
-  std::vector<edge> getInitialParallelEdges(){
+  parallel::scalable_vector<edge> getInitialParallelEdges(){
     return static_cast<Derived*>(this)->getInitialParallelEdgesImpl();
   }
 
   void scheduleNextBlocks(const edge old_edge, tbb::parallel_do_feeder<edge>& feeder){
+    utils::Timer::instance().start_timer("schedNext", "Scheduling next block ", true);
     static_cast<Derived*>(this)->scheduleNextBlocksImpl(old_edge, feeder);
+    utils::Timer::instance().stop_timer("schedNext");
+
   }
 
   size_t getCurrentRound(PartitionID block_0, PartitionID block_1){
@@ -246,7 +250,8 @@ class SchedulerBase {
   static constexpr bool debug = false;
 
   void updateBlockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
-    kahypar::ds::FastResetFlagArray<> visited = kahypar::ds::FastResetFlagArray<>(_hg.initialNumEdges());
+    kahypar::ds::FastResetFlagArray<>& visited = _local_he_visited.local();
+    visited.reset();
     size_t N = _block_pair_cut_he[block0][block1].size();
     for (size_t i = 0; i < N; ++i) {
       const HyperedgeID he = _block_pair_cut_he[block0][block1][i];
@@ -264,7 +269,7 @@ class SchedulerBase {
   }
 
   template<typename T>
-  void removeElement(size_t index, std::vector<T> &vector){
+  void removeElement(size_t index, parallel::scalable_vector<T> &vector){
     size_t N = vector.size();
     std::swap(vector[index], vector[N - 1]);
     vector.pop_back();
@@ -272,18 +277,19 @@ class SchedulerBase {
 
   PartitionedHypergraph<>& _hg;
   const Context& _context;
-  std::vector<edge> _quotient_graph;
+  parallel::scalable_vector<edge> _quotient_graph;
   //holds all eges, that are executed in that round (both blocks are active)
-  std::vector<edge> _round_edges;
+  parallel::scalable_vector<edge> _round_edges;
 
-  std::vector<bool> _locked_blocks;
+  parallel::scalable_vector<bool> _locked_blocks;
 
   // Contains the cut hyperedges for each pair of blocks.
-  std::vector<std::vector<std::vector<HyperedgeID> > > _block_pair_cut_he;
+  parallel::scalable_vector<parallel::scalable_vector<parallel::scalable_vector<HyperedgeID> > > _block_pair_cut_he;
 
   tbb::spin_mutex _schedule_mutex;
-  std::vector<std::vector<size_t>> _block_weights;
-  std::vector<tbb::spin_rw_mutex> _rw_locks;
+  parallel::scalable_vector<parallel::scalable_vector<size_t>> _block_weights;
+  parallel::scalable_vector<tbb::spin_rw_mutex> _rw_locks;
+  ThreadLocalFastResetFlagArray _local_he_visited;
 };
 
 class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
@@ -294,7 +300,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
     _active_blocks(_context.partition.k, true),
     _current_round(0){}
 
-  std::vector<edge> getInitialParallelEdgesImpl(){
+  parallel::scalable_vector<edge> getInitialParallelEdgesImpl(){
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
       if(this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) {
@@ -302,7 +308,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
       }
     }
     //vector for right access after Edges get scheduled
-    std::vector<edge> initialEdges;
+    parallel::scalable_vector<edge> initialEdges;
     for ( size_t i = 0; i < this->_round_edges.size(); ++i ) {
       const edge& e = this->_round_edges[i];
       if (!this->_locked_blocks[e.first] && !this->_locked_blocks[e.second]) {
@@ -383,7 +389,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
     return (active_blocks >= 1);
   }
 
-  std::vector<bool> _active_blocks;
+  parallel::scalable_vector<bool> _active_blocks;
   size_t _current_round;
 };
 
@@ -399,14 +405,14 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
     _current_round(0){}
 
 
-  std::vector<edge> getInitialParallelEdgesImpl(){
+  parallel::scalable_vector<edge> getInitialParallelEdgesImpl(){
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
       if(this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) {
         this->_round_edges.push_back(edge);
       }
     }
-    std::vector<edge> initial_edges;
+    parallel::scalable_vector<edge> initial_edges;
     const size_t num_threads = TBBNumaArena::instance().total_number_of_threads();
     for (size_t i = 0; i < num_threads; i++){
       edge e = getMostIndependentEdge();
@@ -511,9 +517,9 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
     return std::make_pair(kInvalidPartition, kInvalidPartition);
   }
 
-  std::vector<size_t> _tasks_on_block;
-  std::vector<tbb::atomic<int>> _node_lock;
-  std::vector<bool> _active_blocks;
+  parallel::scalable_vector<size_t> _tasks_on_block;
+  parallel::scalable_vector<tbb::atomic<int>> _node_lock;
+  parallel::scalable_vector<bool> _active_blocks;
   size_t _current_round;
 };
 
@@ -524,21 +530,21 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
   OneRoundScheduler(PartitionedHypergraph<>& hypergraph, const Context& context) :
     Base(hypergraph, context),
     _finished(false),
-    _current_rounds(context.partition.k, std::vector<int>(context.partition.k, -1)),
-    _active_blocks(1 , std::vector<tbb::atomic<bool>>(context.partition.k, false)),
+    _current_rounds(context.partition.k, parallel::scalable_vector<int>(context.partition.k, -1)),
+    _active_blocks(1 , parallel::scalable_vector<tbb::atomic<bool>>(context.partition.k, false)),
     _active_blocks_mutex(),
     _max_round(0),
-    _running_edges(context.partition.k, std::vector<bool>(context.partition.k, false)),
+    _running_edges(context.partition.k, parallel::scalable_vector<bool>(context.partition.k, false)),
     _tasks_on_block(context.partition.k, 0),
     _node_lock(hypergraph.initialNumNodes(), false),
     _num_threads(TBBNumaArena::instance().total_number_of_threads()){}
 
-  std::vector<edge> getInitialParallelEdgesImpl(){
+  parallel::scalable_vector<edge> getInitialParallelEdgesImpl(){
     //push edges from active blocks in _round_edges
     for(auto const edge : _quotient_graph) {
         _round_edges.push_back(edge);
     }
-    std::vector<edge> initial_edges;
+    parallel::scalable_vector<edge> initial_edges;
     for (size_t i = 0; i < _num_threads; i++){
       edge e = getMostIndependentEdge();
       if(e.first != kInvalidPartition || e.second != kInvalidPartition) {
@@ -549,8 +555,6 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
   }
 
   void scheduleNextBlocksImpl(const edge old_edge, tbb::parallel_do_feeder<edge>& feeder){
-    utils::Timer::instance().start_timer("schedNext", "Scheduling next block ", true);
-
     {tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
 
     _tasks_on_block[old_edge.first] --;
@@ -565,7 +569,6 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     }//unlock here
 
     scheduleTillNumThreads(feeder);
-    utils::Timer::instance().stop_timer("schedNext");
   }
 
   void scheduleTillNumThreads(tbb::parallel_do_feeder<edge>& feeder){
@@ -605,7 +608,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     bool old_block_0 = _active_blocks[round][block_0].fetch_and_store(true);
     bool old_block_1 = _active_blocks[round][block_1].fetch_and_store(true);
 
-    std::vector<edge> edges_to_schedule;
+    parallel::scalable_vector<edge> edges_to_schedule;
     
     //if block_0 was not active before, add the eges for the next round
     if(!old_block_0){
@@ -702,7 +705,7 @@ private:
         removeElement(best_edge.index, _round_edges);
         size_t round = ++_current_rounds[best_edge.e.first][best_edge.e.second];
         if(round > _max_round){
-            _active_blocks.push_back(std::vector<tbb::atomic<bool>>(_context.partition.k, false));
+            _active_blocks.push_back(parallel::scalable_vector<tbb::atomic<bool>>(_context.partition.k, false));
             _max_round = round;
         }
         _running_edges[best_edge.e.first][best_edge.e.second] = true;
@@ -726,14 +729,14 @@ private:
   };
 
   tbb::atomic<bool> _finished;
-  std::vector<std::vector<int>> _current_rounds;
-  std::vector<std::vector<tbb::atomic<bool>>> _active_blocks;
+  parallel::scalable_vector<parallel::scalable_vector<int>> _current_rounds;
+  parallel::scalable_vector<parallel::scalable_vector<tbb::atomic<bool>>> _active_blocks;
   tbb::spin_mutex _active_blocks_mutex;
   size_t _max_round;
-  std::vector<std::vector<bool>> _running_edges;
+  parallel::scalable_vector<parallel::scalable_vector<bool>> _running_edges;
 
-  std::vector<size_t> _tasks_on_block;
-  std::vector<tbb::atomic<int>> _node_lock;
+  parallel::scalable_vector<size_t> _tasks_on_block;
+  parallel::scalable_vector<tbb::atomic<int>> _node_lock;
   size_t _num_threads;
 };
 }  // namespace mt-kahypar

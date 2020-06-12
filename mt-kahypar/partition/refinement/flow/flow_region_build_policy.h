@@ -41,7 +41,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
   inline static void buildFlowNetwork(PartitionedHypergraph<>& hg,
                                       const Context& context,
                                       Network& flow_network,
-                                      std::vector<HyperedgeID>& cut_hes,
+                                      parallel::scalable_vector<HyperedgeID>& cut_hes,
                                       const double alpha,
                                       const PartitionID block_0,
                                       const PartitionID block_1,
@@ -49,8 +49,8 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
                                       Scheduler & scheduler) {
     visited.reset();
     const int blocks_idx = block_0 * context.partition.k + block_1;
-    std::vector<HypernodeID> start_nodes_block_0;
-    std::vector<HypernodeID> start_nodes_block_1;
+    parallel::scalable_vector<HypernodeID> start_nodes_block_0;
+    parallel::scalable_vector<HypernodeID> start_nodes_block_1;
     for (const HyperedgeID he : cut_hes) {
       //TODO: why does this fail sometimes?
       //ASSERT(hg.connectivity(he) > 1, "Hyperedge is not a cut hyperedge!");
@@ -129,7 +129,7 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<MatchingFlowR
   template <class Network = Mandatory, typename Scheduler>
   static inline HypernodeID bfs(PartitionedHypergraph<>& hg,
                                 Network& flow_network,
-                                std::vector<HypernodeID>& start_nodes,
+                                parallel::scalable_vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
                                 const PartitionID other_part,
                                 const HypernodeWeight max_part_weight,
@@ -193,7 +193,7 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<OptFlowRegionBuild
   template <class Network = Mandatory, typename Scheduler>
   static inline HypernodeID bfs(PartitionedHypergraph<>& hg,
                                 Network& flow_network,
-                                std::vector<HypernodeID>& start_nodes,
+                                parallel::scalable_vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
                                 const PartitionID other_part,
                                 const HypernodeWeight max_part_weight,

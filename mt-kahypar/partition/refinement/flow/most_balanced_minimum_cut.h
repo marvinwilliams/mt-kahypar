@@ -104,7 +104,7 @@ class MostBalancedMinimumCut {
     std::vector<NodeID> contraction_mapping = std::move(contraction.second);
 
     // Build mapping from contracted graph to flow network
-    std::vector<std::vector<NodeID> > scc_to_flow_network(dag.numNodes(), std::vector<NodeID>());
+    parallel::scalable_vector<parallel::scalable_vector<NodeID> > scc_to_flow_network(dag.numNodes(), parallel::scalable_vector<NodeID>());
     for (const NodeID& u_og : residual_graph.nodes()) {
       const NodeID flow_u_og = _graph_to_flow_network.get(u_og);
       if (flow_network.isHypernode(flow_u_og)) {
@@ -114,7 +114,7 @@ class MostBalancedMinimumCut {
     }
 
     // Calculate in degrees of nodes in DAG graph for topological ordering
-    std::vector<size_t> in_degree(dag.numNodes(), 0);
+    parallel::scalable_vector<size_t> in_degree(dag.numNodes(), 0);
     for (const NodeID& u : dag.nodes()) {
       for (const Edge& e : dag.incidentEdges(u)) {
         const NodeID v = e.target_node;
@@ -125,8 +125,8 @@ class MostBalancedMinimumCut {
     }
 
     // Find most balanced minimum cut
-    std::vector<NodeID> topological_order(dag.numNodes(), 0);
-    std::vector<bool> best_partition_id(dag.numNodes(), false);
+    parallel::scalable_vector<NodeID> topological_order(dag.numNodes(), 0);
+    parallel::scalable_vector<bool> best_partition_id(dag.numNodes(), false);
 
     std::pair<HypernodeWeight, HypernodeWeight> aquired_part_weight = get_aquired_part_weight(block_0, block_1, scheduler);
     HypernodeWeight initial_current_first = aquired_part_weight.first + aquired_part_weight.second - _fixed_part_weights.second;
@@ -143,7 +143,7 @@ class MostBalancedMinimumCut {
       topologicalSort(dag, in_degree, topological_order);
 
       // Sweep through topological order and find best imbalance
-      std::vector<bool> tmp_partition_id(dag.numNodes(), false);
+      parallel::scalable_vector<bool> tmp_partition_id(dag.numNodes(), false);
       double tmp_best_imbalance = best_imbalance;//metrics::localBlockImbalance(hypergraph, context, block_0, block_1);
 
       std::pair<HypernodeWeight, HypernodeWeight> current_part_weight = initial_current_part_weight;
@@ -311,7 +311,7 @@ class MostBalancedMinimumCut {
       }
     }
 
-    std::vector<std::vector<Edge> > adj_list(cur_graph_node, std::vector<Edge>());
+    parallel::scalable_vector<parallel::scalable_vector<Edge> > adj_list(cur_graph_node, parallel::scalable_vector<Edge>());
     for (const NodeID& node : flow_network.nodes()) {
       if (!_visited[node]) {
         const NodeID source = _flow_network_to_graph.get(node);
@@ -368,9 +368,9 @@ class MostBalancedMinimumCut {
 
 
   void topologicalSort(const KaHyParGraph& g,
-                       std::vector<size_t> in_degree,
-                       std::vector<NodeID>& topological_order) {
-    std::vector<NodeID> start_nodes;
+                       parallel::scalable_vector<size_t> in_degree,
+                       parallel::scalable_vector<NodeID>& topological_order) {
+    parallel::scalable_vector<NodeID> start_nodes;
     for (const NodeID& u : g.nodes()) {
       if (in_degree[u] == 0) {
         start_nodes.push_back(u);

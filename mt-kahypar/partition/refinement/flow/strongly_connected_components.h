@@ -109,9 +109,9 @@ class StronglyConnectedComponents {
     }
   }
 
-  std::vector<int> _dfs_num;
-  std::vector<NodeID> _unfinished;
-  std::vector<NodeID> _roots;
-  std::vector<std::pair<NodeID, KaHyParGraph::EdgeIterator> > _call_stack;
+  parallel::scalable_vector<int> _dfs_num;
+  parallel::scalable_vector<NodeID> _unfinished;
+  parallel::scalable_vector<NodeID> _roots;
+  parallel::scalable_vector<std::pair<NodeID, KaHyParGraph::EdgeIterator> > _call_stack;
 };
 }  // namespace mt_kahypar

@@ -26,7 +26,7 @@ class FlowRefiner final : public IRefiner<>{
         using RegionBuildPolicy =  typename FlowTypeTraits::RegionBuildPolicy;
         using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
 
-        using EdgeList = std::vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
+        using EdgeList = parallel::scalable_vector<std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>>;
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
         using MaximumFlow = IBFS<FlowTypeTraits>;
@@ -60,15 +60,17 @@ class FlowRefiner final : public IRefiner<>{
                               const TaskGroupID task_group_id) :
             _context(context),
             _task_group_id(task_group_id),
-            _num_improvements(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
+            _num_improvements(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)),
             _round_delta(0),
             _start_new_parallel_do(TBBNumaArena::instance().num_used_numa_nodes()),
-            _times_per_block(context.partition.k, std::vector<double>(context.partition.k, 0)),
-            _improved_per_block(context.partition.k, std::vector<size_t>(context.partition.k, 0)),
-            _rounds_per_block(context.partition.k, std::vector<size_t>(context.partition.k, 0)) {
+            _times_per_block(context.partition.k, parallel::scalable_vector<double>(context.partition.k, 0)),
+            _improved_per_block(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)),
+            _rounds_per_block(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)),
+            _iterations_per_block(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)) {
                 utils::Stats::instance().add_stat("blocks_refined", 0);
                 utils::Stats::instance().add_stat("time_per_block", double(0));
-             }
+                utils::Stats::instance().add_stat("iterations_per_block", 0);
+            }
 
         FlowRefiner(const FlowRefiner&) = delete;
         FlowRefiner(FlowRefiner&&) = delete;
@@ -195,13 +197,14 @@ class FlowRefiner final : public IRefiner<>{
 
 
             do {
+                _iterations_per_block[block_0][block_1] ++;
                 alpha /= 2.0;
                 flow_network.reset(block_0, block_1);
                 //const double old_imbalance = metrics::localBlockImbalance(
                 //hypergraph, _context, block_0, block_1);
 
                 // Initialize set of cut hyperedges for blocks 'block_0' and 'block_1'
-                std::vector<HyperedgeID> cut_hes;
+                parallel::scalable_vector<HyperedgeID> cut_hes;
                 HyperedgeWeight cut_weight = 0;
                 for (const HyperedgeID& he : scheduler.blockPairCutHyperedges(block_0, block_1)) {
                     cut_weight += hypergraph.edgeWeight(he);
@@ -274,7 +277,7 @@ class FlowRefiner final : public IRefiner<>{
                                     };
 
                 HyperedgeWeight real_delta = 0;
-                std::vector<std::pair<HypernodeID, std::pair<PartitionID, PartitionID>>> moves;
+                parallel::scalable_vector<std::pair<HypernodeID, std::pair<PartitionID, PartitionID>>> moves;
                 // Perform moves in quotient graph in order to update
                 // cut hyperedges between adjacent blocks.
                 if (flownetwork_improved_metric && is_feasible_partition) {
@@ -355,17 +358,21 @@ class FlowRefiner final : public IRefiner<>{
         void updateStats(){
             int blocks_refined = 0;
             double time_per_block = 0;
+            int iterations_per_block = 0;
             for (int i = 0; i < _context.partition.k; i++){
                 for (int j = 0; j < _context.partition.k; j++){
                     if(i < j){
                         time_per_block += _times_per_block[i][j];
                         blocks_refined += _rounds_per_block[i][j];
+                        iterations_per_block += _iterations_per_block[i][j];
+
                     }   
                 }
             }
             time_per_block = time_per_block / (double) blocks_refined;
             utils::Stats::instance().update_stat("blocks_refined", blocks_refined);
             utils::Stats::instance().update_stat("time_per_block", time_per_block);
+            utils::Stats::instance().update_stat("iterations_per_block", iterations_per_block);
         }
 
         void resetStats(){
@@ -375,6 +382,7 @@ class FlowRefiner final : public IRefiner<>{
                         _times_per_block[i][j] = 0;
                         _rounds_per_block[i][j] = 0;
                         _improved_per_block[i][j] = 0;
+                        _iterations_per_block[i][j] = 0;
                     }   
                 }
             }
@@ -383,12 +391,13 @@ class FlowRefiner final : public IRefiner<>{
     const Context& _context;
     const TaskGroupID _task_group_id;
 
-    std::vector<std::vector<size_t> > _num_improvements;
+    parallel::scalable_vector<parallel::scalable_vector<size_t> > _num_improvements;
     tbb::atomic<HyperedgeWeight> _round_delta;
-    std::vector<std::vector<Edge>> _start_new_parallel_do;
-    std::vector<std::vector<double>> _times_per_block;
-    std::vector<std::vector<size_t>> _improved_per_block;
-    std::vector<std::vector<size_t>> _rounds_per_block;
+    parallel::scalable_vector<parallel::scalable_vector<Edge>> _start_new_parallel_do;
+    parallel::scalable_vector<parallel::scalable_vector<double>> _times_per_block;
+    parallel::scalable_vector<parallel::scalable_vector<size_t>> _improved_per_block;
+    parallel::scalable_vector<parallel::scalable_vector<size_t>> _rounds_per_block;
+    parallel::scalable_vector<parallel::scalable_vector<size_t>> _iterations_per_block;
 };
 
 struct FlowMatchingTypeTraits{

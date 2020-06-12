@@ -214,7 +214,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   MostBalancedMinimumCut _mbmc;
   double _new_imbalance;
 
-  std::vector<PartitionID> _original_part_id;
+  parallel::scalable_vector<PartitionID> _original_part_id;
 };
 
 template <typename FlowTypeTraits>
@@ -300,7 +300,7 @@ class BoykovKolmogorov : public MaximumFlow<FlowTypeTraits>{
   using Base::_visited;
 
   FlowGraph _flow_graph;
-  std::vector<NodeID> _flow_network_mapping;
+  parallel::scalable_vector<NodeID> _flow_network_mapping;
 };
 
 
@@ -390,6 +390,6 @@ class IBFS : public MaximumFlow<FlowTypeTraits>{
   using Base::_visited;
 
   FlowGraph _flow_graph;
-  std::vector<NodeID> _flow_network_mapping;
+  parallel::scalable_vector<NodeID> _flow_network_mapping;
 };
 }  // namespace mt_kahypar
