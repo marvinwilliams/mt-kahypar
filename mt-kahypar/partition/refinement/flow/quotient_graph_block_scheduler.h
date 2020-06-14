@@ -310,7 +310,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
     _current_round++;
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
-      if((this->_active_blocks[edge.first] && this->_active_blocks[edge.second]) &&
+      if((this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) &&
       (_current_round == 0 || _num_improvements[edge.first][edge.second] > 0)) {
         this->_round_edges.push_back(edge);
       }
@@ -393,7 +393,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
         active_blocks++;
       }
     }
-    return (active_blocks >= 2);
+    return (active_blocks >= 1);
   }
 
   parallel::scalable_vector<bool> _active_blocks;
@@ -416,7 +416,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
     _current_round++;
     //push edges from active blocks in _round_edges
     for(auto const edge : this->_quotient_graph) {
-      if((this->_active_blocks[edge.first] && this->_active_blocks[edge.second]) &&
+      if((this->_active_blocks[edge.first] || this->_active_blocks[edge.second]) &&
       (_current_round == 0 || _num_improvements[edge.first][edge.second] > 0)) {
         this->_round_edges.push_back(edge);
       }
@@ -492,7 +492,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
         active_blocks++;
       }
     }
-    return (active_blocks >= 2);
+    return (active_blocks >= 1);
   }
 
   private:
@@ -570,7 +570,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     _running_edges[old_edge.first][old_edge.second] = false;
 
     size_t round = _current_rounds[old_edge.first][old_edge.second];
-    if((_active_blocks[round][old_edge.first] && _active_blocks[round][old_edge.second]) && 
+    if((_active_blocks[round][old_edge.first] || _active_blocks[round][old_edge.second]) && 
     _block_pair_cut_he.size() > 0 && this->_num_improvements[old_edge.first][old_edge.second] > 0){
         _round_edges.push_back(old_edge);
     }
@@ -622,7 +622,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     if(!old_block_0){
         tbb::spin_mutex::scoped_lock lock{_active_blocks_mutex};
         for (int i = 0; i < _context.partition.k; i++){
-            if(_active_blocks[round][i] && i != block_0 && i != block_1){
+            if(i != block_0 && i != block_1){
                 if(i < block_0)
                     edges_to_schedule.push_back(std::make_pair(i, block_0));
                 else
@@ -634,7 +634,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     if(!old_block_1){
         tbb::spin_mutex::scoped_lock lock{_active_blocks_mutex};
         for (int i = 0; i < _context.partition.k; i++){
-            if(_active_blocks[round][i] && i != block_0 && i != block_1){
+            if(i != block_0 && i != block_1){
                 if(i < block_1)
                     edges_to_schedule.push_back(std::make_pair(i, block_1));
                 else
