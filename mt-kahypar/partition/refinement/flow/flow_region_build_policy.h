@@ -226,13 +226,15 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<OptFlowRegionBuild
       for (const HyperedgeID& he : hg.incidentEdges(hn)) {
         if (!visited[num_hypernodes + he]) {
           for (const HypernodeID& pin : hg.pins(he)) {
-            if (!visited[pin] && hg.partID(pin) == part &&
+            if ( hg.partID(pin) == part){
+              if(!visited[pin]&&
                 queue_weight + hg.nodeWeight(pin) <= max_part_weight) {
-              if(scheduler.tryAquireNode(pin, blocks_idx)){
-                Q.push(pin);
-                queue_weight += hg.nodeWeight(pin);
+                if(scheduler.tryAquireNode(pin, blocks_idx)){
+                  Q.push(pin);
+                  queue_weight += hg.nodeWeight(pin);
+                }
+                visited.set(pin, true);
               }
-              visited.set(pin, true);
             }
           }
           visited.set(num_hypernodes + he, true);
