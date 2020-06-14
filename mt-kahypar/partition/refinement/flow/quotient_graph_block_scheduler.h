@@ -570,7 +570,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     _running_edges[old_edge.first][old_edge.second] = false;
 
     size_t round = _current_rounds[old_edge.first][old_edge.second];
-    if((_active_blocks[round][old_edge.first] || _active_blocks[round][old_edge.second]) && 
+    if((_active_blocks[round][old_edge.first] && _active_blocks[round][old_edge.second]) && 
     _block_pair_cut_he.size() > 0 && this->_num_improvements[old_edge.first][old_edge.second] > 0){
         _round_edges.push_back(old_edge);
     }
