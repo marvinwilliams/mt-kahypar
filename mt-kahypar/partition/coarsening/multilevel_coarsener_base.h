@@ -369,11 +369,6 @@ class MultilevelCoarsenerBase {
         utils::Timer::instance().stop_timer("fm");
       }
 
-      if ( _top_level ) {
-        ASSERT(current_metrics.km1 == metrics::km1(partitioned_hypergraph),
-               V(current_metrics.km1) << V(metrics::km1(partitioned_hypergraph)));
-      }
-
       if ( flow && _context.refinement.flow.algorithm != FlowAlgorithm::do_nothing ) {
         utils::Timer::instance().start_timer("initialize_flow_refiner", "Initialize Flow Refiner");
         flow->initialize(partitioned_hypergraph);
@@ -381,18 +376,12 @@ class MultilevelCoarsenerBase {
 
         utils::Timer::instance().start_timer("flow", "Flow");
         improvement_found |= flow->refine(partitioned_hypergraph, current_metrics, time_limit);
-        utils::Timer::instance().stop_timer("Flow");
+        utils::Timer::instance().stop_timer("flow");
       }
 
-      if ( _top_level) {
-        DBG << "After Flow Refiner - km1 = " << current_metrics.km1
-            << ", imbalance = " << current_metrics.imbalance;
-
-
-        if (current_metrics.km1 != metrics::km1(partitioned_hypergraph)) {
-          LOG << V(current_metrics.km1) << "after FM does not match actual value" << V(metrics::km1(partitioned_hypergraph));
-          std::exit(0);
-        }
+      if ( _top_level ) {
+        ASSERT(current_metrics.km1 == metrics::km1(partitioned_hypergraph),
+               V(current_metrics.km1) << V(metrics::km1(partitioned_hypergraph)));
       }
 
       if ( !_context.refinement.refine_until_no_improvement ) {

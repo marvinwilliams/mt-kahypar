@@ -81,26 +81,26 @@ public:
 
         // Assign part ids
         for ( HypernodeID hn = 0; hn < 80; ++hn ) {
-            hypergraph.setNodePart(hn, hn / 20);
+            hypergraph.setOnlyNodePart(hn, hn / 20);
         }
-        hypergraph.initializeNumCutHyperedges();
+        hypergraph.initializePartition(TBBNumaArena::GLOBAL_TASK_GROUP);
 
         flow_network = std::make_unique<FlowNetwork>(80, 13, 106);
         flow_network2 = std::make_unique<FlowNetwork>(80, 13, 106);
         scheduler = std::make_unique<Scheduler>(hypergraph, context);
     }
 
-    void buildFlowNetwork(PartitionedHyperGraph& hg,
-                                    const Context& context,
-                                    FlowNetwork& flow_network,
-                                    std::vector<HyperedgeID>& cut_hes,
-                                    const double alpha,
-                                    const PartitionID block_0,
-                                    const PartitionID block_1,
-                                    kahypar::ds::FastResetFlagArray<>& visited,
-                                    Scheduler & scheduler){
+    void buildFlowNetwork(PartitionedHyperGraph& phg,
+                          const Context& context,
+                          FlowNetwork& flow_network,
+                          parallel::scalable_vector<HyperedgeID>& cut_hes,
+                          const double alpha,
+                          const PartitionID block_0,
+                          const PartitionID block_1,
+                          kahypar::ds::FastResetFlagArray<>& visited,
+                          Scheduler & scheduler){
         RegionBuildPolicy::buildFlowNetwork(
-                    hg, context, flow_network,
+                    phg, context, flow_network,
                     cut_hes, alpha, block_0, block_1,
                     visited, scheduler);
     }
@@ -128,7 +128,7 @@ TYPED_TEST_CASE(AFlowNetworkTest, OptConfig);
 
 TYPED_TEST(AFlowNetworkTest, FlowRegionTest) {
   this->scheduler->buildQuotientGraph();
-  std::vector<HyperedgeID> cut_hes;
+  parallel::scalable_vector<HyperedgeID> cut_hes;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 1)) {
       cut_hes.push_back(he);
   }
@@ -148,7 +148,7 @@ TYPED_TEST(AFlowNetworkTest, FlowRegionTest) {
     ASSERT_FALSE(this->scheduler->isAquired(node));
   }
 
-  std::vector<HyperedgeID> cut_hes2;
+  parallel::scalable_vector<HyperedgeID> cut_hes2;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 2)) {
       cut_hes2.push_back(he);
   }
@@ -172,7 +172,7 @@ TYPED_TEST(AFlowNetworkTest, FlowRegionTest) {
 
 TYPED_TEST(AFlowNetworkTest, Release) {
   this->scheduler->buildQuotientGraph();
-  std::vector<HyperedgeID> cut_hes;
+  parallel::scalable_vector<HyperedgeID> cut_hes;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 1)) {
       cut_hes.push_back(he);
   }
@@ -181,7 +181,7 @@ TYPED_TEST(AFlowNetworkTest, Release) {
                   this->hypergraph, this->context, *this->flow_network,
                   cut_hes, this->context.refinement.flow.alpha, 0, 1,
                   this->visited, *this->scheduler);
-  std::vector<HyperedgeID> cut_hes2;
+  parallel::scalable_vector<HyperedgeID> cut_hes2;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 2)) {
       cut_hes2.push_back(he);
   }
@@ -213,7 +213,7 @@ TYPED_TEST(AFlowNetworkTest, Release) {
 
 TYPED_TEST(AFlowNetworkTest, FlowNetWorkBuild) {
   this->scheduler->buildQuotientGraph();
-  std::vector<HyperedgeID> cut_hes;
+  parallel::scalable_vector<HyperedgeID> cut_hes;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 1)) {
       cut_hes.push_back(he);
   }
@@ -223,7 +223,7 @@ TYPED_TEST(AFlowNetworkTest, FlowNetWorkBuild) {
                   cut_hes, this->context.refinement.flow.alpha, 0, 1,
                   this->visited, *this->scheduler);
 
-  std::vector<HyperedgeID> cut_hes2;
+  parallel::scalable_vector<HyperedgeID> cut_hes2;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 2)) {
       cut_hes2.push_back(he);
   }
@@ -253,7 +253,7 @@ TYPED_TEST(AFlowNetworkTest, FlowNetWorkBuild) {
 
 TYPED_TEST(AFlowNetworkTest, SourcesAndSinks) {
   this->scheduler->buildQuotientGraph();
-  std::vector<HyperedgeID> cut_hes;
+  parallel::scalable_vector<HyperedgeID> cut_hes;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 1)) {
       cut_hes.push_back(he);
   }
@@ -263,7 +263,7 @@ TYPED_TEST(AFlowNetworkTest, SourcesAndSinks) {
                   cut_hes, this->context.refinement.flow.alpha, 0, 1,
                   this->visited, *this->scheduler);
 
-  std::vector<HyperedgeID> cut_hes2;
+  parallel::scalable_vector<HyperedgeID> cut_hes2;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 2)) {
       cut_hes2.push_back(he);
   }
@@ -286,7 +286,7 @@ TYPED_TEST(AFlowNetworkTest, SourcesAndSinks) {
 
 TYPED_TEST(AFlowNetworkTest, IncidentEdges) {
   this->scheduler->buildQuotientGraph();
-  std::vector<HyperedgeID> cut_hes;
+  parallel::scalable_vector<HyperedgeID> cut_hes;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 1)) {
       cut_hes.push_back(he);
   }
@@ -296,7 +296,7 @@ TYPED_TEST(AFlowNetworkTest, IncidentEdges) {
                   cut_hes, this->context.refinement.flow.alpha, 0, 1,
                   this->visited, *this->scheduler);
 
-  std::vector<HyperedgeID> cut_hes2;
+  parallel::scalable_vector<HyperedgeID> cut_hes2;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 2)) {
       cut_hes2.push_back(he);
   }
@@ -322,7 +322,7 @@ TYPED_TEST(AFlowNetworkTest, IncidentEdges) {
 
 TYPED_TEST(AFlowNetworkTest, AquiredPartWeight) {
   this->scheduler->buildQuotientGraph();
-  std::vector<HyperedgeID> cut_hes;
+  parallel::scalable_vector<HyperedgeID> cut_hes;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 1)) {
       cut_hes.push_back(he);
   }
@@ -332,7 +332,7 @@ TYPED_TEST(AFlowNetworkTest, AquiredPartWeight) {
                   cut_hes, this->context.refinement.flow.alpha, 0, 1,
                   this->visited, *this->scheduler);
 
-  std::vector<HyperedgeID> cut_hes2;
+  parallel::scalable_vector<HyperedgeID> cut_hes2;
   for (const HyperedgeID& he : this->scheduler->blockPairCutHyperedges(0, 2)) {
       cut_hes2.push_back(he);
   }
