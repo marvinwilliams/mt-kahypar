@@ -25,7 +25,6 @@
 #include "tbb/concurrent_queue.h"
 #include "tbb/task_group.h"
 #include "tbb/parallel_for.h"
-#include "tbb/atomic.h"
 
 #include "kahypar/meta/mandatory.h"
 
@@ -147,6 +146,7 @@ class MultilevelCoarsener : public ICoarsener,
     int pass_nr = 0;
     const HypernodeID initial_num_nodes = Base::currentNumNodes();
     while ( Base::currentNumNodes() > _context.coarsening.contraction_limit ) {
+      HighResClockTimepoint round_start = std::chrono::high_resolution_clock::now();
       Hypergraph& current_hg = Base::currentHypergraph();
       DBG << V(pass_nr)
           << V(current_hg.initialNumNodes())
@@ -277,7 +277,7 @@ class MultilevelCoarsener : public ICoarsener,
 
       utils::Timer::instance().start_timer("parallel_multilevel_contraction", "Parallel Multilevel Contraction");
       // Perform parallel contraction
-      Base::performMultilevelContraction(std::move(cluster_ids));
+      Base::performMultilevelContraction(std::move(cluster_ids), round_start);
       utils::Timer::instance().stop_timer("parallel_multilevel_contraction");
 
       if ( _context.coarsening.use_adaptive_max_allowed_node_weight ) {
@@ -338,12 +338,12 @@ class MultilevelCoarsener : public ICoarsener,
     // Indicates that u wants to join the cluster of v.
     // Will be important later for conflict resolution.
     bool success = false;
-    _matching_partner[u] = v;
     const HypernodeWeight weight_u = hypergraph.nodeWeight(u);
     HypernodeWeight weight_v = _cluster_weight[v];
     if ( weight_u + weight_v <= _max_allowed_node_weight ) {
 
-      if ( _matching_state[u].compare_and_exchange_strong(unmatched, match_in_progress) ) {
+      if ( _matching_state[u].compare_exchange_strong(unmatched, match_in_progress) ) {
+        _matching_partner[u] = v;
         // Current thread gets "ownership" for vertex u. Only threads with "ownership"
         // can change the cluster id of a vertex.
 
@@ -371,7 +371,7 @@ class MultilevelCoarsener : public ICoarsener,
               success = true;
             }
           }
-        } else if ( _matching_state[v].compare_and_exchange_strong(unmatched, match_in_progress) ) {
+        } else if ( _matching_state[v].compare_exchange_strong(unmatched, match_in_progress) ) {
           // Current thread has the "ownership" for u and v and can change the cluster id
           // of both vertices thread-safe.
           cluster_ids[u] = v;
@@ -382,16 +382,28 @@ class MultilevelCoarsener : public ICoarsener,
         } else {
           // State of v must be either MATCHING_IN_PROGRESS or an other thread changed the state
           // in the meantime to MATCHED. We have to wait until the state of v changed to
-          // MATCHED or resolve the conflict if u is matched to v and v is matched to u and both
-          // are in state MATCHING_IN_PROGRESS
+          // MATCHED or resolve the conflict if u is matched within a cyclic matching dependency
 
           // Conflict Resolution
           while ( _matching_state[v] == STATE(MatchingState::MATCHING_IN_PROGRESS) ) {
-            if ( _matching_partner[v] == u && u < v) {
+
+            // Check if current vertex is in a cyclic matching dependency
+            HypernodeID cur_u = u;
+            HypernodeID smallest_node_id_in_cycle = cur_u;
+            while ( _matching_partner[cur_u] != u && _matching_partner[cur_u] != cur_u ) {
+              cur_u = _matching_partner[cur_u];
+              smallest_node_id_in_cycle = std::min(smallest_node_id_in_cycle, cur_u);
+            }
+
+            // Resolve cyclic matching dependency
+            // Vertex with smallest id starts to resolve conflict
+            const bool is_in_cyclic_dependency = _matching_partner[cur_u] == u;
+            if ( is_in_cyclic_dependency && u == smallest_node_id_in_cycle) {
               cluster_ids[u] = v;
               _cluster_weight[v] += weight_u;
               ++contracted_nodes;
               _matching_state[v] = STATE(MatchingState::MATCHED);
+              _matching_state[u] = STATE(MatchingState::MATCHED);
               success = true;
             }
           }
@@ -413,22 +425,24 @@ class MultilevelCoarsener : public ICoarsener,
         }
         _rater.markAsMatched(u);
         _rater.markAsMatched(v);
+        _matching_partner[u] = u;
         _matching_state[u] = STATE(MatchingState::MATCHED);
       }
     }
     return success;
   }
 
-  PartitionedHypergraph<>&& uncoarsenImpl(std::unique_ptr<IRefiner<>>& label_propagation,
-                                        std::unique_ptr<IRefiner<>>& flow) override {
-    return Base::doUncoarsen(label_propagation, flow);
+  PartitionedHypergraph&& uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
+                                        std::unique_ptr<IRefiner>& fm,
+                                        std::unique_ptr<IRefiner>& flow) override {
+    return Base::doUncoarsen(label_propagation, fm ,flow);
   }
 
   Hypergraph& coarsestHypergraphImpl() override {
     return Base::currentHypergraph();
   }
 
-  PartitionedHypergraph<>& coarsestPartitionedHypergraphImpl() override {
+  PartitionedHypergraph& coarsestPartitionedHypergraphImpl() override {
     return Base::currentPartitionedHypergraph();
   }
 

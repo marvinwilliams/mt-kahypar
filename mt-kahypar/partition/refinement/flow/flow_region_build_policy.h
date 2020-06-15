@@ -38,7 +38,7 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
 
   public:
   template <class Network = Mandatory, typename Scheduler>
-  inline static void buildFlowNetwork(PartitionedHypergraph<>& hg,
+  inline static void buildFlowNetwork(PartitionedHypergraph& hg,
                                       const Context& context,
                                       Network& flow_network,
                                       parallel::scalable_vector<HyperedgeID>& cut_hes,
@@ -127,7 +127,7 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<MatchingFlowR
 
   public:
   template <class Network = Mandatory, typename Scheduler>
-  static inline HypernodeID bfs(PartitionedHypergraph<>& hg,
+  static inline HypernodeID bfs(PartitionedHypergraph& hg,
                                 Network& flow_network,
                                 parallel::scalable_vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
@@ -149,14 +149,14 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<MatchingFlowR
       }
     }
 
-    HypernodeID num_hypernodes_added = 0;
+    HypernodeWeight weight_of_added_hns = 0;
     const size_t num_hypernodes = hg.initialNumNodes();
     while (!Q.empty()) {
       const HypernodeID hn = Q.front();
       Q.pop();
 
       flow_network.addHypernode(hg, hn);
-      ++num_hypernodes_added;
+      weight_of_added_hns += hg.nodeWeight(hn);
 
       for (const HyperedgeID& he : hg.incidentEdges(hn)) {
         if (!visited[num_hypernodes + he]) {
@@ -174,14 +174,15 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<MatchingFlowR
         }
       }
     }
-    if (num_hypernodes_added == hg.partSize(part)) {
+
+    if (weight_of_added_hns == hg.partWeight(part)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn = *(flow_network.hypernodes().second - 1);
       flow_network.removeHypernode(hg, last_hn);
       queue_weight -= hg.nodeWeight(last_hn);
     }
     scheduler.aquire_block_weight(part, other_part, queue_weight);
-    return num_hypernodes_added;
+    return weight_of_added_hns;
   }
 
 };
@@ -191,7 +192,7 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<OptFlowRegionBuild
 
   public:
   template <class Network = Mandatory, typename Scheduler>
-  static inline HypernodeID bfs(PartitionedHypergraph<>& hg,
+  static inline HypernodeID bfs(PartitionedHypergraph& hg,
                                 Network& flow_network,
                                 parallel::scalable_vector<HypernodeID>& start_nodes,
                                 const PartitionID part,
@@ -214,14 +215,14 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<OptFlowRegionBuild
       }
     }
 
-    HypernodeID num_hypernodes_added = 0;
+    HypernodeWeight weight_of_added_hns = 0;
     const size_t num_hypernodes = hg.initialNumNodes();
     while (!Q.empty()) {
       const HypernodeID hn = Q.front();
       Q.pop();
 
       flow_network.addHypernode(hg, hn);
-      ++num_hypernodes_added;
+      weight_of_added_hns += hg.nodeWeight(hn);
 
       for (const HyperedgeID& he : hg.incidentEdges(hn)) {
         if (!visited[num_hypernodes + he]) {
@@ -241,14 +242,15 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<OptFlowRegionBuild
         }
       }
     }
-    if (num_hypernodes_added == hg.partSize(part)) {
+
+    if (weight_of_added_hns == hg.partWeight(part)) {
       // prevent blocks from becoming empty
       const HypernodeID last_hn = *(flow_network.hypernodes().second - 1);
       flow_network.removeHypernode(hg, last_hn);
       queue_weight -= hg.nodeWeight(last_hn);
     }
     scheduler.aquire_block_weight(part, other_part, queue_weight);
-    return num_hypernodes_added;
+    return weight_of_added_hns;
   }
 
 };

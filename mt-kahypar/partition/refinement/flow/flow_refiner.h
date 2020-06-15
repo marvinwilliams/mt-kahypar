@@ -19,9 +19,8 @@
 namespace mt_kahypar {
 
 template<typename FlowTypeTraits>
-class FlowRefiner final : public IRefiner<>{
+class FlowRefiner final : public IRefiner {
     private:
-        using HyperGraph = PartitionedHypergraph<>;
         using Scheduler = typename FlowTypeTraits::Scheduler;
         using RegionBuildPolicy =  typename FlowTypeTraits::RegionBuildPolicy;
         using FlowNetwork = typename FlowTypeTraits::FlowNetwork;
@@ -30,13 +29,13 @@ class FlowRefiner final : public IRefiner<>{
         using Edge = std::pair<mt_kahypar::PartitionID, mt_kahypar::PartitionID>;
 
         using MaximumFlow = IBFS<FlowTypeTraits>;
-        using GainPolicy = Km1Policy<HyperGraph>;
+        using GainPolicy = Km1Policy<PartitionedHypergraph>;
         using ThreadLocalFlowNetwork = tbb::enumerable_thread_specific<FlowNetwork>;
         using ThreadLocalMaximumFlow = tbb::enumerable_thread_specific<MaximumFlow>;
         using ThreadLocalGain = tbb::enumerable_thread_specific<GainPolicy>;
 
         struct FlowConfig {
-            explicit FlowConfig(PartitionedHypergraph<>& hg, const Context& context) :
+            explicit FlowConfig(PartitionedHypergraph& hg, const Context& context) :
                 hypergraph(hg),
                 flow_network(
                    hypergraph.initialNumNodes(), hypergraph.initialNumEdges(),
@@ -47,7 +46,7 @@ class FlowRefiner final : public IRefiner<>{
                 visited(hypergraph.initialNumNodes() + hypergraph.initialNumEdges()),
                 gain(context) { }
 
-            PartitionedHypergraph<>& hypergraph;
+            PartitionedHypergraph& hypergraph;
             ThreadLocalFlowNetwork flow_network;
             ThreadLocalMaximumFlow maximum_flow;
             ThreadLocalFastResetFlagArray visited;
@@ -55,9 +54,9 @@ class FlowRefiner final : public IRefiner<>{
         };
 
     public:
-        explicit FlowRefiner(PartitionedHypergraph<>&,
-                              const Context& context,
-                              const TaskGroupID task_group_id) :
+        explicit FlowRefiner(Hypergraph&,
+                             const Context& context,
+                             const TaskGroupID task_group_id) :
             _context(context),
             _task_group_id(task_group_id),
             _num_improvements(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)),
@@ -79,8 +78,9 @@ class FlowRefiner final : public IRefiner<>{
         FlowRefiner& operator= (FlowRefiner&&) = delete;
 
     private:
-        bool refineImpl(PartitionedHypergraph<>& hypergraph,
-                        kahypar::Metrics& best_metrics) override final {
+        bool refineImpl(PartitionedHypergraph& hypergraph,
+                        kahypar::Metrics& best_metrics,
+                        const double) override final {
 
             FlowConfig config(hypergraph, _context);
             resetStats();
@@ -101,9 +101,9 @@ class FlowRefiner final : public IRefiner<>{
 
             utils::Timer::instance().start_timer("flow_refinement", "Flow Refinement ");
             _round_delta = 0;
-            do{       
+            do{
                 scheduler.randomShuffleQoutientEdges();
-                auto scheduling_edges = scheduler.getInitialParallelEdges();                                
+                auto scheduling_edges = scheduler.getInitialParallelEdges();
 
                 //parallel here
                 tbb::parallel_do(scheduling_edges,
@@ -116,7 +116,7 @@ class FlowRefiner final : public IRefiner<>{
                 //LOG << "ROUND done_______________________________________________________";
             }while (scheduler.hasNextRound());
 
-            HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;        
+            HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
 
             double current_imbalance = metrics::imbalance(hypergraph, _context);
 
@@ -139,7 +139,7 @@ class FlowRefiner final : public IRefiner<>{
             return improvement;
         }
 
-        void initializeImpl(PartitionedHypergraph<>&) override final {
+        void initializeImpl(PartitionedHypergraph&) override final {
 
         }
 
@@ -159,9 +159,9 @@ class FlowRefiner final : public IRefiner<>{
             if (improved) {
                 improvement = true;
                 scheduler.setImprovement(block_0, block_1);
-                scheduler.setBlocksActive(block_0, block_1, feeder);   
+                scheduler.setBlocksActive(block_0, block_1, feeder);
             }
-            
+
             auto finish = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> elapsed = finish - start;
             _times_per_block[block_0][block_1] += elapsed.count();
@@ -177,7 +177,7 @@ class FlowRefiner final : public IRefiner<>{
             double alpha = _context.refinement.flow.alpha * 2.0;
             HyperedgeWeight thread_local_delta = 0;
             size_t times_no_real_improvement = 0;
-            PartitionedHypergraph<>& hypergraph = config.hypergraph;
+            PartitionedHypergraph& hypergraph = config.hypergraph;
             FlowNetwork& flow_network = config.flow_network.local();
             MaximumFlow& maximum_flow = config.maximum_flow.local();
             kahypar::ds::FastResetFlagArray<>& visited = config.visited.local();
@@ -284,7 +284,7 @@ class FlowRefiner final : public IRefiner<>{
                             moves.push_back(std::make_pair(hn, std::make_pair(from, to)));
                         }
                     }
-                    
+
                     // Heuristic: Abort Round if there are to many flownetwork improvements without a
                     //            real improvement to prevent a busy deadlock.
                     if(real_delta <= 0){
@@ -300,7 +300,7 @@ class FlowRefiner final : public IRefiner<>{
                         alpha *= (alpha == _context.refinement.flow.alpha ? 2.0 : 4.0);
                     }
                 }
-                
+
                 if (real_delta > 0) {
                     // update local delta
                     thread_local_delta += real_delta;
@@ -344,7 +344,7 @@ class FlowRefiner final : public IRefiner<>{
                     if(i < j){
                         LOG << "[" << i << "," << j << "]:" << _times_per_block[i][j] << " improved:" << _improved_per_block[i][j]
                         << " rounds:" << _rounds_per_block[i][j];
-                    }   
+                    }
                 }
             }
         }
@@ -360,7 +360,7 @@ class FlowRefiner final : public IRefiner<>{
                         blocks_refined += _rounds_per_block[i][j];
                         iterations_per_block += _iterations_per_block[i][j];
 
-                    }   
+                    }
                 }
             }
             time_per_block = time_per_block / (double) blocks_refined;
@@ -377,7 +377,7 @@ class FlowRefiner final : public IRefiner<>{
                         _rounds_per_block[i][j] = 0;
                         _improved_per_block[i][j] = 0;
                         _iterations_per_block[i][j] = 0;
-                    }   
+                    }
                 }
             }
         }

@@ -28,7 +28,6 @@
 
 namespace mt_kahypar {
 class RandomInitialPartitioner : public tbb::task {
-  using HyperGraph = PartitionedHypergraph<false>;
 
   static constexpr bool debug = false;
   static PartitionID kInvalidPartition;
@@ -42,7 +41,7 @@ class RandomInitialPartitioner : public tbb::task {
 
   tbb::task* execute() override {
     HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
-    HyperGraph& hg = _ip_data.local_partitioned_hypergraph();
+    PartitionedHypergraph& hg = _ip_data.local_partitioned_hypergraph();
     int cpu_id = sched_getcpu();
 
     for ( const HypernodeID& hn : hg.nodes() ) {
@@ -57,8 +56,7 @@ class RandomInitialPartitioner : public tbb::task {
         current_block = ( current_block + 1 ) % _context.partition.k;
         if ( current_block == block ) {
           // In case, we find no valid block to assign the current hypernode
-          // to, we assign it to random selected block (Note, will violate
-          // balance constraint)
+          // to, we assign it to random selected block
           break;
         }
       }
@@ -72,12 +70,12 @@ class RandomInitialPartitioner : public tbb::task {
   }
 
  private:
-  bool fitsIntoBlock(HyperGraph& hypergraph,
+  bool fitsIntoBlock(PartitionedHypergraph& hypergraph,
                      const HypernodeID hn,
                      const PartitionID block) const {
     ASSERT(block != kInvalidPartition && block < _context.partition.k);
     return hypergraph.partWeight(block) + hypergraph.nodeWeight(hn) <=
-      _context.partition.max_part_weights[block];
+      _context.partition.perfect_balance_part_weights[block];
   }
 
   InitialPartitioningDataContainer& _ip_data;

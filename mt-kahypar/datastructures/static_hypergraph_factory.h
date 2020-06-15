@@ -49,7 +49,8 @@ class StaticHypergraphFactory {
                                     const HyperedgeID num_hyperedges,
                                     const HyperedgeVector& edge_vector,
                                     const HyperedgeWeight* hyperedge_weight = nullptr,
-                                    const HypernodeWeight* hypernode_weight = nullptr) {
+                                    const HypernodeWeight* hypernode_weight = nullptr,
+                                    const bool stable_construction_of_incident_edges = false) {
     StaticHypergraph hypergraph;
     hypergraph._num_hypernodes = num_hypernodes;
     hypergraph._num_hyperedges = num_hyperedges;
@@ -155,7 +156,29 @@ class StaticHypergraphFactory {
           hypernode.setWeight(hypernode_weight[pos]);
         }
       });
+    }, [&] {
+      // graph edge ID mapping
+      hypergraph._num_graph_edges_up_to.resize(num_hyperedges + 1);
+      tbb::parallel_for(0U, num_hyperedges, [&](const HyperedgeID e) {
+        const size_t edge_size = edge_vector[e].size();   // hypergraph.edgeSize(e) is not yet constructed
+        hypergraph._num_graph_edges_up_to[e+1] = static_cast<HyperedgeID>(edge_size == 2);
+      }, tbb::static_partitioner());
+      hypergraph._num_graph_edges_up_to[0] = 0;
+
+      parallel::TBBPrefixSum<HyperedgeID, Array> scan_graph_edges(hypergraph._num_graph_edges_up_to);
+      tbb::parallel_scan(tbb::blocked_range<size_t>(0, num_hyperedges + 1), scan_graph_edges);
+      hypergraph._num_graph_edges = scan_graph_edges.total_sum();
     });
+
+    if (stable_construction_of_incident_edges) {
+      // sort incident hyperedges of each node, so their ordering is independent of scheduling (and the same as a typical sequential implementation)
+      tbb::parallel_for(ID(0), num_hypernodes, [&](HypernodeID u) {
+        auto b = hypergraph._incident_nets.begin() + hypergraph.hypernode(u).firstEntry();
+        auto e = hypergraph._incident_nets.begin() + hypergraph.hypernode(u).firstInvalidEntry();
+        std::sort(b, e);
+      });
+    }
+
     // Add Sentinels
     hypergraph._hypernodes.back() = StaticHypergraph::Hypernode(hypergraph._incident_nets.size());
     hypergraph._hyperedges.back() = StaticHypergraph::Hyperedge(hypergraph._incidence_array.size());

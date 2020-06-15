@@ -229,7 +229,7 @@ class TBBPrefixSum {
   }
 
   void reverse_join(TBBPrefixSum& prefix_sum) {
-    _sum = prefix_sum._sum + _sum;
+    _sum += prefix_sum._sum;
   }
 
   void assign(TBBPrefixSum& prefix_sum) {
@@ -240,5 +240,6 @@ class TBBPrefixSum {
   T _sum;
   V<T>& _data;
 };
+
 }  // namespace parallel
 }  // namespace mt_kahypar

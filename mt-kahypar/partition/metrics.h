@@ -131,12 +131,12 @@ static inline HyperedgeWeight soed(const HyperGraph& hypergraph, const bool para
 }
 
 template <typename HyperGraph>
-static inline HyperedgeWeight objective(const HyperGraph& hg, const kahypar::Objective& objective) {
+static inline HyperedgeWeight objective(const HyperGraph& hg, const kahypar::Objective& objective, const bool parallel = true) {
   switch (objective) {
-    case kahypar::Objective::cut: return hyperedgeCut(hg);
-    case kahypar::Objective::km1: return km1(hg);
+    case kahypar::Objective::cut: return hyperedgeCut(hg, parallel);
+    case kahypar::Objective::km1: return km1(hg, parallel);
     default:
-      ERROR("Unknown Objective");
+    ERROR("Unknown Objective");
   }
 }
 
@@ -187,7 +187,29 @@ static inline double localBlockImbalance(HyperGraph& hypergraph, const Context& 
   return max_balance - 1.0;
 }
 
-template< typename HyperGraph >
+template<typename Partition>
+static inline std::pair<PartitionID, HypernodeWeight> heaviestPartAndWeight(const Partition& partition) {
+  PartitionID p = kInvalidPartition;
+  HypernodeWeight w = std::numeric_limits<HypernodeWeight>::min();
+  for (PartitionID i = 0; i < partition.k(); ++i) {
+    if (partition.partWeight(i) > w) {
+      w = partition.partWeight(i);
+      p = i;
+    }
+  }
+  return std::make_pair(p, w);
+}
+
+static inline bool isBalanced(const PartitionedHypergraph& phg, const Context& context) {
+  for (PartitionID i = 0; i < context.partition.k; ++i) {
+    if (phg.partWeight(i) > context.partition.max_part_weights[i] || phg.partWeight(i) == 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename HyperGraph>
 static inline double avgHyperedgeDegree(const HyperGraph& hypergraph) {
   return static_cast<double>(hypergraph.initialNumPins()) / hypergraph.initialNumEdges();
 }

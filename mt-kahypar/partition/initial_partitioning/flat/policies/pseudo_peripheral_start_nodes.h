@@ -30,7 +30,6 @@
 namespace mt_kahypar {
 
 class PseudoPeripheralStartNodes {
-  using HyperGraph = PartitionedHypergraph<false>;
   using StartNodes = parallel::scalable_vector<HypernodeID>;
   using Queue = parallel::scalable_queue<HypernodeID>;
 
@@ -41,7 +40,7 @@ class PseudoPeripheralStartNodes {
  public:
   static inline StartNodes computeStartNodes(InitialPartitioningDataContainer& ip_data,
                                              const Context& context) {
-    HyperGraph& hypergraph = ip_data.local_partitioned_hypergraph();
+    PartitionedHypergraph& hypergraph = ip_data.local_partitioned_hypergraph();
     kahypar::ds::FastResetFlagArray<>& hypernodes_in_queue =
       ip_data.local_hypernode_fast_reset_flag_array();
     kahypar::ds::FastResetFlagArray<>& hyperedges_in_queue =
@@ -77,7 +76,7 @@ class PseudoPeripheralStartNodes {
         // to queue.
         for ( const HyperedgeID& he : hypergraph.incidentEdges(last_hypernode_touched) ) {
           if ( !hyperedges_in_queue[he] ) {
-            if ( hypergraph.edgeSize(he) <= context.partition.hyperedge_size_threshold ) {
+            if ( hypergraph.edgeSize(he) <= context.partition.ignore_hyperedge_size_threshold ) {
               for ( const HypernodeID& pin : hypergraph.pins(he) ) {
                 if ( !hypernodes_in_queue[pin] ) {
                   queue.push(pin);

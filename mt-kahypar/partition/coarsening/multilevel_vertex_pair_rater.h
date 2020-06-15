@@ -204,9 +204,13 @@ class MultilevelVertexPairRater {
                      const parallel::scalable_vector<HypernodeID>& cluster_ids) {
     kahypar::ds::FastResetFlagArray<>& bloom_filter = _local_bloom_filter.local();
     for ( const HyperedgeID& he : hypergraph.incidentEdges(u) ) {
-      ASSERT(hypergraph.edgeSize(he) > 1, V(he));
-      if ( hypergraph.edgeSize(he) < _context.partition.hyperedge_size_threshold ) {
-        const RatingType score = ScorePolicy::score(hypergraph, he);
+      HypernodeID edge_size = hypergraph.edgeSize(he);
+      ASSERT(edge_size > 1, V(he));
+      if ( edge_size < _context.partition.ignore_hyperedge_size_threshold ) {
+        edge_size = _context.coarsening.use_adaptive_edge_size ?
+          std::max(adaptiveEdgeSize(hypergraph, he, bloom_filter, cluster_ids), ID(2)) : edge_size;
+        const RatingType score = ScorePolicy::score(
+          hypergraph.edgeWeight(he), edge_size);
         for ( const HypernodeID& v : hypergraph.pins(he) ) {
           const HypernodeID representative = cluster_ids[v];
           ASSERT(representative < hypergraph.initialNumNodes());
@@ -229,15 +233,17 @@ class MultilevelVertexPairRater {
     kahypar::ds::FastResetFlagArray<>& bloom_filter = _local_bloom_filter.local();
     size_t num_tmp_rating_map_accesses = 0;
     for ( const HyperedgeID& he : hypergraph.incidentEdges(u) ) {
-      const HypernodeID edge_size = hypergraph.edgeSize(he);
-      if ( edge_size < _context.partition.hyperedge_size_threshold ) {
-        ASSERT(edge_size > 1, V(he));
+      HypernodeID edge_size = hypergraph.edgeSize(he);
+      if ( edge_size < _context.partition.ignore_hyperedge_size_threshold ) {
+        edge_size = _context.coarsening.use_adaptive_edge_size ?
+          std::max(adaptiveEdgeSize(hypergraph, he, bloom_filter, cluster_ids), ID(2)) : edge_size;
         // Break if number of accesses to the tmp rating map would exceed
         // vertex degree sampling threshold
         if ( num_tmp_rating_map_accesses + edge_size > _vertex_degree_sampling_threshold  ) {
           break;
         }
-        const RatingType score = ScorePolicy::score(hypergraph, he);
+        const RatingType score = ScorePolicy::score(
+          hypergraph.edgeWeight(he), edge_size);
         for ( const HypernodeID& v : hypergraph.pins(he) ) {
           const HypernodeID representative = cluster_ids[v];
           ASSERT(representative < hypergraph.initialNumNodes());
@@ -251,6 +257,24 @@ class MultilevelVertexPairRater {
         bloom_filter.reset();
       }
     }
+  }
+
+  inline HypernodeID adaptiveEdgeSize(const Hypergraph& hypergraph,
+                                      const HyperedgeID he,
+                                      kahypar::ds::FastResetFlagArray<>& bloom_filter,
+                                      const parallel::scalable_vector<HypernodeID>& cluster_ids) {
+    HypernodeID edge_size = 0;
+    for ( const HypernodeID& v : hypergraph.pins(he) ) {
+      const HypernodeID representative = cluster_ids[v];
+      ASSERT(representative < hypergraph.initialNumNodes());
+      const HypernodeID bloom_filter_rep = representative & _bloom_filter_mask;
+      if ( !bloom_filter[bloom_filter_rep] ) {
+        ++edge_size;
+        bloom_filter.set(bloom_filter_rep, true);
+      }
+    }
+    bloom_filter.reset();
+    return edge_size;
   }
 
   inline RatingMapType getRatingMapTypeForRatingOfHypernode(const Hypergraph& hypergraph,
@@ -275,7 +299,7 @@ class MultilevelVertexPairRater {
     for ( const HyperedgeID& he : hypergraph.incidentEdges(u) ) {
       const HypernodeID edge_size = hypergraph.edgeSize(he);
       // Ignore large hyperedges
-      ub_neighbors_u += edge_size < _context.partition.hyperedge_size_threshold ? edge_size : 0;
+      ub_neighbors_u += edge_size < _context.partition.ignore_hyperedge_size_threshold ? edge_size : 0;
       // If the number of estimated neighbors is greater than the size of the cache efficient rating map / 3, we
       // use the large sparse map. The division by 3 also ensures that the fill grade
       // of the cache efficient sparse map would be small enough such that linear probing

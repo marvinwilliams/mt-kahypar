@@ -72,9 +72,12 @@ po::options_description createGeneralOptionsDescription(Context& context, const 
     po::value<int>(&context.partition.seed)->value_name("<int>"),
     "Seed for random number generator \n"
     "(default: -1)")
-    ("cmaxnet",
-    po::value<HyperedgeID>(&context.partition.hyperedge_size_threshold)->value_name("<uint64_t>"),
-    "Hyperedges larger than cmaxnet are ignored during partitioning process.")
+    ("maxnet-remove-factor",
+    po::value<double>(&context.partition.large_hyperedge_size_threshold_factor)->value_name("<double>"),
+    "Hyperedges larger than |V| * (this factor) are removed before partitioning process.")
+    ("maxnet-ignore",
+    po::value<HyperedgeID>(&context.partition.ignore_hyperedge_size_threshold)->value_name("<uint64_t>"),
+    "Hyperedges larger than this threshold are ignored during partitioning process.")
     ("objective,o",
     po::value<std::string>()->value_name("<string>")->required()->notifier([&](const std::string& s) {
       if (s == "cut") {
@@ -113,22 +116,30 @@ po::options_description createGenericOptionsDescription(Context& context,
     ("show-memory-consumption", po::value<bool>(&context.partition.show_memory_consumption)->value_name("<bool>"),
     "If true, memory consumption overview is shown")
     ("enable-progress-bar", po::value<bool>(&context.partition.enable_progress_bar)->value_name("<bool>"),
-    "If true, than progress bar is displayed")
+    "If true, then progress bar is displayed")
     ("enable-profiler", po::value<bool>(&context.partition.enable_profiler)->value_name("<bool>"),
-    "If true, than profiler is activated")
+    "If true, then profiler is activated")
     ("profiler-snapshot-interval", po::value<int>(&context.partition.snapshot_interval)->value_name("<int>"),
-    "Interval in milliseconds for which profiler makes a snapshot of system stats")
+    "Interval in milliseconds for which profiler takes a snapshot of system stats")
     ("time-limit", po::value<int>(&context.partition.time_limit)->value_name("<int>"),
     "Time limit in seconds")
     ("sp-process,s", po::value<bool>(&context.partition.sp_process_output)->value_name("<bool>"),
     "Summarize partitioning results in RESULT line compatible with sqlplottools "
-    "(https://github.com/bingmann/sqlplottools)");
+    "(https://github.com/bingmann/sqlplottools)")
+    ("csv", po::value<bool>(&context.partition.csv_output)->value_name("<bool>"),
+    "Summarize results in CSV")
+    ("algorithm-name", po::value<std::string>(&context.algorithm_name)->value_name("<std::string>"),
+    "An algorithm name to print into the summarized output (csv or sqlplottools). ");
   return generic_options;
 }
 
 po::options_description createPreprocessingOptionsDescription(Context& context, const int num_columns) {
   po::options_description options("Preprocessing Options", num_columns);
   options.add_options()
+    ("p-stable-io",
+    po::value<bool>(&context.preprocessing.stable_construction_of_incident_edges)->value_name("<bool>"),
+    "If true, the incident edges of a vertex are sorted after construction, so that the hypergraph "
+    "data structure is independent of scheduling during construction. Default: false")
     ("p-enable-community-detection",
     po::value<bool>(&context.preprocessing.use_community_detection)->value_name("<bool>"),
     "If true, community detection is used as preprocessing step to guide contractions in coarsening phase")
@@ -145,12 +156,12 @@ po::options_description createPreprocessingOptionsDescription(Context& context, 
     ("p-max-louvain-pass-iterations",
     po::value<uint32_t>(&context.preprocessing.community_detection.max_pass_iterations)->value_name("<uint32_t>"),
     "Maximum number of iterations over all nodes of one louvain pass")
-    ("p-louvain-min-eps-improvement",
-    po::value<long double>(&context.preprocessing.community_detection.min_eps_improvement)->value_name("<long double>"),
-    "Minimum improvement of quality during a louvain pass which leads to further passes")
+    ("p-louvain-min-vertex-move-fraction",
+    po::value<long double>(&context.preprocessing.community_detection.min_vertex_move_fraction)->value_name("<long double>"),
+    "Louvain pass terminates if less than that fraction of nodes moves during a pass")
     ("p-vertex-degree-sampling-threshold",
     po::value<size_t>(&context.preprocessing.community_detection.vertex_degree_sampling_threshold)->value_name("<size_t>"),
-    "If set, than neighbors of a vertex are sampled during rating if its degree is greater than this threshold.");
+    "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.");
   return options;
 }
 
@@ -166,9 +177,13 @@ po::options_description createCoarseningOptionsDescription(Context& context,
     "Coarsening Algorithm:\n"
     " - community_coarsener\n"
     " - multilevel_coarsener")
+    ("c-use-adaptive-edge-size",
+    po::value<bool>(&context.coarsening.use_adaptive_edge_size)->value_name("<bool>"),
+    "If true, then edge size is calculated based on current clustering rather than on input edge size\n"
+    "during multilevel coarsing")
     ("c-use-adaptive-max-node-weight",
     po::value<bool>(&context.coarsening.use_adaptive_max_allowed_node_weight)->value_name("<bool>"),
-    "If true, than the maximum allowed node weight is adapted based on the reduction ratio\n"
+    "If true, then the maximum allowed node weight is adapted based on the reduction ratio\n"
     "during multilevel coarsing")
     ("c-adaptive-s",
     po::value<double>(&context.coarsening.max_allowed_weight_fraction)->value_name("<double>"),
@@ -219,7 +234,7 @@ po::options_description createCoarseningOptionsDescription(Context& context,
     "- best_prefer_unmatched")
     ("c-vertex-degree-sampling-threshold",
     po::value<size_t>(&context.coarsening.vertex_degree_sampling_threshold)->value_name("<size_t>"),
-    "If set, than neighbors of a vertex are sampled during rating if its degree is greater than this threshold.");
+    "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.");
   return options;
 }
 
@@ -228,6 +243,10 @@ po::options_description createRefinementOptionsDescription(Context& context,
                                                            const bool initial_partitioning) {
   po::options_description options("Refinement Options", num_columns);
   options.add_options()
+    (( initial_partitioning ? "i-r-refine-until-no-improvement" : "r-refine-until-no-improvement"),
+    po::value<bool>((!initial_partitioning ? &context.refinement.refine_until_no_improvement :
+      &context.initial_partitioning.refinement.refine_until_no_improvement))->value_name("<bool>"),
+    "Refines a partitition until all refiner can not find an improvement any more")
     (( initial_partitioning ? "i-r-lp-type" : "r-lp-type"),
     po::value<std::string>()->value_name("<string>")->notifier(
       [&, initial_partitioning](const std::string& type) {
@@ -257,7 +276,60 @@ po::options_description createRefinementOptionsDescription(Context& context,
     po::value<size_t>((!initial_partitioning ? &context.refinement.label_propagation.hyperedge_size_activation_threshold :
       &context.initial_partitioning.refinement.label_propagation.hyperedge_size_activation_threshold))->value_name("<size_t>"),
     "If a vertex moves during LP only neighbors that are part of hyperedge with size less\n"
-    "this threshold are activated.");
+    "this threshold are activated.")
+    (( initial_partitioning ? "i-r-fm-type" : "r-fm-type"),
+    po::value<std::string>()->value_name("<string>")->notifier(
+      [&, initial_partitioning](const std::string& type) {
+      if ( initial_partitioning ) {
+        context.initial_partitioning.refinement.fm.algorithm = fmAlgorithmFromString(type);
+      } else {
+        context.refinement.fm.algorithm = fmAlgorithmFromString(type);
+      }
+    }),
+    "FM Algorithm:\n"
+    "- fm_multitry\n"
+    "- fm_boundary\n"
+    "- do_nothing")
+    (( initial_partitioning ? "i-r-fm-multitry-rounds" : "r-fm-multitry-rounds"),
+    po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.multitry_rounds :
+      &context.refinement.fm.multitry_rounds))->value_name("<size_t>"),
+    "Number of multitry rounds.")
+    (( initial_partitioning ? "i-r-fm-perform-moves-global" : "r-fm-perform-moves-global"),
+    po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.perform_moves_global :
+      &context.refinement.fm.perform_moves_global))->value_name("<bool>"),
+    "If true, then all moves performed during FM are immediately visible to other searches.\n"
+    "Otherwise, only move sequences that yield an improvement are applied to the global view of the partition.")
+    (( initial_partitioning ? "i-r-fm-seed-nodes" : "r-fm-seed-nodes"),
+    po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.num_seed_nodes :
+      &context.refinement.fm.num_seed_nodes))->value_name("<size_t>"),
+    "Number of nodes to start the 'highly localized FM' with.")
+     (( initial_partitioning ? "i-r-fm-revert-parallel" : "r-fm-revert-parallel"),
+     po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.revert_parallel :
+     &context.refinement.fm.revert_parallel))->value_name("<bool>"),
+     "Perform gain and balance recalculation, and reverting to best prefix in parallel.")
+     (( initial_partitioning ? "i-r-fm-rollback-balance-violation-factor" : "r-fm-rollback-balance-violation-factor"),
+     po::value<double>((initial_partitioning ? &context.initial_partitioning.refinement.fm.rollback_balance_violation_factor :
+     &context.refinement.fm.rollback_balance_violation_factor))->value_name("<double>"),
+     "Used to relax or disable the balance constraint during the rollback phase of parallel FM."
+     "Set to 0 for disabling. Set to a value > 1.0 to multiply epsilon with this value.")
+     (( initial_partitioning ? "i-r-fm-min-improvement" : "r-fm-min-improvement"),
+     po::value<double>((initial_partitioning ? &context.initial_partitioning.refinement.fm.min_improvement :
+     &context.refinement.fm.min_improvement))->value_name("<double>"),
+     "Min improvement for FM.")
+     (( initial_partitioning ? "i-r-fm-release-nodes" : "r-fm-release-nodes"),
+     po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.release_nodes :
+     &context.refinement.fm.release_nodes))->value_name("<bool>"),
+     "FM releases nodes that weren't moved, so they might be found by another search.")
+     (( initial_partitioning ? "i-r-fm-obey-minimal-parallelism" : "r-fm-obey-minimal-parallelism"),
+     po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.obey_minimal_parallelism :
+     &context.refinement.fm.obey_minimal_parallelism))->value_name("<bool>"),
+     "If true, then parallel FM refinement stops if more than a certain number of threads are finished.")
+     (( initial_partitioning ? "i-r-fm-time-limit-factor" : "r-fm-time-limit-factor"),
+     po::value<double>((initial_partitioning ? &context.initial_partitioning.refinement.fm.time_limit_factor :
+     &context.refinement.fm.time_limit_factor))->value_name("<double>"),
+     "If the FM time exceeds time_limit := k * factor * coarsening_time, than the FM config is switched into a light version."
+     "If the FM refiner exceeds 2 * time_limit, than the current multitry FM run is aborted and the algorithm proceeds to"
+     "the next finer level.");
 
   if ( !initial_partitioning ) {
     options.add_options()
@@ -286,6 +358,7 @@ po::options_description createRefinementOptionsDescription(Context& context,
       "If true, the flow calculation only continues when there is a real improvement.\n"
       "(default true)");
   }
+
   return options;
 }
 
@@ -309,6 +382,10 @@ po::options_description createInitialPartitioningOptionsDescription(Context& con
     po::value<bool>(&context.initial_partitioning.use_adaptive_epsilon)->value_name("<bool>"),
     "If true, adaptive epsilon is used during recursive initial partitioning \n"
     "(default: false)")
+    ("i-perform-fm-refinement",
+    po::value<bool>(&context.initial_partitioning.perform_fm_refinement)->value_name("<bool>"),
+    "If true, the best partitions produced by a thread is refined with an boundary FM \n"
+    "(default: false)")
     ("i-lp-maximum-iterations",
     po::value<size_t>(&context.initial_partitioning.lp_maximum_iterations)->value_name("<size_t>"),
     "Maximum number of iterations of label propagation initial partitioner \n"
@@ -327,13 +404,13 @@ po::options_description createSparsificationOptionsDescription(Context& context,
   sparsification_options.add_options()
     ("sp-use-degree-zero-contractions",
     po::value<bool>(&context.sparsification.use_degree_zero_contractions)->value_name("<bool>"),
-    "If true, than vertices with degree zero are contracted to supervertices")
+    "If true, then vertices with degree zero are contracted to supervertices")
     ("sp-use-heavy-net-removal",
     po::value<bool>(&context.sparsification.use_heavy_net_removal)->value_name("<bool>"),
-    "If true, than hyperedges with a weight greater than a certain threshold are removed before IP")
+    "If true, then hyperedges with a weight greater than a certain threshold are removed before IP")
     ("sp-use-similiar-net-removal",
     po::value<bool>(&context.sparsification.use_similiar_net_removal)->value_name("<bool>"),
-    "If true, than hyperedges with a jaccard similiarity greater than a certain threshold are removed before IP")
+    "If true, then hyperedges with a jaccard similiarity greater than a certain threshold are removed before IP")
     ("sp-hyperedge-pin-weight-fraction",
     po::value<double>(&context.sparsification.hyperedge_pin_weight_fraction)->value_name("<double>"),
     "Hyperedges where the sum of the weights of all pins are greater than ((1 + eps)|V|/k) / fraction are removed before IP")
@@ -393,10 +470,9 @@ void processCommandLineInput(Context& context, int argc, char* argv[]) {
     po::value<double>(&context.partition.epsilon)->value_name("<double>")->required(),
     "Imbalance parameter epsilon");
 
-  std::string context_path;
   po::options_description preset_options("Preset Options", num_columns);
   preset_options.add_options()
-    ("preset,p", po::value<std::string>(&context_path)->value_name("<string>"),
+    ("preset,p", po::value<std::string>(&context.partition.preset_file)->value_name("<string>"),
     "Context Presets (see config directory):\n"
     " - <path-to-custom-ini-file>");
 
@@ -440,9 +516,9 @@ void processCommandLineInput(Context& context, int argc, char* argv[]) {
 
   po::notify(cmd_vm);
 
-  std::ifstream file(context_path.c_str());
+  std::ifstream file(context.partition.preset_file.c_str());
   if (!file) {
-    ERROR("Could not load context file at: " + context_path);
+    ERROR("Could not load context file at: " + context.partition.preset_file);
   }
 
   po::options_description ini_line_options;

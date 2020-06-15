@@ -38,7 +38,9 @@ struct PartitioningParameters {
   int time_limit = 0;
   std::vector<HypernodeWeight> perfect_balance_part_weights;
   std::vector<HypernodeWeight> max_part_weights;
-  HyperedgeID hyperedge_size_threshold = 1000;
+  double large_hyperedge_size_threshold_factor = std::numeric_limits<double>::max();
+  HypernodeID large_hyperedge_size_threshold = std::numeric_limits<HypernodeID>::max();
+  HypernodeID ignore_hyperedge_size_threshold = std::numeric_limits<HypernodeID>::max();
 
   bool verbose_output = false;
   bool quiet_mode = false;
@@ -47,6 +49,7 @@ struct PartitioningParameters {
   bool show_memory_consumption = false;
   bool enable_progress_bar = false;
   bool sp_process_output = false;
+  bool csv_output = false;
   bool write_partition_file = false;
 
   bool enable_profiler = false;
@@ -55,6 +58,7 @@ struct PartitioningParameters {
   std::string graph_filename { };
   std::string graph_partition_filename { };
   std::string graph_community_filename { };
+  std::string preset_file { };
 };
 
 inline std::ostream & operator<< (std::ostream& str, const PartitioningParameters& params) {
@@ -69,14 +73,15 @@ inline std::ostream & operator<< (std::ostream& str, const PartitioningParameter
   str << "  epsilon:                            " << params.epsilon << std::endl;
   str << "  seed:                               " << params.seed << std::endl;
   str << "  time limit:                         " << params.time_limit << "s" << std::endl;
-  str << "  hyperedge size threshold:           " << params.hyperedge_size_threshold << std::endl;
+  str << "  large hyperedge size threshold:     " << params.large_hyperedge_size_threshold << std::endl;
+  str << "  ignore hyperedge size threshold:    " << params.ignore_hyperedge_size_threshold << std::endl;
   return str;
 }
 
 struct CommunityDetectionParameters {
   LouvainEdgeWeight edge_weight_function = LouvainEdgeWeight::UNDEFINED;
   uint32_t max_pass_iterations = std::numeric_limits<uint32_t>::max();
-  long double min_eps_improvement = std::numeric_limits<long double>::max();
+  long double min_vertex_move_fraction = std::numeric_limits<long double>::max();
   size_t vertex_degree_sampling_threshold = std::numeric_limits<size_t>::max();
 };
 
@@ -84,12 +89,13 @@ inline std::ostream & operator<< (std::ostream& str, const CommunityDetectionPar
   str << "  Community Detection Parameters:" << std::endl;
   str << "    Edge Weight Function:             " << params.edge_weight_function << std::endl;
   str << "    Maximum Louvain-Pass Iterations:  " << params.max_pass_iterations << std::endl;
-  str << "    Minimum Quality Improvement:      " << params.min_eps_improvement << std::endl;
+  str << "    Minimum Vertex Move Fraction:     " << params.min_vertex_move_fraction << std::endl;
   str << "    Vertex Degree Sampling Threshold: " << params.vertex_degree_sampling_threshold << std::endl;
   return str;
 }
 
 struct PreprocessingParameters {
+  bool stable_construction_of_incident_edges = false;
   bool use_community_detection = false;
   CommunityDetectionParameters community_detection = { };
 };
@@ -121,6 +127,7 @@ struct CoarseningParameters {
   CoarseningAlgorithm algorithm = CoarseningAlgorithm::UNDEFINED;
   RatingParameters rating = { };
   HypernodeID contraction_limit_multiplier = std::numeric_limits<HypernodeID>::max();
+  bool use_adaptive_edge_size = false;
   bool use_adaptive_max_allowed_node_weight = false;
   double max_allowed_weight_fraction = std::numeric_limits<double>::max();
   double adaptive_node_weight_shrink_factor_threshold = std::numeric_limits<double>::max();
@@ -137,6 +144,7 @@ struct CoarseningParameters {
 inline std::ostream & operator<< (std::ostream& str, const CoarseningParameters& params) {
   str << "Coarsening Parameters:" << std::endl;
   str << "  Algorithm:                          " << params.algorithm << std::endl;
+  str << "  use adaptive edge size:             " << std::boolalpha << params.use_adaptive_edge_size << std::endl;
   str << "  use adaptive max node weight:       " << std::boolalpha << params.use_adaptive_max_allowed_node_weight << std::endl;
   if ( params.use_adaptive_max_allowed_node_weight ) {
     str << "  max allowed weight fraction:        " << params.max_allowed_weight_fraction << std::endl;
@@ -196,19 +204,50 @@ inline std::ostream & operator<< (std::ostream& str, const FlowParameters& param
   return str;
 }
 
+struct FMParameters {
+  FMAlgorithm algorithm = FMAlgorithm::do_nothing;
+  size_t multitry_rounds = 0;
+  bool perform_moves_global = false;
+  bool revert_parallel = true;
+  double rollback_balance_violation_factor = std::numeric_limits<double>::max();
+  size_t num_seed_nodes = 0;
+  bool shuffle = true;
+  bool obey_minimal_parallelism = false;
+  double min_improvement = -1.0;
+  bool release_nodes = true;
+  double time_limit_factor = std::numeric_limits<double>::max();
+};
+
+inline std::ostream& operator<<(std::ostream& out, const FMParameters& params) {
+  out << "  FM Parameters: \n";
+  out << "    Algorithm:                        " << params.algorithm << std::endl;
+  out << "    Multitry Rounds:                  " << params.multitry_rounds << std::endl;
+  out << "    Perform Moves Globally:           " << std::boolalpha << params.perform_moves_global << std::endl;
+  out << "    Parallel Global Rollbacks:        " << std::boolalpha << params.revert_parallel << std::endl;
+  out << "    Rollback Bal. Violation Factor:   " << params.rollback_balance_violation_factor << std::endl;
+  out << "    Num Seed Nodes:                   " << params.num_seed_nodes << std::endl;
+  out << "    Enable Random Shuffle:            " << std::boolalpha << params.shuffle << std::endl;
+  out << "    Obey Minimal Parallelism:         " << std::boolalpha << params.obey_minimal_parallelism << std::endl;
+  out << "    Minimum Improvement Factor:       " << params.min_improvement << std::endl;
+  out << "    Release Nodes:                    " << std::boolalpha << params.release_nodes << std::endl;
+  out << "    Time Limit Factor:                " << params.time_limit_factor << std::endl;
+  out << std::flush;
+  return out;
+}
+
 struct RefinementParameters {
-  LabelPropagationParameters label_propagation {};
+  LabelPropagationParameters label_propagation;
+  FMParameters fm;
   FlowParameters flow {};
+  bool refine_until_no_improvement = false;
 };
 
 inline std::ostream& operator<< (std::ostream& str, const RefinementParameters& params) {
   str << "Refinement Parameters:" << std::endl;
-  if ( params.label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
-    str << std::endl << params.label_propagation;
-  }
-  if ( params.flow.algorithm != FlowAlgorithm::do_nothing ) {
-    str << std::endl << params.flow;
-  }
+  str << "  Refine until no improvement:        " << std::boolalpha << params.refine_until_no_improvement << std::endl;
+  str << std::endl << params.label_propagation;
+  str << std::endl << params.fm;
+  str << std::endl << params.flow;
   return str;
 }
 
@@ -246,6 +285,7 @@ struct InitialPartitioningParameters {
   RefinementParameters refinement = { };
   size_t runs = 1;
   bool use_adaptive_epsilon = false;
+  bool perform_fm_refinement = false;
   size_t lp_maximum_iterations = 1;
   size_t lp_initial_block_size = 1;
 };
@@ -255,6 +295,7 @@ inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningPa
   str << "  Initial Partitioning Mode:          " << params.mode << std::endl;
   str << "  Number of Runs:                     " << params.runs << std::endl;
   str << "  Use Adaptive Epsilon:               " << std::boolalpha << params.use_adaptive_epsilon << std::endl;
+  str << "  Perform FM Refinement:              " << std::boolalpha << params.perform_fm_refinement << std::endl;
   str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
   str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
   str << "\nInitial Partitioning ";
@@ -287,6 +328,8 @@ class Context {
   SparsificationParameters sparsification { };
   SharedMemoryParameters shared_memory { };
   kahypar::ContextType type = kahypar::ContextType::main;
+
+  std::string algorithm_name = "MT-KaHyPar";
 
   Context() { }
 

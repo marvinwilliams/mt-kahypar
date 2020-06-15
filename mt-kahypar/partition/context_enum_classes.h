@@ -110,6 +110,12 @@ enum class FlowAlgorithm : uint8_t {
   do_nothing
 };
 
+enum class FMAlgorithm : uint8_t {
+  fm_multitry,
+  fm_boundary,
+  do_nothing
+};
+
 std::ostream & operator<< (std::ostream& os, const Type& type) {
   switch (type) {
     case Type::Unweighted: return os << "unweighted";
@@ -235,6 +241,16 @@ std::ostream & operator<< (std::ostream& os, const FlowAlgorithm& algo) {
     case FlowAlgorithm::flow_opt: return os << "flow_opt";
     case FlowAlgorithm::flow_one_round: return os << "flow_one_round";
     case FlowAlgorithm::do_nothing: return os << "do_nothing";
+      // omit default case to trigger compiler warning for missing cases
+  }
+  return os << static_cast<uint8_t>(algo);
+}
+
+std::ostream & operator<< (std::ostream& os, const FMAlgorithm& algo) {
+  switch (algo) {
+    case FMAlgorithm::fm_multitry: return os << "fm_multitry";
+    case FMAlgorithm::fm_boundary: return os << "fm_boundary";
+    case FMAlgorithm::do_nothing: return os << "do_nothing";
       // omit default case to trigger compiler warning for missing cases
   }
   return os << static_cast<uint8_t>(algo);
@@ -366,6 +382,18 @@ static FlowAlgorithm flowAlgorithmFromString(const std::string& type) {
   }
   ERROR("Illegal option: " + type);
   return FlowAlgorithm::do_nothing;
+}
+
+static FMAlgorithm fmAlgorithmFromString(const std::string& type) {
+  if (type == "fm_multitry") {
+    return FMAlgorithm::fm_multitry;
+  } else if (type == "fm_boundary") {
+    return FMAlgorithm::fm_boundary;
+  } else if (type == "do_nothing") {
+    return FMAlgorithm::do_nothing;
+  }
+  ERROR("Illegal option: " + type);
+  return FMAlgorithm::do_nothing;
 }
 
 }  // namesapce mt_kahypar

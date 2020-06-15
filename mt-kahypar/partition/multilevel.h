@@ -37,7 +37,7 @@ namespace multilevel {
 
 namespace {
 
-using PartitionedHypergraph = mt_kahypar::PartitionedHypergraph<>;
+using PartitionedHypergraph = mt_kahypar::PartitionedHypergraph;
 
 class RefinementTask : public tbb::task {
 
@@ -49,6 +49,7 @@ class RefinementTask : public tbb::task {
                  const TaskGroupID task_group_id) :
     _coarsener(nullptr),
     _sparsifier(nullptr),
+    _ip_context(context),
     _hg(hypergraph),
     _partitioned_hg(partitioned_hypergraph),
     _context(context),
@@ -60,6 +61,9 @@ class RefinementTask : public tbb::task {
       _context.coarsening.algorithm, _hg, _context, _task_group_id, _top_level);
     _sparsifier = HypergraphSparsifierFactory::getInstance().createObject(
       _context.sparsification.similiar_net_combiner_strategy, _context, _task_group_id);
+
+    // Switch refinement context from IP to main
+    _ip_context.refinement = _context.initial_partitioning.refinement;
   }
 
   tbb::task* execute() override {
@@ -97,16 +101,20 @@ class RefinementTask : public tbb::task {
     }
 
     utils::Timer::instance().start_timer("refinement", "Refinement");
-    std::unique_ptr<IRefiner<>> label_propagation =
+    std::unique_ptr<IRefiner> label_propagation =
       LabelPropagationFactory::getInstance().createObject(
         _context.refinement.label_propagation.algorithm,
-        coarsest_partitioned_hypergraph, _context, _task_group_id);
-    std::unique_ptr<IRefiner<>> flow =
+        _hg, _context, _task_group_id);
+    std::unique_ptr<IRefiner> fm =
+      FMFactory::getInstance().createObject(
+        _context.refinement.fm.algorithm,
+        _hg, _context, _task_group_id);
+    std::unique_ptr<IRefiner> flow =
       FlowFactory::getInstance().createObject(
         _context.refinement.flow.algorithm,
-        coarsest_partitioned_hypergraph, _context, _task_group_id);
+        _hg, _context, _task_group_id);
 
-    _partitioned_hg = _coarsener->uncoarsen(label_propagation, flow);
+    _partitioned_hg = _coarsener->uncoarsen(label_propagation, fm, flow);
     utils::Timer::instance().stop_timer("refinement");
 
     if ( _top_level ) {
@@ -120,6 +128,7 @@ class RefinementTask : public tbb::task {
  public:
   std::unique_ptr<ICoarsener> _coarsener;
   std::unique_ptr<IHypergraphSparsifier> _sparsifier;
+  Context _ip_context;
 
  private:
   void enableTimerAndStats() {
@@ -143,12 +152,14 @@ class CoarseningTask : public tbb::task {
   CoarseningTask(Hypergraph& hypergraph,
                  IHypergraphSparsifier& sparsifier,
                  const Context& context,
+                 const Context& ip_context,
                  ICoarsener& coarsener,
                  const bool top_level,
                  const TaskGroupID task_group_id) :
     _hg(hypergraph),
     _sparsifier(sparsifier),
     _context(context),
+    _ip_context(ip_context),
     _coarsener(coarsener),
     _top_level(top_level),
     _task_group_id(task_group_id) { }
@@ -210,13 +221,13 @@ class CoarseningTask : public tbb::task {
       disableTimerAndStats();
       PoolInitialPartitionerContinuation& ip_continuation = *new(allocate_continuation())
         PoolInitialPartitionerContinuation(
-          hypergraph, _context, _task_group_id);
+          hypergraph, _ip_context, _task_group_id);
       spawn_initial_partitioner(ip_continuation);
     } else {
       std::unique_ptr<IInitialPartitioner> initial_partitioner =
         InitialPartitionerFactory::getInstance().createObject(
-          _context.initial_partitioning.mode, hypergraph,
-          _context, _top_level, _task_group_id);
+          _ip_context.initial_partitioning.mode, hypergraph,
+          _ip_context, _top_level, _task_group_id);
       initial_partitioner->initialPartition();
     }
   }
@@ -232,6 +243,7 @@ class CoarseningTask : public tbb::task {
   Hypergraph& _hg;
   IHypergraphSparsifier& _sparsifier;
   const Context& _context;
+  const Context& _ip_context;
   ICoarsener& _coarsener;
   const bool _top_level;
   const TaskGroupID _task_group_id;
@@ -252,7 +264,8 @@ static void spawn_multilevel_partitioner(Hypergraph& hypergraph,
   refinement_task.set_ref_count(1);
   CoarseningTask& coarsening_task = *new(refinement_task.allocate_child()) CoarseningTask(
     hypergraph, *refinement_task._sparsifier,
-     context, *refinement_task._coarsener, top_level, task_group_id);
+     context, refinement_task._ip_context,
+     *refinement_task._coarsener, top_level, task_group_id);
   tbb::task::spawn(coarsening_task);
 }
 

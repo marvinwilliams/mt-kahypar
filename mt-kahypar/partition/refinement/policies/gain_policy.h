@@ -36,6 +36,7 @@
 #include "mt-kahypar/utils/randomize.h"
 
 namespace mt_kahypar {
+
 template <class Derived = Mandatory,
           class HyperGraph = Mandatory>
 class GainPolicy : public kahypar::meta::PolicyBase {
@@ -144,7 +145,7 @@ class Km1Policy : public GainPolicy<Km1Policy<HyperGraph>, HyperGraph> {
       }
     }
 
-    Move best_move { from, from, rebalance ? std::numeric_limits<Gain>::max() : 0 };
+    Move best_move { from, from, hn, rebalance ? std::numeric_limits<Gain>::max() : 0 };
     HypernodeWeight hn_weight = hypergraph.nodeWeight(hn);
     int cpu_id = sched_getcpu();
     utils::Randomize& rand = utils::Randomize::instance();
@@ -171,7 +172,7 @@ class Km1Policy : public GainPolicy<Km1Policy<HyperGraph>, HyperGraph> {
                                            const HypernodeID edge_size,
                                            const HypernodeID pin_count_in_from_part_after,
                                            const HypernodeID pin_count_in_to_part_after) {
-    _deltas.local() += HyperGraph::km1Delta(he, edge_weight, edge_size,
+    _deltas.local() += km1Delta(he, edge_weight, edge_size,
                                             pin_count_in_from_part_after,
                                             pin_count_in_to_part_after);
   }
@@ -231,7 +232,7 @@ class CutPolicy : public GainPolicy<CutPolicy<HyperGraph>, HyperGraph> {
       }
     }
 
-    Move best_move { from, from, rebalance ? std::numeric_limits<Gain>::max() : 0 };
+    Move best_move { from, from, hn, rebalance ? std::numeric_limits<Gain>::max() : 0 };
     HypernodeWeight hn_weight = hypergraph.nodeWeight(hn);
     int cpu_id = sched_getcpu();
     utils::Randomize& rand = utils::Randomize::instance();
@@ -258,7 +259,7 @@ class CutPolicy : public GainPolicy<CutPolicy<HyperGraph>, HyperGraph> {
                                            const HypernodeID edge_size,
                                            const HypernodeID pin_count_in_from_part_after,
                                            const HypernodeID pin_count_in_to_part_after) {
-    _deltas.local() += HyperGraph::cutDelta(he, edge_weight, edge_size,
+    _deltas.local() += cutDelta(he, edge_weight, edge_size,
                                             pin_count_in_from_part_after,
                                             pin_count_in_to_part_after);
   }

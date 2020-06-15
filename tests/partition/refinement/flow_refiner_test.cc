@@ -87,7 +87,7 @@ class AFlowRefiner : public Test {
     // Read hypergraph
     hypergraph = io::readHypergraphFile(
       "../test_instances/unweighted_ibm01.hgr", TBBNumaArena::GLOBAL_TASK_GROUP);
-    partitioned_hypergraph = PartitionedHypergraph<>(
+    partitioned_hypergraph = PartitionedHypergraph(
       context.partition.k, TBBNumaArena::GLOBAL_TASK_GROUP, hypergraph);
     context.setupPartWeights(hypergraph.totalWeight());
     initialPartition();
@@ -114,7 +114,7 @@ class AFlowRefiner : public Test {
   }
 
   Hypergraph hypergraph;
-  PartitionedHypergraph<> partitioned_hypergraph;
+  PartitionedHypergraph partitioned_hypergraph;
   Context context;
   std::unique_ptr<Refiner> refiner;
   kahypar::Metrics metrics;

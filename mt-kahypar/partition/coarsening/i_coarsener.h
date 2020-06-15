@@ -40,16 +40,17 @@ class ICoarsener {
     coarsenImpl();
   }
 
-  PartitionedHypergraph<>&& uncoarsen(std::unique_ptr<IRefiner<>>& label_propagation,
-                                      std::unique_ptr<IRefiner<>>& flow) {
-    return uncoarsenImpl(label_propagation, flow);
+  PartitionedHypergraph&& uncoarsen(std::unique_ptr<IRefiner>& label_propagation,
+                                    std::unique_ptr<IRefiner>& fm,
+                                    std::unique_ptr<IRefiner>& flow) {
+    return uncoarsenImpl(label_propagation, fm, flow);
   }
 
   Hypergraph& coarsestHypergraph() {
     return coarsestHypergraphImpl();
   }
 
-  PartitionedHypergraph<>& coarsestPartitionedHypergraph() {
+  PartitionedHypergraph& coarsestPartitionedHypergraph() {
     return coarsestPartitionedHypergraphImpl();
   }
 
@@ -60,10 +61,11 @@ class ICoarsener {
 
  private:
   virtual void coarsenImpl() = 0;
-  virtual PartitionedHypergraph<>&& uncoarsenImpl(std::unique_ptr<IRefiner<>>& label_propagation,
-                                                  std::unique_ptr<IRefiner<>>& flow) = 0;
+  virtual PartitionedHypergraph&& uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
+                                                std::unique_ptr<IRefiner>& fm,
+                                                std::unique_ptr<IRefiner>& flow) = 0;
   virtual Hypergraph& coarsestHypergraphImpl() = 0;
-  virtual PartitionedHypergraph<>& coarsestPartitionedHypergraphImpl() = 0;
+  virtual PartitionedHypergraph& coarsestPartitionedHypergraphImpl() = 0;
 };
 
 }  // namespace kahypar

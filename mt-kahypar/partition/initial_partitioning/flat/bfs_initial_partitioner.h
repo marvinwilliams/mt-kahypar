@@ -31,7 +31,6 @@
 namespace mt_kahypar {
 
 class BFSInitialPartitioner : public tbb::task {
-  using HyperGraph = PartitionedHypergraph<false>;
   using Queue = parallel::scalable_queue<HypernodeID>;
 
   static constexpr bool debug = false;
@@ -47,7 +46,7 @@ class BFSInitialPartitioner : public tbb::task {
 
   tbb::task* execute() override {
     HighResClockTimepoint start = std::chrono::high_resolution_clock::now();
-    HyperGraph& hypergraph = _ip_data.local_partitioned_hypergraph();
+    PartitionedHypergraph& hypergraph = _ip_data.local_partitioned_hypergraph();
     kahypar::ds::FastResetFlagArray<>& hypernodes_in_queue =
       _ip_data.local_hypernode_fast_reset_flag_array();
     kahypar::ds::FastResetFlagArray<>& hyperedges_in_queue =
@@ -120,17 +119,17 @@ class BFSInitialPartitioner : public tbb::task {
   }
 
  private:
-  bool fitsIntoBlock(HyperGraph& hypergraph,
+  bool fitsIntoBlock(PartitionedHypergraph& hypergraph,
                      const HypernodeID hn,
                      const PartitionID block) const {
     ASSERT(block != kInvalidPartition && block < _context.partition.k);
     return hypergraph.partWeight(block) + hypergraph.nodeWeight(hn) <=
-      _context.partition.max_part_weights[block];
+      _context.partition.perfect_balance_part_weights[block];
   }
 
   // ! Pushes all adjacent hypernodes (not visited before) of hypernode hn
   // ! into the BFS queue of the corresponding block.
-  inline void pushIncidentHypernodesIntoQueue(const HyperGraph& hypergraph,
+  inline void pushIncidentHypernodesIntoQueue(const PartitionedHypergraph& hypergraph,
                                               const Context& context,
                                               Queue& queue,
                                               kahypar::ds::FastResetFlagArray<>& hypernodes_in_queue,
@@ -140,7 +139,7 @@ class BFSInitialPartitioner : public tbb::task {
     ASSERT(hn != kInvalidHypernode && block != kInvalidPartition);
     for ( const HyperedgeID& he : hypergraph.incidentEdges(hn) ) {
       if ( !hyperedges_in_queue[block * hypergraph.initialNumEdges() + he] ) {
-        if ( hypergraph.edgeSize(he) <= context.partition.hyperedge_size_threshold ) {
+        if ( hypergraph.edgeSize(he) <= context.partition.ignore_hyperedge_size_threshold ) {
           for ( const HypernodeID& pin : hypergraph.pins(he) ) {
             if ( !hypernodes_in_queue[block * hypergraph.initialNumNodes() + pin] &&
                  hypergraph.partID(pin) == kInvalidPartition ) {
@@ -154,14 +153,14 @@ class BFSInitialPartitioner : public tbb::task {
     }
   }
 
-  inline void markHypernodeAsInQueue(const HyperGraph& hypergraph,
+  inline void markHypernodeAsInQueue(const PartitionedHypergraph& hypergraph,
                                      kahypar::ds::FastResetFlagArray<>& hypernodes_in_queue,
                                      const HypernodeID hn,
                                      const PartitionID block) {
     hypernodes_in_queue.set(block * hypergraph.initialNumNodes() + hn, true);
   }
 
-  inline void markHyperedgeAsInQueue(const HyperGraph& hypergraph,
+  inline void markHyperedgeAsInQueue(const PartitionedHypergraph& hypergraph,
                                      kahypar::ds::FastResetFlagArray<>& hyperedges_in_queue,
                                      const HyperedgeID he,
                                      const PartitionID block) {

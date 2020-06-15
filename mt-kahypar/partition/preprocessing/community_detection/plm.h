@@ -1,7 +1,8 @@
 /*******************************************************************************
  * This file is part of KaHyPar.
  *
- * Copyright (communities) 2019 Lars Gottesbüren <lars.gottesbueren@kit.edu>
+ * Copyright (C) 2019 Lars Gottesbüren <lars.gottesbueren@kit.edu>
+ * Copyright (C) 2020 Tobias Heuer <tobias.heuer@kit.edu>
  *
  * KaHyPar is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,7 +27,9 @@
 
 #include "mt-kahypar/datastructures/sparse_map.h"
 
+#include "mt-kahypar/datastructures/sparse_map.h"
 #include "mt-kahypar/definitions.h"
+#include "mt-kahypar/utils/floating_point_comparisons.h"
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/datastructures/clustering.h"
@@ -93,9 +96,9 @@ class PLM {
     bool clustering_changed = false;
     size_t number_of_nodes_moved = graph.numNodes();
     for (size_t currentRound = 0;
-         number_of_nodes_moved >=
-         _context.preprocessing.community_detection.min_eps_improvement * graph.numNodes() &&
-         currentRound < _context.preprocessing.community_detection.max_pass_iterations; currentRound++) {
+         number_of_nodes_moved >= _context.preprocessing.community_detection.min_vertex_move_fraction * graph.numNodes()
+         && currentRound < _context.preprocessing.community_detection.max_pass_iterations;
+         currentRound++) {
 
       if ( !_disable_randomization ) {
         utils::Timer::instance().start_timer("random_shuffle", "Random Shuffle");
@@ -104,23 +107,17 @@ class PLM {
       }
 
       tbb::enumerable_thread_specific<size_t> local_number_of_nodes_moved(0);
-      auto moveNode =
-        [&](const NodeID u) {         // get rid of named lambda after testing?
+      auto moveNode = [&](const NodeID u) {
           const ArcWeight volU = graph.nodeVolume(u);
           const PartitionID from = communities[u];
-          PartitionID best_cluster = kInvalidPartition;
+          PartitionID best_cluster;
 
           if ( ratingsFitIntoSmallSparseMap(graph, u) ) {
-            best_cluster = computeMaxGainCluster(
-              graph, communities, u,
-              _local_small_incident_cluster_weight.local());
+            best_cluster = computeMaxGainCluster(graph, communities, u, _local_small_incident_cluster_weight.local());
           } else {
-            LargeIncidentClusterWeights& large_incident_cluster_weight =
-              _local_large_incident_cluster_weight.local();
-            large_incident_cluster_weight.setMaxSize(
-              3UL * std::min(_max_degree, _vertex_degree_sampling_threshold));
-            best_cluster = computeMaxGainCluster(
-              graph, communities, u, large_incident_cluster_weight);
+            LargeIncidentClusterWeights& large_incident_cluster_weight = _local_large_incident_cluster_weight.local();
+            large_incident_cluster_weight.setMaxSize(3UL * std::min(_max_degree, _vertex_degree_sampling_threshold));
+            best_cluster = computeMaxGainCluster(graph, communities, u, large_incident_cluster_weight);
           }
 
           if (best_cluster != from) {
@@ -162,7 +159,7 @@ class PLM {
 
   KAHYPAR_ATTRIBUTE_ALWAYS_INLINE bool ratingsFitIntoSmallSparseMap(const G& graph,
                                                                     const HypernodeID u)  {
-    const size_t cache_efficient_map_size = CacheEfficientIncidentClusterWeights::MAP_SIZE / 3UL;
+    static constexpr size_t cache_efficient_map_size = CacheEfficientIncidentClusterWeights::MAP_SIZE / 3UL;
     return std::min(_vertex_degree_sampling_threshold, _max_degree) > cache_efficient_map_size &&
            graph.degree(u) <= cache_efficient_map_size;
   }
@@ -172,10 +169,9 @@ class PLM {
   }
 
   // ! Only for testing
-  void initializeClusterVolunes(G& graph,
-                                ds::Clustering& communities) {
+  void initializeClusterVolumes(Graph& graph, ds::Clustering& communities) {
     _reciprocal_total_volume = 1.0 / graph.totalVolume();
-    _vol_multiplier_div_by_node_vol = _reciprocal_total_volume;
+    _vol_multiplier_div_by_node_vol =  _reciprocal_total_volume;
     tbb::parallel_for(0U, static_cast<NodeID>(graph.numNodes()), [&](const NodeID u) {
       const PartitionID community_id = communities[u];
       _cluster_volumes[community_id] += graph.nodeVolume(u);
@@ -199,7 +195,7 @@ class PLM {
     const ArcWeight weight_from = incident_cluster_weights[from];
 
     const double volMultiplier = _vol_multiplier_div_by_node_vol * volU;
-    double bestGain = weight_from + volMultiplier * (volume_from - volU);
+    double bestGain = weight_from - volMultiplier * (volume_from - volU);
     for (const auto& clusterWeight : incident_cluster_weights) {
       PartitionID to = clusterWeight.key;
       // if from == to, we would have to remove volU from volume_to as well.
@@ -219,8 +215,7 @@ class PLM {
       }
     }
 
-    HEAVY_PREPROCESSING_ASSERT(verifyGain(
-      graph, communities, u, bestCluster, bestGain, incident_cluster_weights));
+    HEAVY_PREPROCESSING_ASSERT(verifyGain(graph, communities, u, bestCluster, bestGain, incident_cluster_weights));
 
     incident_cluster_weights.clear();
 
@@ -232,6 +227,7 @@ class PLM {
                                const ArcWeight volume_to,
                                const double multiplier) {
     return weight_to - multiplier * volume_to;
+    // missing term is - weight_from + multiplier * (volume_from - volume_node)
   }
 
   inline long double adjustAdvancedModGain(double gain,
@@ -252,12 +248,10 @@ class PLM {
                   const Map& icw) {
     const PartitionID from = communities[u];
 
-    long double adjustedGain = adjustAdvancedModGain(
-      gain, icw.get(from), _cluster_volumes[from], graph.nodeVolume(u));
+    long double adjustedGain = adjustAdvancedModGain(gain, icw.get(from), _cluster_volumes[from], graph.nodeVolume(u));
     const double volMultiplier = _vol_multiplier_div_by_node_vol * graph.nodeVolume(u);
-    long double adjustedGainRecomputed = adjustAdvancedModGain(
-      modularityGain(icw.get(to), _cluster_volumes[to], volMultiplier),
-      icw.get(from), _cluster_volumes[from], graph.nodeVolume(u));
+    long double adjustedGainRecomputed = adjustAdvancedModGain(modularityGain(icw.get(to), _cluster_volumes[to], volMultiplier),
+                                                               icw.get(from), _cluster_volumes[from], graph.nodeVolume(u));
     unused(adjustedGainRecomputed);
 
     if (from == to) {
@@ -266,15 +260,6 @@ class PLM {
     }
 
     ASSERT(adjustedGain == adjustedGainRecomputed);
-
-    auto eq = [&](const long double x, const long double y) {
-                static constexpr double eps = 1e-8;
-                long double diff = x - y;
-                if (std::abs(diff) >= eps) {
-                  LOG << V(x) << V(y) << V(diff);
-                }
-                return std::abs(diff) < eps;
-              };
 
     long double dTotalVolumeSquared = static_cast<long double>(graph.totalVolume()) * static_cast<long double>(graph.totalVolume());
 
@@ -293,8 +278,8 @@ class PLM {
     long double expectedCoverageAfterMove = accAfterMove.second / dTotalVolumeSquared;
     long double modAfterMove = coverageAfterMove - expectedCoverageAfterMove;
 
-    bool comp = eq(modBeforeMove + adjustedGain, modAfterMove);
-    ASSERT(comp,
+    const bool result = math::are_almost_equal_ld(modBeforeMove + adjustedGain, modAfterMove, 1e-8);
+    ASSERT(result,
            V(modBeforeMove + adjustedGain) << V(modAfterMove) << V(gain) << V(adjustedGain)
            << V(coverageBeforeMove) << V(expectedCoverageBeforeMove) << V(modBeforeMove)
            << V(coverageAfterMove) << V(expectedCoverageAfterMove) << V(modAfterMove));
@@ -304,7 +289,7 @@ class PLM {
     _cluster_volumes[to] -= graph.nodeVolume(u);
     _cluster_volumes[from] += graph.nodeVolume(u);
 
-    return comp;
+    return result;
   }
 
   static std::pair<ArcWeight, ArcWeight> intraClusterWeightsAndSumOfSquaredClusterVolumes(const G& graph, const ds::Clustering& communities) {

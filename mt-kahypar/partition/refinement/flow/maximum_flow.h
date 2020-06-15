@@ -68,9 +68,9 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   MaximumFlow& operator= (MaximumFlow&&) = delete;
 
 
-  virtual Flow maximumFlow(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) = 0;
+  virtual Flow maximumFlow(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network) = 0;
 
-  HyperedgeWeight minimumSTCut(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network,
+  HyperedgeWeight minimumSTCut(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network,
                                const Context& context,
                                const PartitionID block_0, const PartitionID block_1, Scheduler & scheduler,
                                const HyperedgeWeight cut_flow_network_before) {
@@ -103,7 +103,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
   }
 
   template <bool assign_hypernodes = false>
-  bool bfs(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network, const PartitionID block = 0) {
+  bool bfs(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network, const PartitionID block = 0) {
     bool augmenting_path_exists = false;
     _parent.resetUsedEntries();
     _visited.reset();
@@ -196,7 +196,7 @@ using MostBalancedMinimumCut = typename FlowTypeTraits::MostBalancedMinimumCut;
     }
   }
 
-  void moveHypernode(PartitionedHypergraph<>& hypergraph, const HypernodeID hn, const PartitionID to) {
+  void moveHypernode(PartitionedHypergraph& hypergraph, const HypernodeID hn, const PartitionID to) {
     ASSERT(hypergraph.partID(hn) != -1, "Hypernode " << hn << " should be assigned to a part");
     const PartitionID from = hypergraph.partID(hn);
     if (from != to ) { //&& !hypergraph.isFixedVertex(hn)
@@ -238,7 +238,7 @@ class BoykovKolmogorov : public MaximumFlow<FlowTypeTraits>{
   BoykovKolmogorov(BoykovKolmogorov&&) = delete;
   BoykovKolmogorov& operator= (BoykovKolmogorov&&) = delete;
 
-  Flow maximumFlow(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
+  Flow maximumFlow(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network) {
     unused(hypergraph);
     mapToExternalFlowNetwork();
 
@@ -326,7 +326,7 @@ class IBFS : public MaximumFlow<FlowTypeTraits>{
   IBFS(IBFS&&) = delete;
   IBFS& operator= (IBFS&&) = delete;
 
-  Flow maximumFlow(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
+  Flow maximumFlow(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network) {
     unused(hypergraph);
     mapToExternalFlowNetwork(flow_network);
 

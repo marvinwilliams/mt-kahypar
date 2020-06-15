@@ -52,7 +52,7 @@ template <typename Derived = Mandatory>
 class SchedulerBase {
 
  public:
-  SchedulerBase(PartitionedHypergraph<>& hypergraph, const Context& context) :
+  SchedulerBase(PartitionedHypergraph& hypergraph, const Context& context) :
     _hg(hypergraph),
     _context(context),
     _quotient_graph(),
@@ -280,7 +280,7 @@ class SchedulerBase {
     vector.pop_back();
   }
 
-  PartitionedHypergraph<>& _hg;
+  PartitionedHypergraph& _hg;
   const Context& _context;
   parallel::scalable_vector<edge> _quotient_graph;
   //holds all eges, that are executed in that round (both blocks are active)
@@ -301,7 +301,7 @@ class SchedulerBase {
 class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
   using Base = SchedulerBase<MatchingScheduler>;
   public:
-  MatchingScheduler(PartitionedHypergraph<>& hypergraph, const Context& context) :
+  MatchingScheduler(PartitionedHypergraph& hypergraph, const Context& context) :
     Base(hypergraph, context),
     _active_blocks(_context.partition.k, true),
     _current_round(-1){}
@@ -404,7 +404,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
   using Base = SchedulerBase<OptScheduler>;
 
  public:
-  OptScheduler(PartitionedHypergraph<>& hypergraph, const Context& context) :
+  OptScheduler(PartitionedHypergraph& hypergraph, const Context& context) :
     Base(hypergraph, context),
     _tasks_on_block(context.partition.k, 0),
     _node_lock(hypergraph.initialNumNodes(), false),
@@ -535,7 +535,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
   using Base = SchedulerBase<OneRoundScheduler>;
 
  public:
-  OneRoundScheduler(PartitionedHypergraph<>& hypergraph, const Context& context) :
+  OneRoundScheduler(PartitionedHypergraph& hypergraph, const Context& context) :
     Base(hypergraph, context),
     _finished(false),
     _current_rounds(context.partition.k, parallel::scalable_vector<int>(context.partition.k, -1)),
@@ -570,7 +570,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     _running_edges[old_edge.first][old_edge.second] = false;
 
     size_t round = _current_rounds[old_edge.first][old_edge.second];
-    if((_active_blocks[round][old_edge.first] || _active_blocks[round][old_edge.second]) && 
+    if((_active_blocks[round][old_edge.first] || _active_blocks[round][old_edge.second]) &&
     _block_pair_cut_he.size() > 0 && this->_num_improvements[old_edge.first][old_edge.second] > 0){
         _round_edges.push_back(old_edge);
     }
@@ -601,7 +601,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
         if(_running_edges[i][j]){
           printline += "[" + std::to_string(i) + "," + std::to_string(j) + "]:" + std::to_string(_current_rounds[i][j]) + ", ";
         }
-      } 
+      }
     }
     printline += "\n";
     std::cout << printline;
@@ -617,7 +617,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
     bool old_block_1 = _active_blocks[round][block_1].fetch_and_store(true);
 
     parallel::scalable_vector<edge> edges_to_schedule;
-    
+
     //if block_0 was not active before, add the eges for the next round
     if(!old_block_0){
         tbb::spin_mutex::scoped_lock lock{_active_blocks_mutex};
@@ -640,7 +640,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
                 else
                     edges_to_schedule.push_back(std::make_pair(block_1, i));
             }
-        } 
+        }
     }
     if(!edges_to_schedule.empty()){
         {tbb::spin_mutex::scoped_lock lock{_schedule_mutex};
@@ -649,7 +649,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
             if(this->_num_improvements[edge.first][edge.second] == 0){
               goto not_adding;
             }
-            //if the edge is already contained in roundedges it will be scheduled for this round when it calls scheduleNextBlock 
+            //if the edge is already contained in roundedges it will be scheduled for this round when it calls scheduleNextBlock
             for(auto r_edge:_round_edges){
                 if(r_edge == edge)
                     goto not_adding;

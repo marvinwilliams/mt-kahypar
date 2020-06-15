@@ -23,6 +23,7 @@
 
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
+#include "mt-kahypar/parallel/atomic_wrapper.h"
 
 namespace mt_kahypar {
 
@@ -74,69 +75,60 @@ static constexpr NodeID kinvalidFlowNetworkNode = std::numeric_limits<NodeID>::m
 static constexpr Flow kInfty = std::numeric_limits<Flow>::max() / 2;
 static constexpr size_t kEdgeHashSeed = 42;
 
+static constexpr HypernodeID invalidNode = std::numeric_limits<HypernodeID>::max();
+static constexpr Gain invalidGain = std::numeric_limits<Gain>::min();
+
 struct Move {
-  PartitionID from;
-  PartitionID to;
-  Gain gain;
+  PartitionID from = -1;
+  PartitionID to = -1;
+  HypernodeID node = invalidNode;
+  Gain gain = invalidGain;
 };
 
-/*!
-* A memento stores all information necessary to undo the contraction operation
-* of a vertex pair \f$(u,v)\f$.
-*/
-struct Memento {
-  Memento() :
-    u(kInvalidHypernode),
-    v(kInvalidHypernode),
-    community_id(kInvalidPartition),
-    one_pin_hes_begin(0),
-    one_pin_hes_size(0),
-    parallel_hes_begin(0),
-    parallel_hes_size(0) { }
+using MoveID = uint32_t;
+using SearchID = uint32_t;
 
-  Memento(HypernodeID representative, HypernodeID contraction_partner) :
-    u(representative),
-    v(contraction_partner),
-    community_id(kInvalidPartition),
-    one_pin_hes_begin(0),
-    one_pin_hes_size(0),
-    parallel_hes_begin(0),
-    parallel_hes_size(0) { }
-
-  Memento(HypernodeID representative, HypernodeID contraction_partner, PartitionID community) :
-    u(representative),
-    v(contraction_partner),
-    community_id(community),
-    one_pin_hes_begin(0),
-    one_pin_hes_size(0),
-    parallel_hes_begin(0),
-    parallel_hes_size(0) { }
-
-  // ! The representative hypernode that remains in the hypergraph
-  HypernodeID u;
-  // ! The contraction partner of u that is removed from the hypergraph after the contraction.
-  HypernodeID v;
-  // ! Community id of hypernodes
-  PartitionID community_id;
-  // ! start of removed single pin hyperedges
-  int one_pin_hes_begin;
-  // ! # removed single pin hyperedges
-  int one_pin_hes_size;
-  // ! start of removed parallel hyperedges
-  int parallel_hes_begin;
-  // ! # removed parallel hyperedges
-  int parallel_hes_size;
+struct NoOpDeltaFunc {
+  void operator() (const HyperedgeID, const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID) { }
 };
+
 
 /*!
   * This struct is used during multilevel coarsening to efficiently
   * detect parallel hyperedges.
   */
-  struct HyperedgeHash {
-    HyperedgeID he;
-    size_t hash;
-    size_t size;
-    bool valid;
-  };
+struct ContractedHyperedgeInformation {
+  HyperedgeID he = kInvalidHyperedge;
+  size_t hash = kEdgeHashSeed;
+  size_t size = std::numeric_limits<size_t>::max();
+  bool valid = false;
+};
+
+// ! Helper function to compute delta for cut-metric after changeNodePart
+static HyperedgeWeight cutDelta(const HyperedgeID,
+                                const HyperedgeWeight edge_weight,
+                                const HypernodeID edge_size,
+                                const HypernodeID pin_count_in_from_part_after,
+                                const HypernodeID pin_count_in_to_part_after) {
+  if ( edge_size > 1 ) {
+    if (pin_count_in_to_part_after == edge_size) {
+      return -edge_weight;
+    } else if (pin_count_in_from_part_after == edge_size - 1 &&
+               pin_count_in_to_part_after == 1) {
+      return edge_weight;
+    }
+  }
+  return 0;
+}
+
+// ! Helper function to compute delta for km1-metric after changeNodePart
+static HyperedgeWeight km1Delta(const HyperedgeID,
+                                const HyperedgeWeight edge_weight,
+                                const HypernodeID,
+                                const HypernodeID pin_count_in_from_part_after,
+                                const HypernodeID pin_count_in_to_part_after) {
+  return (pin_count_in_to_part_after == 1 ? edge_weight : 0) +
+         (pin_count_in_from_part_after == 0 ? -edge_weight : 0);
+}
 
 } // namespace mt_kahypar

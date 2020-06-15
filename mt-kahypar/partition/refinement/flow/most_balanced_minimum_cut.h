@@ -72,7 +72,7 @@ class MostBalancedMinimumCut {
   MostBalancedMinimumCut& operator= (const MostBalancedMinimumCut&) = delete;
   MostBalancedMinimumCut& operator= (MostBalancedMinimumCut&&) = delete;
 
-  void mostBalancedMinimumCut(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network,
+  void mostBalancedMinimumCut(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network,
                               const Context& context,
                               const PartitionID block_0, const PartitionID block_1, Scheduler& scheduler, double& new_imbalance) {
     reset();
@@ -236,7 +236,7 @@ class MostBalancedMinimumCut {
    * @t_param sourceSet Indicates, if BFS start from source or sink set
    */
   template <bool sourceSet>
-  void markAllReachableNodesAsVisited(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
+  void markAllReachableNodesAsVisited(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network) {
     auto start_set_iterator = sourceSet ? flow_network.sources() : flow_network.sinks();
     for (const NodeID& node : start_set_iterator) {
       _Q.push(node);
@@ -284,7 +284,7 @@ class MostBalancedMinimumCut {
   }
 
 
-  void assign_and_add_weight(PartitionedHypergraph<>& hypergraph, HypernodeID node, bool sourceSet, FlowNetwork& flow_network){
+  void assign_and_add_weight(PartitionedHypergraph& hypergraph, HypernodeID node, bool sourceSet, FlowNetwork& flow_network){
     if (flow_network.interpreteHypernode(node)){
       if (!sourceSet){
         _node_assignment.set(node, true);
@@ -295,7 +295,7 @@ class MostBalancedMinimumCut {
     }
   }
 
-  KaHyParGraph buildResidualGraph(PartitionedHypergraph<>& hypergraph, FlowNetwork& flow_network) {
+  KaHyParGraph buildResidualGraph(PartitionedHypergraph& hypergraph, FlowNetwork& flow_network) {
     size_t cur_graph_node = 0;
     for (const NodeID& node : flow_network.nodes()) {
       if (!_visited[node]) {

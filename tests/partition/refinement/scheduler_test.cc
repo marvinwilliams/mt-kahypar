@@ -50,7 +50,7 @@ class AOptScheduler : public Test {
     context.partition.epsilon = 0.03;
     context.setupPartWeights(32);
 
-    hypergraph = PartitionedHypergraph<>(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
+    hypergraph = PartitionedHypergraph(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
 
     // Assign part ids
     for ( HypernodeID hn = 0; hn < 32; ++hn ) {
@@ -62,7 +62,7 @@ class AOptScheduler : public Test {
   }
 
   Hypergraph hg;
-  PartitionedHypergraph<> hypergraph;
+  PartitionedHypergraph hypergraph;
   Context context;
 
   std::unique_ptr<Scheduler> scheduler;
@@ -266,7 +266,7 @@ TYPED_TEST(AOptScheduler, ScheduleNextBlock) {
                           ASSERT_EQ(e.first, 3);
                           ASSERT_EQ(e.second, 7);
                         } else if(num_threads == 8){
-                          
+
                         }
                       }
                     });
@@ -293,7 +293,7 @@ class AMatchScheduler : public Test {
     context.partition.epsilon = 0.0;
     context.setupPartWeights(32);
 
-    hypergraph = PartitionedHypergraph<>(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
+    hypergraph = PartitionedHypergraph(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
 
     // Assign part ids
     for ( HypernodeID hn = 0; hn < 32; ++hn ) {
@@ -305,7 +305,7 @@ class AMatchScheduler : public Test {
   }
 
   Hypergraph hg;
-  PartitionedHypergraph<> hypergraph;
+  PartitionedHypergraph hypergraph;
   Context context;
 
   std::unique_ptr<Scheduler> scheduler;
@@ -383,7 +383,7 @@ class AOneRoundScheduler : public Test {
     context.partition.epsilon = 0.0;
     context.setupPartWeights(32);
 
-    hypergraph = PartitionedHypergraph<>(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
+    hypergraph = PartitionedHypergraph(8, TBBNumaArena::GLOBAL_TASK_GROUP, hg);
 
     // Assign part ids
     for ( HypernodeID hn = 0; hn < 32; ++hn ) {
@@ -395,7 +395,7 @@ class AOneRoundScheduler : public Test {
   }
 
   Hypergraph hg;
-  PartitionedHypergraph<> hypergraph;
+  PartitionedHypergraph hypergraph;
   Context context;
 
   std::unique_ptr<Scheduler> scheduler;

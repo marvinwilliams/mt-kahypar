@@ -32,9 +32,7 @@
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
 
 namespace mt_kahypar {
-template<bool track_border_vertices = TRACK_BORDER_VERTICES>
 class IRefiner {
-  using HyperGraph = PartitionedHypergraph<track_border_vertices>;
 
  public:
   IRefiner(const IRefiner&) = delete;
@@ -44,23 +42,25 @@ class IRefiner {
 
   virtual ~IRefiner() = default;
 
-  void initialize(HyperGraph& hypergraph) {
+  void initialize(PartitionedHypergraph& hypergraph) {
     initializeImpl(hypergraph);
   }
 
-  bool refine(HyperGraph& hypergraph,
-              kahypar::Metrics& best_metrics) {
-    return refineImpl(hypergraph, best_metrics);
+  bool refine(PartitionedHypergraph& hypergraph,
+              kahypar::Metrics& best_metrics,
+              const double time_limit) {
+    return refineImpl(hypergraph, best_metrics, time_limit);
   }
 
  protected:
   IRefiner() = default;
 
  private:
-  virtual void initializeImpl(HyperGraph& hypergraph) = 0;
+  virtual void initializeImpl(PartitionedHypergraph& hypergraph) = 0;
 
-  virtual bool refineImpl(HyperGraph& hypergraph,
-                          kahypar::Metrics& best_metrics) = 0;
+  virtual bool refineImpl(PartitionedHypergraph& hypergraph,
+                          kahypar::Metrics& best_metrics,
+                          const double time_limit) = 0;
 };
 
 }  // namespace mt_kahypar

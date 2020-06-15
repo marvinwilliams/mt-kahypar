@@ -34,7 +34,7 @@ using ::testing::Test;
 namespace mt_kahypar {
 namespace ds {
 
-using PartitionedHyperGraph = mt_kahypar::PartitionedHypergraph<>;
+using PartitionedHyperGraph = mt_kahypar::PartitionedHypergraph;
 
 #define INCOMING(X) flowNetwork.mapToIncommingHyperedgeID(X)
 #define OUTGOING(X) flowNetwork.mapToOutgoingHyperedgeID(X)
