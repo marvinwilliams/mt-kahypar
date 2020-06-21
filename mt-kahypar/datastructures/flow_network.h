@@ -124,7 +124,8 @@ class FlowNetwork {
     _flow_graph_size(0),
     _flow_graph(),
     _flow_graph_idx(0),
-    _node_to_edge(size, kinvalidFlowNetworkNode),
+    _node_to_edge(size, std::make_pair(kinvalidFlowNetworkNode, 0)),
+    _node_to_edge_timestamp(0),
     _visited(size),
     _he_visited(initial_num_edges),
     _contains_aquired_node(initial_num_edges){
@@ -308,7 +309,8 @@ class FlowNetwork {
     _visited.reset();
     _contains_aquired_node.reset();
     _flow_graph_idx = 0;
-    std::fill(_node_to_edge.begin(), _node_to_edge.end(), kinvalidFlowNetworkNode);
+    //std::fill(_node_to_edge.begin(), _node_to_edge.end(), kinvalidFlowNetworkNode);
+    _node_to_edge_timestamp++;
   }
 
   void release(mt_kahypar::PartitionedHypergraph& hypergraph, PartitionID block_0, PartitionID block_1, Scheduler & scheduler){
@@ -421,7 +423,9 @@ class FlowNetwork {
   }
 
   std::pair<FlowEdgeIter, FlowEdgeIter> incidentEdges(NodeID node){
-    return std::make_pair(FlowEdgeIter::begin(*this, _node_to_edge[node]), FlowEdgeIter::end(*this));
+    auto next_edge = _node_to_edge[node];
+    size_t next_edge_idx  = next_edge.second == _node_to_edge_timestamp? next_edge.first:kinvalidFlowNetworkNode;
+    return std::make_pair(FlowEdgeIter::begin(*this, next_edge_idx), FlowEdgeIter::end(*this));
   }
 
   FlowEdge & getEdge(size_t idx){
@@ -544,33 +548,35 @@ class FlowNetwork {
     e1.target = v;
     e1.flow = 0;
     e1.capacity = capacity;
-    e1.nextEdge = _node_to_edge[u];
+    auto e1_nextEdge = _node_to_edge[u];
+    e1.nextEdge = e1_nextEdge.second == _node_to_edge_timestamp?e1_nextEdge.first:kinvalidFlowNetworkNode;
 
     FlowEdge e2;
     e2.source = v;
     e2.target = u;
     e2.flow = 0;
     e2.capacity = (undirected ? capacity : 0);
-    e2.nextEdge = _node_to_edge[v];
+    auto e2_nextEdge = _node_to_edge[v];
+    e2.nextEdge = e2_nextEdge.second == _node_to_edge_timestamp?e2_nextEdge.first:kinvalidFlowNetworkNode;
 
     e1.reverseEdge = _flow_graph_idx + 1;
     e2.reverseEdge = _flow_graph_idx;
 
     if(_flow_graph_idx + 1 < _flow_graph_size ){
       _flow_graph[_flow_graph_idx] = e1;
-      _node_to_edge[u] = _flow_graph_idx++;
+      _node_to_edge[u] = std::make_pair(_flow_graph_idx++, _node_to_edge_timestamp);
       _flow_graph[_flow_graph_idx] = e2;
-      _node_to_edge[v] = _flow_graph_idx++;
+      _node_to_edge[v] = std::make_pair(_flow_graph_idx++, _node_to_edge_timestamp);
     }else{
       _flow_graph.push_back(e1);
-      _node_to_edge[u] = _flow_graph_idx++;
+      _node_to_edge[u] = std::make_pair(_flow_graph_idx++, _node_to_edge_timestamp);
       _flow_graph.push_back(e2);
-      _node_to_edge[v] = _flow_graph_idx++;
+      _node_to_edge[v] = std::make_pair(_flow_graph_idx++, _node_to_edge_timestamp);
       _flow_graph_size += 2;
     }
 
-    ASSERT(_flow_graph[_node_to_edge[u]].source == e1.source, "Inserttion not as expected!");
-    ASSERT(_flow_graph[_node_to_edge[v]].source == e2.source, "Inserttion not as expected!");
+    ASSERT(_flow_graph[_node_to_edge[u].first].source == e1.source, "Inserttion not as expected!");
+    ASSERT(_flow_graph[_node_to_edge[v].first].source == e2.source, "Inserttion not as expected!");
 
     _num_edges += (undirected ? 2 : 1);
     _num_undirected_edges += (undirected ? 1 : 0);
@@ -662,10 +668,12 @@ class FlowNetwork {
       addEdge(v, pin, kInfty);
     } else {
       if (containsNodeId(u)) {
-        ASSERT(_node_to_edge[u] == kinvalidFlowNetworkNode, "Pin of size 1 hyperedge already added in flow graph!");
+        ASSERT(_node_to_edge[u].first == kinvalidFlowNetworkNode || _node_to_edge[u].second != _node_to_edge_timestamp,
+         "Pin of size 1 hyperedge already added in flow graph!");
         addEdge(u, pin, hypergraph.edgeWeight(he));
       } else if (containsNodeId(v)) {
-        ASSERT(_node_to_edge[v] == kinvalidFlowNetworkNode, "Pin of size 1 hyperedge already added in flow graph!");
+        ASSERT(_node_to_edge[v].first == kinvalidFlowNetworkNode || _node_to_edge[v].second != _node_to_edge_timestamp,
+         "Pin of size 1 hyperedge already added in flow graph!");
         addEdge(pin, v, hypergraph.edgeWeight(he));
       }
     }
@@ -704,7 +712,7 @@ class FlowNetwork {
   kahypar::ds::SparseSet<NodeID> _sources;
   kahypar::ds::SparseSet<NodeID> _sinks;
 
-  kahypar::ds::SparseSet<HypernodeID> _hypernodes;
+  kahypar::ds::SparseSet<HypernodeID> _hypernodes; //TODO: to dynamic sparse map sparse_map.h
   kahypar::ds::SparseSet<HypernodeID> _removed_hypernodes;
   kahypar::ds::FastResetArray<size_t> _pins_block0;
   kahypar::ds::FastResetArray<size_t> _pins_block1;
@@ -715,7 +723,8 @@ class FlowNetwork {
   AdjacentList _flow_graph;
   size_t _flow_graph_idx;
 
-  parallel::scalable_vector<size_t> _node_to_edge;
+  parallel::scalable_vector<std::pair<size_t, size_t>> _node_to_edge;
+  size_t _node_to_edge_timestamp;
 
   kahypar::ds::FastResetFlagArray<> _visited;
   kahypar::ds::FastResetFlagArray<> _he_visited;

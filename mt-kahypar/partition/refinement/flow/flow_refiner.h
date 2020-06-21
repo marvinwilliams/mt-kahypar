@@ -339,14 +339,17 @@ class FlowRefiner final : public IRefiner {
             return improvement;
         }
         void printStats(){
+            int flow_improvement = 0;
             for (int i = 0; i < _context.partition.k; i++){
                 for (int j = 0; j < _context.partition.k; j++){
                     if(i < j){
                         LOG << "[" << i << "," << j << "]:" << _times_per_block[i][j] << " improved:" << _improved_per_block[i][j]
                         << " rounds:" << _rounds_per_block[i][j];
+                        flow_improvement += _improved_per_block[i][j];
                     }
                 }
             }
+            LOG << V(flow_improvement);
         }
 
         void updateStats(){
