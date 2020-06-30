@@ -52,8 +52,6 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
     parallel::scalable_vector<HypernodeID> start_nodes_block_0;
     parallel::scalable_vector<HypernodeID> start_nodes_block_1;
     for (const HyperedgeID he : cut_hes) {
-      //TODO: why does this fail sometimes?
-      //ASSERT(hg.connectivity(he) > 1, "Hyperedge is not a cut hyperedge!");
       for (const HypernodeID& pin : hg.pins(he)) {
         if (!visited[pin]) {
           if (hg.partID(pin) == block_0) {
@@ -71,8 +69,6 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
     }
     visited.reset();
 
-    //TODO: partWeight of blocks can be influenced by other flow calculations.
-    // Use other metric or save and use them before a round?
     const HypernodeWeight max_part_weight_0 =
       std::max(((1.0 + std::min(alpha * context.partition.epsilon, 0.5))
                 * context.partition.perfect_balance_part_weights[1]
