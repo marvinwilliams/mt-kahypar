@@ -366,7 +366,6 @@ class FlowRefiner final : public IRefiner {
                     }
                 }
             }
-            time_per_block = time_per_block / (double) blocks_refined;
             utils::Stats::instance().update_stat("blocks_refined", blocks_refined);
             utils::Stats::instance().update_stat("time_per_block", time_per_block);
             utils::Stats::instance().update_stat("iterations_per_block", iterations_per_block);
