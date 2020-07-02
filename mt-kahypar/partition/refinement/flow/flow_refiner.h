@@ -242,6 +242,7 @@ class FlowRefiner final : public IRefiner {
                 // sources or sinks
                 if (cut_flow_network_after == kInfty) {
                     flow_network.release(hypergraph, block_0, block_1, scheduler);
+                    utils::Timer::instance().stop_timer("apply");
                     break;
                 }
 
