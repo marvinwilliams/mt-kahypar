@@ -185,7 +185,6 @@ inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParam
 struct FlowParameters {
   FlowAlgorithm algorithm = FlowAlgorithm::do_nothing;
   double alpha = 16.0;
-  bool use_most_balanced_minimum_cut = true;
   bool use_improvement_history = true;
   bool fix_nodes = true;
   bool only_real = true;
@@ -195,7 +194,6 @@ inline std::ostream & operator<< (std::ostream& str, const FlowParameters& param
   str << "  Flow Parameters:" << std::endl;
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Alpha:                            " << params.alpha << std::endl;
-  str << "    Use Most Balanced Minimum Cut:    " << std::boolalpha << params.use_most_balanced_minimum_cut << std::endl;
   str << "    Use Improvement History:          " << std::boolalpha << params.use_improvement_history << std::endl;
   if(params.algorithm == FlowAlgorithm::flow_opt){
     str << "    Fixate Nodes:                     " << std::boolalpha << params.fix_nodes << std::endl;

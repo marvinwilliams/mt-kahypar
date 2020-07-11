@@ -345,10 +345,6 @@ po::options_description createRefinementOptionsDescription(Context& context,
       ("r-flow-alpha",
       po::value<double>(&context.refinement.flow.alpha)->value_name("<double>"),
       "Controls the maximum size of a flow problem => alpha * epsilon * average block weight")
-      ("r-flow-use-most-balanced-minimum-cut",
-      po::value<bool>(&context.refinement.flow.use_most_balanced_minimum_cut)->value_name("<bool>"),
-      "If true, most balanced minimum cut heuristic is used during flow refinement\n"
-      "(default false)")
       ("r-fix-nodes",
       po::value<bool>(&context.refinement.flow.fix_nodes)->value_name("<bool>"),
       "If true, Nodes that are in an already aquired Hyperedge are fixated.\n"

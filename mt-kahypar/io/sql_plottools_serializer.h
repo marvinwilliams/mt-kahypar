@@ -99,7 +99,6 @@ static inline std::string serialize(const PartitionedHypergraph& hypergraph,
         << " lp_rebalancing=" << std::boolalpha << context.refinement.label_propagation.rebalancing
         << " lp_hyperedge_size_activation_threshold=" << context.refinement.label_propagation.hyperedge_size_activation_threshold
         << " flow_algorithm=" << context.refinement.flow.algorithm
-        << " flow_use_most_balanced_minimum_cut=" << std::boolalpha << context.refinement.flow.use_most_balanced_minimum_cut
         << " flow_use_improvement_history=" << std::boolalpha << context.refinement.flow.use_improvement_history
         << " flow_fixate_nodes=" << std::boolalpha << context.refinement.flow.fix_nodes
         << " flow_only_real_improvements=" << std::boolalpha << context.refinement.flow.only_real
