@@ -129,43 +129,6 @@ class SchedulerBase {
 
   std::pair<ConstCutHyperedgeIterator, ConstCutHyperedgeIterator> blockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
     ASSERT(block0 < block1, V(block0) << " < " << V(block1));
-    // updateBlockPairCutHyperedges(block0, block1);
-
-    ASSERT([&]() {
-        std::set<HyperedgeID> cut_hyperedges;
-        for (const HyperedgeID& he : _block_pair_cut_he[block0][block1]) {
-          if (cut_hyperedges.find(he) != cut_hyperedges.end()) {
-            LOG << "Hyperedge " << he << " is contained more than once!";
-            return false;
-          }
-          cut_hyperedges.insert(he);
-        }
-        for (const HyperedgeID& he : _hg.edges()) {
-          if (_hg.pinCountInPart(he, block0) > 0 &&
-              _hg.pinCountInPart(he, block1) > 0) {
-            /*if (cut_hyperedges.find(he) == cut_hyperedges.end()) {
-              LOG << V(_hg.pinCountInPart(he, block0));
-              LOG << V(_hg.pinCountInPart(he, block1));
-              LOG << V(_hg.initialNumNodes()) << V(_hg.currentNumNodes());
-              LOG << V(he) << "should be inside the incidence set of"
-                  << V(block0) << "and" << V(block1);
-              return false;
-            }*/
-          } else {
-            // other threads can move pins after the update
-            /*
-            if (cut_hyperedges.find(he) != cut_hyperedges.end()) {
-              LOG << V(_hg.pinCountInPart(he, block0));
-              LOG << V(_hg.pinCountInPart(he, block1));
-              LOG << V(he) << "shouldn't be inside the incidence set of"
-                  << V(block0) << "and" << V(block1);
-              return false;
-            }*/
-          }
-        }
-        return true;
-      } (), "Cut hyperedge set between " << V(block0) << " and " << V(block1) << " is wrong!");
-
     return std::make_pair(_block_pair_cut_he[block0][block1].cbegin(),
                           _block_pair_cut_he[block0][block1].cend());
   }
