@@ -315,7 +315,7 @@ class IBFS : public MaximumFlow<FlowTypeTraits>{
  public:
   IBFS(const HypernodeID initial_size, const HypernodeID initial_num_nodes) :
     Base(initial_size, initial_num_nodes),
-    _flow_graph(FlowGraph::IB_INIT_FAST),
+    _flow_graph(FlowGraph::IB_INIT_COMPACT),
     _flow_network_mapping(initial_size, 0) { }
 
   ~IBFS() = default;

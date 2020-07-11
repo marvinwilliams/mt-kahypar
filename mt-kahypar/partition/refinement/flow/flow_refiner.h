@@ -196,8 +196,11 @@ class FlowRefiner final : public IRefiner {
                 parallel::scalable_vector<HyperedgeID> cut_hes;
                 HyperedgeWeight cut_weight = 0;
                 for (const HyperedgeID& he : scheduler.blockPairCutHyperedges(block_0, block_1)) {
-                    cut_weight += hypergraph.edgeWeight(he);
-                    cut_hes.push_back(he);
+                    if ( hypergraph.pinCountInPart(he, block_0) > 0 &&
+                         hypergraph.pinCountInPart(he, block_1) > 0 ) {
+                      cut_weight += hypergraph.edgeWeight(he);
+                      cut_hes.push_back(he);
+                    }
                 }
                 utils::Timer::instance().stop_timer("getCutHe");
 

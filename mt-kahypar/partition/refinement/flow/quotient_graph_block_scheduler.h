@@ -30,6 +30,7 @@
 #include <list>
 #include <tbb/spin_mutex.h>
 #include <tbb/spin_rw_mutex.h>
+#include <tbb/concurrent_vector.h>
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 #include "external_tools/kahypar/kahypar/datastructure/sparse_set.h"
@@ -45,8 +46,10 @@ namespace mt_kahypar {
 using edge = std::pair<PartitionID, PartitionID>;
 using scheduling_edge = std::pair<int, edge>;
 using ConstIncidenceIterator = parallel::scalable_vector<edge>::const_iterator;
-using ConstCutHyperedgeIterator = parallel::scalable_vector<HyperedgeID>::const_iterator;
 using DeltaFunction = std::function<void (const HyperedgeID, const HyperedgeWeight, const HypernodeID, const HypernodeID, const HypernodeID)>;
+template<typename T>
+using ConcurrentVec = tbb::concurrent_vector<T>;
+using ConstCutHyperedgeIterator = ConcurrentVec<HyperedgeID>::const_iterator;
 
 template <typename Derived = Mandatory>
 class SchedulerBase {
@@ -60,8 +63,8 @@ class SchedulerBase {
     _locked_blocks(_context.partition.k, false),
 
     _block_pair_cut_he(context.partition.k,
-                       parallel::scalable_vector<parallel::scalable_vector<HyperedgeID> >(context.partition.k,
-                                                              parallel::scalable_vector<HyperedgeID>())),
+                       ConcurrentVec<ConcurrentVec<HyperedgeID> >(context.partition.k,
+                                                              ConcurrentVec<HyperedgeID>())),
     _schedule_mutex(),
     _block_weights(context.partition.k, parallel::scalable_vector<size_t>(context.partition.k, 0)),
     _rw_locks(context.partition.k),
@@ -126,7 +129,7 @@ class SchedulerBase {
 
   std::pair<ConstCutHyperedgeIterator, ConstCutHyperedgeIterator> blockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
     ASSERT(block0 < block1, V(block0) << " < " << V(block1));
-    updateBlockPairCutHyperedges(block0, block1);
+    // updateBlockPairCutHyperedges(block0, block1);
 
     ASSERT([&]() {
         std::set<HyperedgeID> cut_hyperedges;
@@ -254,24 +257,24 @@ class SchedulerBase {
  protected:
   static constexpr bool debug = false;
 
-  void updateBlockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
-    kahypar::ds::FastResetFlagArray<>& visited = _local_he_visited.local();
-    visited.reset();
-    size_t N = _block_pair_cut_he[block0][block1].size();
-    for (size_t i = 0; i < N; ++i) {
-      const HyperedgeID he = _block_pair_cut_he[block0][block1][i];
-      if (_hg.pinCountInPart(he, block0) == 0 ||
-          _hg.pinCountInPart(he, block1) == 0 ||
-          visited[he]) {
-        std::swap(_block_pair_cut_he[block0][block1][i],
-                  _block_pair_cut_he[block0][block1][N - 1]);
-        _block_pair_cut_he[block0][block1].pop_back();
-        --i;
-        --N;
-      }
-      visited.set(he, true);
-    }
-  }
+  // void updateBlockPairCutHyperedges(const PartitionID block0, const PartitionID block1) {
+  //   kahypar::ds::FastResetFlagArray<>& visited = _local_he_visited.local();
+  //   visited.reset();
+  //   size_t N = _block_pair_cut_he[block0][block1].size();
+  //   for (size_t i = 0; i < N; ++i) {
+  //     const HyperedgeID he = _block_pair_cut_he[block0][block1][i];
+  //     if (_hg.pinCountInPart(he, block0) == 0 ||
+  //         _hg.pinCountInPart(he, block1) == 0 ||
+  //         visited[he]) {
+  //       std::swap(_block_pair_cut_he[block0][block1][i],
+  //                 _block_pair_cut_he[block0][block1][N - 1]);
+  //       _block_pair_cut_he[block0][block1].pop_back();
+  //       --i;
+  //       --N;
+  //     }
+  //     visited.set(he, true);
+  //   }
+  // }
 
   template<typename T>
   void removeElement(size_t index, parallel::scalable_vector<T> &vector){
@@ -289,7 +292,7 @@ class SchedulerBase {
   parallel::scalable_vector<bool> _locked_blocks;
 
   // Contains the cut hyperedges for each pair of blocks.
-  parallel::scalable_vector<parallel::scalable_vector<parallel::scalable_vector<HyperedgeID> > > _block_pair_cut_he;
+  ConcurrentVec<ConcurrentVec<ConcurrentVec<HyperedgeID> > > _block_pair_cut_he;
 
   tbb::spin_mutex _schedule_mutex;
   parallel::scalable_vector<parallel::scalable_vector<size_t>> _block_weights;
