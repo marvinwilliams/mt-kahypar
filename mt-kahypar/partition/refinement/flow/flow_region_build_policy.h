@@ -80,9 +80,11 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
       }else{
         for(auto pin:temp_start_nodes_block_0){
           scheduler.releaseNode(pin);
+          visited.set(pin, false);
         }
         for(auto pin:temp_start_nodes_block_1){
           scheduler.releaseNode(pin);
+          visited.set(pin, false);
         }
       }
     }
