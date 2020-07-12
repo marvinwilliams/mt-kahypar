@@ -58,33 +58,14 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
         if (!visited[pin]) {
           if (hg.partID(pin) == block_0) {
             if(scheduler.tryAquireNode(pin, blocks_idx)){
-              temp_start_nodes_block_0.push_back(pin);
+              start_nodes_block_0.push_back(pin);
             }
           } else if (hg.partID(pin) == block_1) {
             if(scheduler.tryAquireNode(pin, blocks_idx)){
-              temp_start_nodes_block_1.push_back(pin);
+              start_nodes_block_1.push_back(pin);
             }
           }
           visited.set(pin, true);
-        }
-      }
-      // if a pin in both blocks could be aquired, add all pins to the starting nodes
-      if(temp_start_nodes_block_0.size() > 0 && temp_start_nodes_block_1.size() > 0){
-        for(auto pin:temp_start_nodes_block_0){
-          start_nodes_block_0.push_back(pin);
-        }
-        for(auto pin:temp_start_nodes_block_1){
-          start_nodes_block_1.push_back(pin);
-        }
-        //otherwise release them again
-      }else{
-        for(auto pin:temp_start_nodes_block_0){
-          scheduler.releaseNode(pin);
-          visited.set(pin, false);
-        }
-        for(auto pin:temp_start_nodes_block_1){
-          scheduler.releaseNode(pin);
-          visited.set(pin, false);
         }
       }
     }
