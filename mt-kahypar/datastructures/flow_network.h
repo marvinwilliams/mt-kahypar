@@ -812,27 +812,12 @@ class OptFlowNetwork:public FlowNetwork<FlowTypeTraits>  {
 
   private:
     void fixNodes(mt_kahypar::PartitionedHypergraph& hypergraph, HyperedgeID he, const PartitionID block_0){
-    const size_t pins_u_block0 = this->_pins_block0.get(he);
-    const size_t pins_u_block1 = this->_pins_block1.get(he);
-
-    const NodeID u = this->mapToIncommingHyperedgeID(he);
-    const NodeID v = this->mapToOutgoingHyperedgeID(he);
-
-    if(pins_u_block0 > 0){
-      this->addNodeId(u);
-      this->addSourceWithId(u);
-    }
-    if(pins_u_block1 > 0){
-      this->addNodeId(v);
-      this->addSinkWithId(v);
-    }
-
     for (const HypernodeID& pin : hypergraph.pins(he)) {
       if (this->_hypernodes.contains(pin)) {
         if(hypergraph.partID(pin) == block_0){
-          this->addEdge(u, pin, kInfty);
+          this->addSourceWithId(pin);
         }else{
-          this->addEdge(pin, v, kInfty);
+          this->addSinkWithId(pin);
         }
       }
     }
