@@ -814,6 +814,7 @@ class OptFlowNetwork:public FlowNetwork<FlowTypeTraits>  {
     void fixNodes(mt_kahypar::PartitionedHypergraph& hypergraph, HyperedgeID he, const PartitionID block_0){
     for (const HypernodeID& pin : hypergraph.pins(he)) {
       if (this->_hypernodes.contains(pin)) {
+        this->addNodeId(pin);
         if(hypergraph.partID(pin) == block_0){
           this->addSourceWithId(pin);
         }else{
