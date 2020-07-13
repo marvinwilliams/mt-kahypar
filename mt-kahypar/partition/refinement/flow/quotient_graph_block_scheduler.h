@@ -372,7 +372,7 @@ class MatchingScheduler : public SchedulerBase<MatchingScheduler> {
     return (active_blocks >= 1);
   }
 
-  parallel::scalable_vector<bool> _active_blocks;
+  parallel::scalable_vector<tbb::atomic<bool>> _active_blocks;
   int _current_round;
 };
 
@@ -503,7 +503,7 @@ class OptScheduler : public SchedulerBase<OptScheduler> {
 
   parallel::scalable_vector<size_t> _tasks_on_block;
   parallel::scalable_vector<tbb::atomic<int>> _node_lock;
-  parallel::scalable_vector<bool> _active_blocks;
+  parallel::scalable_vector<tbb::atomic<bool>> _active_blocks;
   int _current_round;
 };
 
@@ -513,8 +513,7 @@ class OneRoundScheduler : public SchedulerBase<OneRoundScheduler> {
  public:
   OneRoundScheduler(PartitionedHypergraph& hypergraph, const Context& context) :
     Base(hypergraph, context),
-    _finished(false),
-    _current_rounds(context.partition.k, parallel::scalable_vector<int>(context.partition.k, -1)),
+    _current_rounds(context.partition.k, parallel::scalable_vector<tbb::atomic<int>>(context.partition.k, -1)),
     _active_blocks(1 , parallel::scalable_vector<tbb::atomic<bool>>(context.partition.k, false)),
     _active_blocks_mutex(),
     _max_round(0),
@@ -716,14 +715,13 @@ private:
     size_t index;
   };
 
-  tbb::atomic<bool> _finished;
-  parallel::scalable_vector<parallel::scalable_vector<int>> _current_rounds;
+  parallel::scalable_vector<parallel::scalable_vector<tbb::atomic<int>>> _current_rounds;
   parallel::scalable_vector<parallel::scalable_vector<tbb::atomic<bool>>> _active_blocks;
   tbb::spin_mutex _active_blocks_mutex;
   size_t _max_round;
   parallel::scalable_vector<parallel::scalable_vector<bool>> _running_edges;
 
-  parallel::scalable_vector<size_t> _tasks_on_block;
+  parallel::scalable_vector<tbb::atomic<int>> _tasks_on_block;
   parallel::scalable_vector<tbb::atomic<int>> _node_lock;
   size_t _num_threads;
 };
