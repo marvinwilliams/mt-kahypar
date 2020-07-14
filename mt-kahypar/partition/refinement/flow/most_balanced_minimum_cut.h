@@ -127,6 +127,9 @@ class MostBalancedMinimumCut {
     // Find most balanced minimum cut
     parallel::scalable_vector<NodeID> topological_order(dag.numNodes(), 0);
     parallel::scalable_vector<bool> best_partition_id(dag.numNodes(), false);
+    
+    _fixed_part_weights.first += flow_network.getRemovedFixedPartWeight0();
+    _fixed_part_weights.second += flow_network.getRemovedFixedPartWeight1();
 
     std::pair<HypernodeWeight, HypernodeWeight> aquired_part_weight = get_aquired_part_weight(block_0, block_1, scheduler);
     HypernodeWeight initial_current_first = aquired_part_weight.first + aquired_part_weight.second - _fixed_part_weights.second;
