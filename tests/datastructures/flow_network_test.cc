@@ -236,17 +236,17 @@ TYPED_TEST(AFlowNetworkTest, FlowNetWorkBuild) {
 
   this->flow_network->build(this->hypergraph, this->context, 0, 1, *this->scheduler);
 
-  ASSERT_EQ(this->flow_network->numNodes(), 18);
-  ASSERT_EQ(this->flow_network->numEdges(), 26);
+  ASSERT_EQ(this->flow_network->numNodes(), 16);
+  ASSERT_EQ(this->flow_network->numEdges(), 23);
   ASSERT_EQ(this->flow_network->numUndirectedEdges(), 3);
   ASSERT_EQ(this->flow_network->totalWeightHyperedges(), 8);
   ASSERT_TRUE(this->flow_network->isRemovedHypernode(21));
 
   this->flow_network2->build(this->hypergraph, this->context, 0, 2, *this->scheduler);
 
-  ASSERT_EQ(this->flow_network2->numNodes(), 11);
-  ASSERT_EQ(this->flow_network2->numEdges(), 12);
-  ASSERT_EQ(this->flow_network2->numUndirectedEdges(), 2);
+  ASSERT_EQ(this->flow_network2->numNodes(), 10);
+  ASSERT_EQ(this->flow_network2->numEdges(), 10);
+  ASSERT_EQ(this->flow_network2->numUndirectedEdges(), 0);
   ASSERT_EQ(this->flow_network2->totalWeightHyperedges(), 4);
   ASSERT_TRUE(this->flow_network2->isRemovedHypernode(51));
 }
@@ -278,10 +278,12 @@ TYPED_TEST(AFlowNetworkTest, SourcesAndSinks) {
   this->flow_network2->build(this->hypergraph, this->context, 0, 2, *this->scheduler);
 
   ASSERT_EQ(this->flow_network->numSources(), 1);
-  ASSERT_TRUE(this->flow_network->isIdSource(89));
-
-  ASSERT_EQ(this->flow_network2->numSources(), 1);
-  ASSERT_TRUE(this->flow_network2->isIdSource(89));
+  ASSERT_TRUE(this->flow_network->isIdSource(86));
+  
+  
+  ASSERT_EQ(this->flow_network2->numSources(), 2);
+  ASSERT_TRUE(this->flow_network2->isIdSource(88));
+  ASSERT_TRUE(this->flow_network2->isIdSource(90));
 }
 
 TYPED_TEST(AFlowNetworkTest, IncidentEdges) {

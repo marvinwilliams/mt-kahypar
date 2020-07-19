@@ -837,12 +837,12 @@ class OptFlowNetwork:public FlowNetwork<FlowTypeTraits>  {
     for (const HypernodeID& pin : hypergraph.pins(he)) {
       if (this->_hypernodes.contains(pin)) {
         if(!this->_fixed_and_removed_hns[pin]){
-        this->_fixed_and_removed_hns.set(pin, true);
-        if (hypergraph.partID(pin) == block_0){
-          this->_removed_fixed_part_weight_0 += hypergraph.nodeWeight(pin);
-        }else{
-          this->_removed_fixed_part_weight_1 += hypergraph.nodeWeight(pin);
-        }
+          this->_fixed_and_removed_hns.set(pin, true);
+          if (hypergraph.partID(pin) == block_0){
+            this->_removed_fixed_part_weight_0 += hypergraph.nodeWeight(pin);
+          }else{
+            this->_removed_fixed_part_weight_1 += hypergraph.nodeWeight(pin);
+          }
           for (const HyperedgeID& incident_he : hypergraph.incidentEdges(pin)) {
             if (hypergraph.partID(pin) == block_0) {
               this->_pins_block0.update(incident_he, -1);
