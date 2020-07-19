@@ -58,11 +58,19 @@ class FlowRegionBuildPolicy : public kahypar::meta::PolicyBase {
         if (!visited[pin]) {
           if (hg.partID(pin) == block_0) {
             if(scheduler.tryAquireNode(pin, blocks_idx)){
-              start_nodes_block_0.push_back(pin);
+              if(hg.partID(pin) == block_0){
+                start_nodes_block_0.push_back(pin);
+              }else{
+                scheduler.releaseNode(pin);
+              }
             }
           } else if (hg.partID(pin) == block_1) {
             if(scheduler.tryAquireNode(pin, blocks_idx)){
-              start_nodes_block_1.push_back(pin);
+              if(hg.partID(pin) == block_1){
+                start_nodes_block_1.push_back(pin);
+              }else{
+                scheduler.releaseNode(pin);
+              }
             }
           }
           visited.set(pin, true);
@@ -162,8 +170,12 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<MatchingFlowR
             if (!visited[pin] && hg.partID(pin) == part &&
                 queue_weight + hg.nodeWeight(pin) <= max_part_weight) {
               if(scheduler.tryAquireNode(pin, blocks_idx)){
-                Q.push(pin);
-                queue_weight += hg.nodeWeight(pin);
+                if(hg.partID(pin) == part){
+                  Q.push(pin);
+                  queue_weight += hg.nodeWeight(pin);
+                }else{
+                  scheduler.releaseNode(pin);
+                }
               }
               visited.set(pin, true);
             }
@@ -178,6 +190,7 @@ class MatchingFlowRegionBuildPolicy : public FlowRegionBuildPolicy<MatchingFlowR
       const HypernodeID last_hn = *(flow_network.hypernodes().second - 1);
       flow_network.removeHypernode(hg, last_hn);
       queue_weight -= hg.nodeWeight(last_hn);
+      scheduler.releaseNode(last_hn);
     }
     scheduler.aquire_block_weight(part, other_part, queue_weight);
     return weight_of_added_hns;
@@ -229,8 +242,12 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<OptFlowRegionBuild
               if(!visited[pin]&&
                 queue_weight + hg.nodeWeight(pin) <= max_part_weight) {
                 if(scheduler.tryAquireNode(pin, blocks_idx)){
-                  Q.push(pin);
-                  queue_weight += hg.nodeWeight(pin);
+                  if(hg.partID(pin) == part){
+                    Q.push(pin);
+                    queue_weight += hg.nodeWeight(pin);
+                  }else{
+                    scheduler.releaseNode(pin);
+                  }
                 }
                 visited.set(pin, true);
               }
@@ -246,6 +263,7 @@ class OptFlowRegionBuildPolicy : public FlowRegionBuildPolicy<OptFlowRegionBuild
       const HypernodeID last_hn = *(flow_network.hypernodes().second - 1);
       flow_network.removeHypernode(hg, last_hn);
       queue_weight -= hg.nodeWeight(last_hn);
+      scheduler.releaseNode(last_hn);
     }
     scheduler.aquire_block_weight(part, other_part, queue_weight);
     return weight_of_added_hns;
