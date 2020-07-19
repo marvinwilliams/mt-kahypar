@@ -213,7 +213,7 @@ class FlowNetwork {
           // Otherwise connect pin with hyperedge in flow network.
           _he_visited.reset();
           for (const HypernodeID& pin : hypergraph.pins(he)) {
-            if (_hypernodes.contains(pin)) {
+            if (_hypernodes.contains(pin) && !_fixed_and_removed_hns[pin]) {
               if (!_contains_graph_hyperedges[pin] &&
                   hypergraph.nodeDegree(pin) <= 3 && !_nodes.contains(pin)) {
                 ASSERT(!_nodes.contains(pin), "Pin " << pin << " of HE " << he
