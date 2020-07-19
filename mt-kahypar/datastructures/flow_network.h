@@ -213,7 +213,7 @@ class FlowNetwork {
           // Otherwise connect pin with hyperedge in flow network.
           _he_visited.reset();
           for (const HypernodeID& pin : hypergraph.pins(he)) {
-            if (_hypernodes.contains(pin) && !_fixed_and_removed_hns[pin]) {
+            if (containsHypernode(pin)) {
               if (!_contains_graph_hyperedges[pin] &&
                   hypergraph.nodeDegree(pin) <= 3 && !_nodes.contains(pin)) {
                 ASSERT(!_nodes.contains(pin), "Pin " << pin << " of HE " << he
@@ -339,7 +339,7 @@ class FlowNetwork {
   }
 
   bool containsHypernode(const HypernodeID hn) {
-    return _hypernodes.contains(hn);
+    return (_hypernodes.contains(hn) && !_fixed_and_removed_hns[hn]);
   }
 
 
@@ -614,7 +614,7 @@ class FlowNetwork {
       ASSERT([&]() {
             size_t num_flow_hns = 0;
             for (const HypernodeID& pin : hypergraph.pins(he)) {
-              if (containsHypernode(pin) && !_fixed_and_removed_hns[pin]) {
+              if (containsHypernode(pin)) {
                 num_flow_hns++;
               }
             }
@@ -658,12 +658,12 @@ class FlowNetwork {
 
     ASSERT(containsHypernode(u) || containsHypernode(v),
            "Hyperedge " << he << " is not in contained in the flow problem!");
-    if (containsHypernode(v) && !_fixed_and_removed_hns[v]) {
+    if (containsHypernode(v)) {
       std::swap(u, v);
     }
     addNodeId(u);
 
-    if (containsHypernode(v)&& !_fixed_and_removed_hns[v]) {
+    if (containsHypernode(v)) {
       addEdge(u, v, hypergraph.edgeWeight(he), true);
     }
   }
