@@ -186,7 +186,7 @@ struct FlowParameters {
   FlowAlgorithm algorithm = FlowAlgorithm::do_nothing;
   double alpha = 16.0;
   bool use_improvement_history = true;
-  bool fix_nodes = true;
+  bool fix_nodes = false;
   bool only_real = true;
 };
 
