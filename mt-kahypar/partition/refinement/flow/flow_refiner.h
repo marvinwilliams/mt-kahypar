@@ -117,7 +117,7 @@ class FlowRefiner final : public IRefiner {
             }while (scheduler.hasNextRound());
 
             HyperedgeWeight current_metric = best_metrics.getMetric(_context.partition.mode, _context.partition.objective) - _round_delta;
-
+            unused(current_metric);
             double current_imbalance = metrics::imbalance(hypergraph, _context);
 
             //check if the metric improved as exspected
@@ -129,7 +129,7 @@ class FlowRefiner final : public IRefiner {
                     << V(current_metric));
 
             //Update bestmetrics
-            best_metrics.updateMetric(current_metric, _context.partition.mode, _context.partition.objective);
+            best_metrics.updateMetric(metrics::objective(hypergraph, _context.partition.objective), _context.partition.mode, _context.partition.objective);
             best_metrics.imbalance = current_imbalance;
 
             utils::Timer::instance().stop_timer("flow_refinement");
@@ -278,15 +278,25 @@ class FlowRefiner final : public IRefiner {
                 if (flownetwork_improved_metric && is_feasible_partition) {
                     auto& assignment = maximum_flow.get_assignment();
                     for (const HypernodeID& hn : flow_network.hypernodes()) {
-                        const PartitionID from = hypergraph.partID(hn);
-                        const PartitionID to = assignment[hn]? block_1: block_0;
-                        if (from != to) {
-                            HyperedgeWeight delta_before = gain.localDelta();
-                            scheduler.changeNodePart(hn, from, to, objective_delta);
-                            real_delta += delta_before - gain.localDelta();
-                            moves.push_back(std::make_pair(hn, std::make_pair(from, to)));
+                        if(flow_network.containsHypernode(hn)){
+                            const PartitionID from = hypergraph.partID(hn);
+                            const PartitionID to = assignment[hn]? block_1: block_0;
+                            if (from != to) {
+                                HyperedgeWeight delta_before = gain.localDelta();
+                                scheduler.changeNodePart(hn, from, to, objective_delta);
+                                real_delta += delta_before - gain.localDelta();
+                                moves.push_back(std::make_pair(hn, std::make_pair(from, to)));
+                            }
                         }
                     }
+
+                    ASSERT([&]() {
+                        if(_context.refinement.flow.fix_nodes){
+                            if(real_delta != flownetwork_delta)
+                                return false;
+                        }
+                        return true;
+                    } (), "Flownetwork delta: " << flownetwork_delta << " does not equal the real delta: " << real_delta);
 
                     // Heuristic: Abort Round if there are to many flownetwork improvements without a
                     //            real improvement to prevent a busy deadlock.
@@ -315,7 +325,10 @@ class FlowRefiner final : public IRefiner {
                 } else if(real_delta < 0){
                     //reverse changes
                     for(auto move:moves){
-                        scheduler.changeNodePart(move.first, move.second.second, move.second.first);
+                        HyperedgeWeight delta_before = gain.localDelta();
+                        scheduler.changeNodePart(move.first, move.second.second, move.second.first, objective_delta);
+                        real_delta += delta_before - gain.localDelta();
+                        thread_local_delta += real_delta;
                     }
                 }
                 utils::Timer::instance().stop_timer("apply");
@@ -335,7 +348,7 @@ class FlowRefiner final : public IRefiner {
             } while (alpha > 1.0);
 
             //atomic-add improvements to _round_delta
-            if(thread_local_delta > 0){
+            if(thread_local_delta != 0){
                 _round_delta.fetch_and_add(thread_local_delta);
             }
 
