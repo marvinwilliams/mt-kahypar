@@ -36,6 +36,13 @@ template <PartitionID k, typename FlowTypeTraits>
 struct TestConfig { };
 
 template <PartitionID k>
+struct TestConfig<k, FlowOneRoundTypeTraits> {
+  using Refiner = FlowRefiner<FlowOneRoundTypeTraits>;
+  static constexpr PartitionID K = k;
+  static constexpr FlowAlgorithm FLOW_ALGO = FlowAlgorithm::flow_one_round;
+};
+
+template <PartitionID k>
 struct TestConfig<k, FlowOptTypeTraits> {
   using Refiner = FlowRefiner<FlowOptTypeTraits>;
   static constexpr PartitionID K = k;
@@ -44,7 +51,7 @@ struct TestConfig<k, FlowOptTypeTraits> {
 
 template <PartitionID k>
 struct TestConfig<k, FlowMatchingTypeTraits> {
-  using Refiner = FlowRefiner<FlowOptTypeTraits>;
+  using Refiner = FlowRefiner<FlowMatchingTypeTraits>;
   static constexpr PartitionID K = k;
   static constexpr FlowAlgorithm FLOW_ALGO = FlowAlgorithm::flow_match;
 };
@@ -66,7 +73,7 @@ class AFlowRefiner : public Test {
     context.partition.graph_community_filename = "test_instances/ibm01.hgr.community";
     context.partition.mode = kahypar::Mode::direct_kway;
     context.partition.objective = kahypar::Objective::km1;
-    context.partition.epsilon = 0.25;
+    context.partition.epsilon = 0.03;
     context.partition.k = Config::K;
     context.partition.verbose_output = false;
 
@@ -83,6 +90,7 @@ class AFlowRefiner : public Test {
     // Label Propagation
     context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
     context.initial_partitioning.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
+    context.refinement.fm.algorithm = FMAlgorithm::do_nothing;
 
     // Read hypergraph
     hypergraph = io::readHypergraphFile(
@@ -123,9 +131,11 @@ class AFlowRefiner : public Test {
 template <typename Config>
 size_t AFlowRefiner<Config>::num_threads = HardwareTopology::instance().num_cpus();
 
-static constexpr double EPS = 0.05;
 
-typedef ::testing::Types<TestConfig<2, FlowOptTypeTraits>,
+typedef ::testing::Types<TestConfig<2, FlowOneRoundTypeTraits>,
+                         TestConfig<4, FlowOneRoundTypeTraits>,
+                         TestConfig<8, FlowOneRoundTypeTraits>,
+                         TestConfig<2, FlowOptTypeTraits>,
                          TestConfig<4, FlowOptTypeTraits>,
                          TestConfig<8, FlowOptTypeTraits>,
                          TestConfig<2, FlowMatchingTypeTraits>,
@@ -137,11 +147,6 @@ TYPED_TEST_CASE(AFlowRefiner, TestConfigs);
 TYPED_TEST(AFlowRefiner, UpdatesImbalanceCorrectly) {
   this->refiner->refine(this->partitioned_hypergraph, this->metrics, std::numeric_limits<double>::max());
   ASSERT_DOUBLE_EQ(metrics::imbalance(this->partitioned_hypergraph, this->context), this->metrics.imbalance);
-}
-
-TYPED_TEST(AFlowRefiner, DoesNotViolateBalanceConstraint) {
-  this->refiner->refine(this->partitioned_hypergraph, this->metrics, std::numeric_limits<double>::max());
-  ASSERT_LE(this->metrics.imbalance, this->context.partition.epsilon + EPS);
 }
 
 TYPED_TEST(AFlowRefiner, UpdatesMetricsCorrectly) {
