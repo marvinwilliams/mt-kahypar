@@ -24,13 +24,18 @@
 
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/factories.h"
+
 #include "mt-kahypar/partition/refinement/do_nothing_refiner.h"
+
 #include "mt-kahypar/partition/refinement/label_propagation/label_propagation_refiner.h"
+
 #include "mt-kahypar/partition/refinement/fm/multitry_kway_fm.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_delta_strategy.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/recompute_gain_strategy.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_on_demand_strategy.h"
+
+#include "mt-kahypar/partition/refinement/greedy/greedy_refiner.h"
 
 #define REGISTER_LP_REFINER(id, refiner, t)                                                                            \
   static kahypar::meta::Registrar<LabelPropagationFactory> JOIN(register_ ## refiner, t)(                              \
@@ -46,7 +51,15 @@
     return new refiner(hypergraph, context, task_group_id);                                                            \
   })
 
+#define REGISTER_GREEDY_REFINER(id, refiner, t)                                                                            \
+  static kahypar::meta::Registrar<GreedyFactory> JOIN(register_ ## refiner, t)(                                            \
+    id,                                                                                                                \
+    [](Hypergraph& hypergraph, const Context& context, const TaskGroupID task_group_id) -> IRefiner* {                 \
+    return new refiner(hypergraph, context, task_group_id);                                                            \
+  })
+
 namespace mt_kahypar {
+
 REGISTER_LP_REFINER(LabelPropagationAlgorithm::label_propagation_cut, LabelPropagationCutRefiner, Cut);
 REGISTER_LP_REFINER(LabelPropagationAlgorithm::label_propagation_km1, LabelPropagationKm1Refiner, Km1);
 REGISTER_LP_REFINER(LabelPropagationAlgorithm::do_nothing, DoNothingRefiner, 1);
@@ -60,4 +73,8 @@ REGISTER_FM_REFINER(FMAlgorithm::fm_gain_cache_on_demand, MultiTryKWayFMWithGain
 REGISTER_FM_REFINER(FMAlgorithm::fm_gain_delta, MultiTryKWayFMWithGainDelta, FMWithGainDelta);
 REGISTER_FM_REFINER(FMAlgorithm::fm_recompute_gain, MultiTryKWayFMWithGainRecomputation, FMWithGainRecomputation);
 REGISTER_FM_REFINER(FMAlgorithm::do_nothing, DoNothingRefiner, 2);
+
+REGISTER_GREEDY_REFINER(GreedyRefinementAlgorithm::greedy_basic, BasicGreedyRefiner, MyGreedyRefiner);
+REGISTER_GREEDY_REFINER(GreedyRefinementAlgorithm::do_nothing, DoNothingRefiner, 3);
+
 }  // namespace mt_kahypar

@@ -93,7 +93,8 @@ namespace mt_kahypar {
 
   PartitionedHypergraph&& MultilevelCoarsenerBase::doUncoarsen(
           std::unique_ptr<IRefiner>& label_propagation,
-          std::unique_ptr<IRefiner>& fm) {
+          std::unique_ptr<IRefiner>& fm,
+          std::unique_ptr<IRefiner>& greedy) {
     PartitionedHypergraph& coarsest_hg = currentPartitionedHypergraph();
     kahypar::Metrics current_metrics = initialize(coarsest_hg);
 
@@ -106,7 +107,7 @@ namespace mt_kahypar {
 
     // Refine Coarsest Partitioned Hypergraph
     double time_limit = refinementTimeLimit(_context, _hierarchy.back().coarseningTime());
-    refine(coarsest_hg, label_propagation, fm, current_metrics, time_limit);
+    refine(coarsest_hg, label_propagation, fm, greedy, current_metrics, time_limit);
 
     for (int i = _hierarchy.size() - 1; i >= 0; --i) {
       // Project partition to next level finer hypergraph
@@ -135,7 +136,7 @@ namespace mt_kahypar {
 
       // Refinement
       time_limit = refinementTimeLimit(_context, _hierarchy[i].coarseningTime());
-      refine(representative_hg, label_propagation, fm, current_metrics, time_limit);
+      refine(representative_hg, label_propagation, fm, greedy, current_metrics, time_limit);
 
       // Update Progress Bar
       uncontraction_progress.setObjective(
@@ -188,7 +189,8 @@ namespace mt_kahypar {
   }
 
   PartitionedHypergraph&& NLevelCoarsenerBase::doUncoarsen(std::unique_ptr<IRefiner>& label_propagation,
-                                                           std::unique_ptr<IRefiner>& fm) {
+                                                           std::unique_ptr<IRefiner>& fm,
+                                                           std::unique_ptr<IRefiner>& greedy) {
     ASSERT(_is_finalized);
     kahypar::Metrics current_metrics = initialize(_compactified_phg);
 
@@ -230,6 +232,9 @@ namespace mt_kahypar {
     if ( fm ) {
       fm->initialize(_phg);
     }
+    if ( greedy ) {
+      greedy->initialize(_phg);
+    }
 
     // Perform batch uncontractions
     bool is_timer_disabled = false;
@@ -254,7 +259,7 @@ namespace mt_kahypar {
       tmp_refinement_nodes.clear_parallel();
       border_vertices_of_batch.reset();
       localizedRefine(_phg, refinement_nodes, label_propagation,
-        fm, current_metrics, force_measure_timings);
+        fm, greedy, current_metrics, force_measure_timings);
     };
 
     while ( !_hierarchy.empty() ) {
@@ -405,6 +410,7 @@ namespace mt_kahypar {
           PartitionedHypergraph& partitioned_hypergraph,
           std::unique_ptr<IRefiner>& label_propagation,
           std::unique_ptr<IRefiner>& fm,
+          std::unique_ptr<IRefiner>& greedy,
           kahypar::Metrics& current_metrics,
           const double time_limit) {
 
@@ -427,6 +433,16 @@ namespace mt_kahypar {
         utils::Timer::instance().start_timer("label_propagation", "Label Propagation");
         improvement_found |= label_propagation->refine(partitioned_hypergraph, dummy, current_metrics, time_limit);
         utils::Timer::instance().stop_timer("label_propagation");
+      }
+
+      if ( greedy && _context.refinement.greedy.algorithm != GreedyRefinementAlgorithm::do_nothing ) {
+        utils::Timer::instance().start_timer("initialize_greedy_refiner", "Initialize Greedy Refiner");
+        greedy->initialize(partitioned_hypergraph);
+        utils::Timer::instance().stop_timer("initialize_greedy_refiner");
+
+        utils::Timer::instance().start_timer("greedy_refinement", "Greedy Refinement");
+        improvement_found |= greedy->refine(partitioned_hypergraph, dummy, current_metrics, time_limit);
+        utils::Timer::instance().stop_timer("greedy_refinement");
       }
 
       if ( fm && _context.refinement.fm.algorithm != FMAlgorithm::do_nothing ) {
@@ -460,6 +476,7 @@ namespace mt_kahypar {
                                             const parallel::scalable_vector<HypernodeID>& refinement_nodes,
                                             std::unique_ptr<IRefiner>& label_propagation,
                                             std::unique_ptr<IRefiner>& fm,
+                                            std::unique_ptr<IRefiner>& greedy,
                                             kahypar::Metrics& current_metrics,
                                             const bool force_measure_timings) {
     if ( debug && _top_level ) {
@@ -478,6 +495,13 @@ namespace mt_kahypar {
         improvement_found |= label_propagation->refine(partitioned_hypergraph,
           refinement_nodes, current_metrics, std::numeric_limits<double>::max());
         utils::Timer::instance().stop_timer("label_propagation", force_measure_timings);
+      }
+
+      if ( greedy && _context.refinement.greedy.algorithm != GreedyRefinementAlgorithm::do_nothing ) {
+        utils::Timer::instance().start_timer("greedy_refinement", "Greedy Refinement");
+        improvement_found |= greedy->refine(partitioned_hypergraph, refinement_nodes, current_metrics,
+                                            std::numeric_limits<double>::max());
+        utils::Timer::instance().stop_timer("greedy_refinement");
       }
 
       if ( fm &&

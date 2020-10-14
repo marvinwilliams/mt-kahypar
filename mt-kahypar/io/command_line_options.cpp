@@ -355,6 +355,20 @@ namespace mt_kahypar {
                       &context.refinement.global_fm.obey_minimal_parallelism))->value_name("<bool>")->default_value(true),
              "If true, then parallel n-level global FM refinement stops if more than a certain number of threads are finished.")
             #endif
+            ((initial_partitioning ? "i-r-greedy-type" : "r-greedy-type"),
+             po::value<std::string>()->value_name("<string>")->notifier(
+                     [&, initial_partitioning](const std::string& type) {
+                       if (initial_partitioning) {
+                         context.initial_partitioning.refinement.greedy.algorithm =
+                                 greedyRefinementAlgorithmFromString(type);
+                       } else {
+                         context.refinement.greedy.algorithm =
+                                 greedyRefinementAlgorithmFromString(type);
+                       }
+                     })->default_value("do_nothing"),
+             "Greedy Refinement Algorithm:\n"
+             "- greedy_basic\n"
+             "- do_nothing")
             ;
     return options;
   }

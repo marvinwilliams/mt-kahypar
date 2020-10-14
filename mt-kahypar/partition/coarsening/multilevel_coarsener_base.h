@@ -169,7 +169,8 @@ class MultilevelCoarsenerBase {
 
   PartitionedHypergraph&& doUncoarsen(
           std::unique_ptr<IRefiner>& label_propagation,
-          std::unique_ptr<IRefiner>& fm);
+          std::unique_ptr<IRefiner>& fm,
+          std::unique_ptr<IRefiner>& greedy);
 
  protected:
 
@@ -179,6 +180,7 @@ class MultilevelCoarsenerBase {
   void refine(PartitionedHypergraph& partitioned_hypergraph,
               std::unique_ptr<IRefiner>& label_propagation,
               std::unique_ptr<IRefiner>& fm,
+              std::unique_ptr<IRefiner>& greedy,
               kahypar::Metrics& current_metrics,
               const double time_limit);
 

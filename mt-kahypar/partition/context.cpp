@@ -121,6 +121,15 @@ namespace mt_kahypar {
     return out;
   }
 
+  std::ostream& operator<<(std::ostream& out, const GreedyRefinementParameters& params) {
+    out << "  Greedy Refinement Parameters: \n";
+    out << "    Algorithm:                        " << params.algorithm << std::endl;
+    if ( params.algorithm != GreedyRefinementAlgorithm::do_nothing ) {
+    }
+    out << std::flush;
+    return out;
+  }
+
   std::ostream& operator<<(std::ostream& out, const NLevelGlobalFMParameters& params) {
     out << "  Boundary FM Parameters: \n";
     out << "    Use Global FM:                    " << std::boolalpha << params.use_global_fm << std::endl;
@@ -141,6 +150,7 @@ namespace mt_kahypar {
 #endif
     str << "\n" << params.label_propagation;
     str << "\n" << params.fm;
+    str << "\n" << params.greedy;
 #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
     str << "\n" << params.global_fm;
 #endif

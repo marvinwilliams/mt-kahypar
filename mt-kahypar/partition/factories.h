@@ -62,4 +62,7 @@ using LabelPropagationFactory = kahypar::meta::Factory<LabelPropagationAlgorithm
 
 using FMFactory = kahypar::meta::Factory<FMAlgorithm,
                                          IRefiner* (*)(Hypergraph&, const Context&, const TaskGroupID)>;
+
+using GreedyFactory = kahypar::meta::Factory<GreedyRefinementAlgorithm,
+          IRefiner* (*)(Hypergraph&, const Context&, const TaskGroupID)>;
 }  // namespace mt_kahypar

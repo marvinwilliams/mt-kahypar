@@ -101,8 +101,13 @@ namespace mt_kahypar::multilevel {
               FMFactory::getInstance().createObject(
                       _context.refinement.fm.algorithm,
                       _hg, _context, _task_group_id);
+      std::unique_ptr<IRefiner> greedy =
+              GreedyFactory::getInstance().createObject(
+                      _context.refinement.greedy.algorithm,
+                      _hg, _context, _task_group_id);
 
-      _partitioned_hg = _coarsener->uncoarsen(label_propagation, fm);
+
+      _partitioned_hg = _coarsener->uncoarsen(label_propagation, fm, greedy);
       utils::Timer::instance().stop_timer("refinement");
 
       io::printPartitioningResults(_partitioned_hg, _context, "Local Search Results:");

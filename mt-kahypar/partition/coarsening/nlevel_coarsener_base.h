@@ -88,7 +88,8 @@ class NLevelCoarsenerBase {
   }
 
   PartitionedHypergraph&& doUncoarsen(std::unique_ptr<IRefiner>& label_propagation,
-                                      std::unique_ptr<IRefiner>& fm);
+                                      std::unique_ptr<IRefiner>& fm,
+                                      std::unique_ptr<IRefiner>& greedy);
 
  protected:
   kahypar::Metrics computeMetrics(PartitionedHypergraph& phg) {
@@ -108,6 +109,7 @@ class NLevelCoarsenerBase {
                        const parallel::scalable_vector<HypernodeID>& refinement_nodes,
                        std::unique_ptr<IRefiner>& label_propagation,
                        std::unique_ptr<IRefiner>& fm,
+                       std::unique_ptr<IRefiner>& greedy,
                        kahypar::Metrics& current_metrics,
                        const bool force_measure_timings);
 

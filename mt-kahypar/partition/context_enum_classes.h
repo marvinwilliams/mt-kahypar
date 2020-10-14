@@ -112,6 +112,12 @@ enum class FMAlgorithm : uint8_t {
   do_nothing
 };
 
+enum class GreedyRefinementAlgorithm : uint8_t {
+  greedy_basic,
+  /* greedy_hill_scanning, */
+  do_nothing
+};
+
 std::ostream & operator<< (std::ostream& os, const Type& type);
 
 std::ostream & operator<< (std::ostream& os, const Paradigm& paradigm);
@@ -136,6 +142,8 @@ std::ostream & operator<< (std::ostream& os, const LabelPropagationAlgorithm& al
 
 std::ostream & operator<< (std::ostream& os, const FMAlgorithm& algo);
 
+std::ostream & operator<< (std::ostream& os, const GreedyRefinementAlgorithm& algo);
+
 LouvainEdgeWeight louvainEdgeWeightFromString(const std::string& type);
 
 SimiliarNetCombinerStrategy similiarNetCombinerStrategyFromString(const std::string& type);
@@ -155,5 +163,7 @@ InitialPartitioningMode initialPartitioningModeFromString(const std::string& mod
 LabelPropagationAlgorithm labelPropagationAlgorithmFromString(const std::string& type);
 
 FMAlgorithm fmAlgorithmFromString(const std::string& type);
+
+GreedyRefinementAlgorithm greedyRefinementAlgorithmFromString(const std::string& type);
 
 }  // namesapce mt_kahypar

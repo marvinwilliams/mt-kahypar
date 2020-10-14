@@ -158,6 +158,15 @@ namespace mt_kahypar {
     return os << static_cast<uint8_t>(algo);
   }
 
+  std::ostream & operator<< (std::ostream& os, const GreedyRefinementAlgorithm& algo) {
+    switch (algo) {
+      case GreedyRefinementAlgorithm::greedy_basic: return os << "greedy_basic";
+      case GreedyRefinementAlgorithm::do_nothing: return os << "greedy_do_nothing";
+        // omit default case to trigger compiler warning for missing cases
+    }
+    return os << static_cast<uint8_t>(algo);
+  }
+
   LouvainEdgeWeight louvainEdgeWeightFromString(const std::string& type) {
     if (type == "hybrid") {
       return LouvainEdgeWeight::hybrid;
@@ -288,6 +297,16 @@ namespace mt_kahypar {
     }
     ERROR("Illegal option: " + type);
     return FMAlgorithm::do_nothing;
+  }
+
+  GreedyRefinementAlgorithm greedyRefinementAlgorithmFromString(const std::string& type) {
+    if (type == "greedy_basic") {
+      return GreedyRefinementAlgorithm::greedy_basic;
+    } else if (type == "do_nothing") {
+      return GreedyRefinementAlgorithm::do_nothing;
+    }
+    ERROR("Illegal option: " + type);
+    return GreedyRefinementAlgorithm::do_nothing;
   }
 
 }

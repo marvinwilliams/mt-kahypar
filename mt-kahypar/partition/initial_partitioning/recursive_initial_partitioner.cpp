@@ -152,7 +152,11 @@ namespace mt_kahypar {
               FMFactory::getInstance().createObject(
                       _result.context.refinement.fm.algorithm, _result.hypergraph,
                       _result.context, _task_group_id);
-      _result.partitioned_hypergraph = _coarsener->uncoarsen(label_propagation, fm);
+      std::unique_ptr<IRefiner> greedy =
+              GreedyFactory::getInstance().createObject(
+                      _result.context.refinement.greedy.algorithm, _result.hypergraph,
+                      _result.context, _task_group_id);
+      _result.partitioned_hypergraph = _coarsener->uncoarsen(label_propagation, fm, greedy);
 
       // Compute metrics
       _result.objective = metrics::objective(_result.partitioned_hypergraph, _result.context.partition.objective);

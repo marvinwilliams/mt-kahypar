@@ -141,6 +141,13 @@ struct FMParameters {
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);
 
+struct GreedyRefinementParameters {
+  GreedyRefinementAlgorithm algorithm = GreedyRefinementAlgorithm::do_nothing;
+  // Add your parameters here
+};
+
+std::ostream& operator<<(std::ostream& out, const GreedyRefinementParameters& params);
+
 struct NLevelGlobalFMParameters {
   bool use_global_fm = false;   // TODO this should be renamed to something more appropriate: e.g. log_level_fm or refine_after_coarsening_pass
   bool refine_until_no_improvement = false;
@@ -153,6 +160,7 @@ std::ostream& operator<<(std::ostream& out, const NLevelGlobalFMParameters& para
 struct RefinementParameters {
   LabelPropagationParameters label_propagation;
   FMParameters fm;
+  GreedyRefinementParameters greedy;
   NLevelGlobalFMParameters global_fm;
   bool refine_until_no_improvement = false;
   size_t max_batch_size = std::numeric_limits<size_t>::max();

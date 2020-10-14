@@ -210,8 +210,9 @@ class NLevelCoarsener : public ICoarsener,
   }
 
   PartitionedHypergraph&& uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
-                                        std::unique_ptr<IRefiner>& fm) override {
-    return Base::doUncoarsen(label_propagation, fm);
+                                        std::unique_ptr<IRefiner>& fm,
+                                        std::unique_ptr<IRefiner>& greedy) override {
+    return Base::doUncoarsen(label_propagation, fm, greedy);
   }
 
   void compactifyVertices(const HypernodeID current_num_nodes) {
