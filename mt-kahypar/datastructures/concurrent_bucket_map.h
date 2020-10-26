@@ -108,6 +108,16 @@ class ConcurrentBucketMap {
     _spin_locks[bucket].unlock();
   }
 
+  // ! insert a cheap key-value pair
+  void insert(const size_t& key, Value& value) {
+    size_t bucket = key & _mod_mask;
+    ASSERT(bucket < _num_buckets);
+    _spin_locks[bucket].lock();
+    _buckets[bucket].emplace_back((value));
+    _spin_locks[bucket].unlock();
+
+  }
+
   // ! Frees the memory of all buckets
   void free() {
     parallel::parallel_free(_buckets);
