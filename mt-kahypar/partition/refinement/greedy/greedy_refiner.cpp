@@ -78,7 +78,7 @@ bool BasicGreedyRefiner::refineImpl(
   auto node_to_move =
       std::find_if(move_candidates.begin(), move_candidates.end(),
                    [&](const HypernodeID move_candidate) {
-                     phg.changeNodePartWithGainCacheUpdate(
+                     return phg.changeNodePartWithGainCacheUpdate(
                          move_candidate, phg.partID(move_candidate),
                          shared_data.target_part[move_candidate]);
                    });
