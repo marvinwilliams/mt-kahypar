@@ -46,16 +46,54 @@ bool BasicGreedyRefiner::refineImpl(
 
   // implement the refinement
 
-    // implement the refinement
-
-    // don't forget to set the new imbalance and km1 values in the metrics object. you can ignore the cut value
-
-    LOG << "You called greedy refinement";
-
-    return false;
+  // don't forget to set the new imbalance and km1 values in the metrics object.
+  // you can ignore the cut value
+  if (!_is_initialized) {
+    throw std::runtime_error("Call initialize on greedy before calling refine");
   }
 
+  Gain total_gain = 0;
+  vec<HyperedgeWeight> initial_part_weights(size_t(shared_data.num_parts));
 
+  // setup partition weights for balance constraints
+  for (PartitionID i = 0; i < shared_data.num_parts; ++i) {
+    initial_part_weights[i] = phg.partWeight(i);
+  }
+
+  initBorderVertices(phg, refinement_nodes);
+
+  /* TODO: keep refinement nodes up to date <24-10-20, @noahares> */
+  /* TODO: what happens if highest gain move is not allowed due to balance? what
+   * if this holds for all refinement nodes? <24-10-20, @noahares> */
+  for (HypernodeID v : refinement_nodes) {
+    auto[best_to, gain] = findBestToPartition(phg, v);
+    shared_data.target_part[v] = best_to;
+    shared_data.gain_buckets.insert(gain, v);
+    shared_data.best_gain = std::max(gain, shared_data.best_gain);
+  }
+
+  auto move_candidates =
+      shared_data.gain_buckets.getBucket(shared_data.best_gain);
+
+  auto node_to_move =
+      std::find_if(move_candidates.begin(), move_candidates.end(),
+                   [&](const HypernodeID move_candidate) {
+                     phg.changeNodePartWithGainCacheUpdate(
+                         move_candidate, phg.partID(move_candidate),
+                         shared_data.target_part[move_candidate]);
+                   });
+
+  if (node_to_move == move_candidates.end()) {
+    LOG << "No move with maximum gain possible";
+    /* TODO: what to do in this case? move on to next best gain (where to store
+     * it?) <25-10-20, @noahares> */
+  } else {
+    updateNeighbors(phg, *node_to_move);
+  }
+
+  LOG << "You called greedy refinement";
+
+  return false;
 }
 
 void BasicGreedyRefiner::initBorderVertices(
