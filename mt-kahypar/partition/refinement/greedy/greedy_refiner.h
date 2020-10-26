@@ -98,8 +98,7 @@ public:
                      const TaskGroupID taskGroupID)
       : shared_data(hypergraph.initialNumNodes(), c), _hg(hypergraph),
         _initial_num_nodes(hypergraph.initialNumNodes()), _context(c),
-        _taskGroupID(taskGroupID),
-        _border_vertices(hypergraph.initialNumNodes()), _pq(c.partition.k),
+        _taskGroupID(taskGroupID), _pq(c.partition.k),
         _vertex_state(hypergraph.initialNumNodes(), VertexState::INACTIVE),
         _he_state(hypergraph.initialNumEdges(), HEState::FREE) {}
 
@@ -123,7 +122,6 @@ private:
   const Context &_context;
   const TaskGroupID _taskGroupID;
   parallel::scalable_vector<HypernodeID> _nodes;
-  BorderVertexTracker _border_vertices;
   /* TODO: do I need a pq? <23-10-20, @noahares> */
   KWayRefinementPQ _pq;
   parallel::scalable_vector<VertexState> _vertex_state;
