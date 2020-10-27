@@ -85,6 +85,10 @@ private:
   //                               size_t bestGainIndex);
 
 private:
+  /* TODO: refactor all vars to snake_case and private (_var) <27-10-20,
+   * @noahares> */
+  bool _is_initialized = false;
+
   const Context &context;
 
   const TaskGroupID taskGroupID;

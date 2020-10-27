@@ -23,7 +23,10 @@
 namespace mt_kahypar {
 
   void BasicGreedyRefiner::initializeImpl(PartitionedHypergraph& phg) {
-    // implement some initialization
+    if (!phg.isGainCacheInitialized()) {
+      phg.initializeGainCache();
+    }
+    _is_initialized = true;
   }
 
   /**
@@ -37,9 +40,10 @@ namespace mt_kahypar {
                                       const parallel::scalable_vector<HypernodeID>& refinement_nodes,
                                       kahypar::Metrics& metrics, double ) {
 
-    // implement the refinement
-
     // don't forget to set the new imbalance and km1 values in the metrics object. you can ignore the cut value
+    if (!_is_initialized) {
+      throw std::runtime_error("Call initialize before calling refine");
+    }
 
     LOG << "You called greedy refinement";
 
