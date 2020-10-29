@@ -24,7 +24,9 @@
 
 #include "mt-kahypar/datastructures/delta_partitioned_hypergraph.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
+#include "mt-kahypar/partition/refinement/fm/global_rollback.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
+#include "mt-kahypar/partition/refinement/greedy/localized_kway_greedy.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 
 namespace mt_kahypar {
@@ -36,13 +38,18 @@ class BasicGreedyRefiner final : public IRefiner {
 
 public:
   BasicGreedyRefiner(const Hypergraph &hypergraph, const Context &c,
-                     const TaskGroupID taskGroupID)
-      : context(c), taskGroupID(taskGroupID), thisSearch(0), k(c.partition.k),
-        deltaPhg(context.partition.k),
-        neighborDeduplicator(hypergraph.initialNumNodes(), 0),
-        sharedData(hypergraph.initialNumNodes(), c),
-        fm_strategy(context, hypergraph.initialNumNodes(), sharedData,
-                    runStats) {}
+                     const TaskGroupID taskGroupID) :
+    initial_num_nodes(hypergraph.initialNumNodes()),
+    context(c),
+    taskGroupID(taskGroupID),
+    sharedData(hypergraph.initialNumNodes(), context),
+    globalRollback(hypergraph, context, context.partition.k),
+    ets_bgf([&] { return constructLocalizedKWayGreedySearch(); })
+  {
+    if (context.refinement.fm.obey_minimal_parallelism) {
+      sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
+    }
+  }
 
   bool
   refineImpl(PartitionedHypergraph &phg,
@@ -51,75 +58,32 @@ public:
 
   void initializeImpl(PartitionedHypergraph &phg) final;
 
-  bool findMoves(PartitionedHypergraph &phg, size_t taskID, size_t numSeeds);
+  void roundInitialization(PartitionedHypergraph &phg);
 
-  void memoryConsumption(utils::MemoryTreeNode *parent) const;
+  LocalizedKWayGreedy constructLocalizedKWayGreedySearch() {
+    return LocalizedKWayGreedy(context, initial_num_nodes, sharedData);
+  }
 
-  FMStats stats;
+  static double improvementFraction(Gain gain, HyperedgeWeight old_km1) {
+    if (old_km1 == 0)
+      return 0;
+    else
+      return static_cast<double>(gain) / static_cast<double>(old_km1);
+  }
 
-private:
-  // ! Performs localized FM local search on the delta partitioned hypergraph.
-  // ! Moves made by this search are not immediately visible to other concurrent
-  // local searches. ! The best prefix of moves is applied to the global
-  // partitioned hypergraph after the search finishes.
-  // void internalFindMovesOnDeltaHypergraph(PartitionedHypergraph& phg,
-  // FMSharedData& sharedData);
-
-  template <bool use_delta> void internalFindMoves(PartitionedHypergraph &phg);
-
-  template <typename PHG>
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void updateNeighbors(PHG &phg,
-                                                          const Move &move);
-
-  // ! Makes moves applied on delta hypergraph visible on the global partitioned
-  // hypergraph.
-  //  std::pair<Gain, size_t>
-  //  applyMovesOnGlobalHypergraph(PartitionedHypergraph& phg,
-  //                                                       size_t bestGainIndex,
-  //                                                       Gain
-  //                                                       bestEstimatedImprovement);
-
-  // ! Rollback to the best improvement found during local search in case we
-  // applied moves ! directly on the global partitioned hypergraph.
-  //  void revertToBestLocalPrefix(PartitionedHypergraph &phg,
-  //                               size_t bestGainIndex);
+  void printMemoryConsumption();
 
 private:
   /* TODO: refactor all vars to snake_case and private (_var) <27-10-20,
    * @noahares> */
   bool _is_initialized = false;
-
-  const Context &context;
-
+  const HypernodeID initial_num_nodes;
+  const Context& context;
   const TaskGroupID taskGroupID;
-
-  // ! Unique search id associated with the current local search
-  SearchID thisSearch;
-
-  // ! Number of blocks
-  PartitionID k;
-
-  // ! Local data members required for one localized search run
-  // FMLocalData localData;
-  vec<std::pair<Move, MoveID>> localMoves;
-
-  // ! Wrapper around the global partitioned hypergraph, that allows
-  // ! to perform moves non-visible for other local searches
-  ds::DeltaPartitionedHypergraph<PartitionedHypergraph> deltaPhg;
-
-  // ! Used after a move. Stores whether a neighbor of the just moved vertex has
-  // already been updated.
-  vec<HypernodeID> neighborDeduplicator;
-  HypernodeID deduplicationTime = 0;
-
-  // ! Stores hyperedges whose pins's gains may have changed after vertex move
-  vec<HyperedgeID> edgesWithGainChanges;
-
-  FMStats runStats;
-
   FMSharedData sharedData;
-
-  GainCacheStrategy fm_strategy;
+  GlobalRollback globalRollback;
+  /* TODO: how to init? <28-10-20, @noahares> */
+  tbb::enumerable_thread_specific<LocalizedKWayGreedy> ets_bgf;
 };
 
 } // namespace mt_kahypar

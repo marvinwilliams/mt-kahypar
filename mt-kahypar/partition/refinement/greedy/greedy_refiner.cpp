@@ -19,255 +19,171 @@
  ******************************************************************************/
 
 #include "mt-kahypar/partition/refinement/greedy/greedy_refiner.h"
+#include "mt-kahypar/partition/metrics.h"
+#include "mt-kahypar/utils/memory_tree.h"
+#include "mt-kahypar/utils/timer.h"
 
 namespace mt_kahypar {
 
-  void BasicGreedyRefiner::initializeImpl(PartitionedHypergraph& phg) {
-    if (!phg.isGainCacheInitialized()) {
-      phg.initializeGainCache();
-    }
-    _is_initialized = true;
+void BasicGreedyRefiner::initializeImpl(PartitionedHypergraph &phg) {
+  if (!phg.isGainCacheInitialized()) {
+    phg.initializeGainCache();
   }
+  _is_initialized = true;
+}
 
-  /**
-   *
-   * @param phg The partition and hypergraph to refine
-   * @param refinement_nodes Used for n-level uncoarsening. Ignore for now. It will be empty
-   * @param metrics stores current km1 and imbalance
-   * @return whether the refinement improved the objective function
-   */
-  bool BasicGreedyRefiner::refineImpl(PartitionedHypergraph& phg,
-                                      const parallel::scalable_vector<HypernodeID>& refinement_nodes,
-                                      kahypar::Metrics& metrics, double ) {
+/**
+ *
+ * @param phg The partition and hypergraph to refine
+ * @param refinement_nodes Used for n-level uncoarsening. Ignore for now. It
+ * will be empty
+ * @param metrics stores current km1 and imbalance
+ * @return whether the refinement improved the objective function
+ */
+bool BasicGreedyRefiner::refineImpl(
+    PartitionedHypergraph &phg,
+    const parallel::scalable_vector<HypernodeID> &refinement_nodes,
+    kahypar::Metrics &metrics, double) {
 
-    // don't forget to set the new imbalance and km1 values in the metrics object. you can ignore the cut value
-    if (!_is_initialized) {
-      throw std::runtime_error("Call initialize before calling refine");
-    }
-
-    LOG << "You called greedy refinement";
-
-    return false;
+  // don't forget to set the new imbalance and km1 values in the metrics object.
+  // you can ignore the cut value
+  if (!_is_initialized) {
+    throw std::runtime_error("Call initialize before calling refine");
   }
+  LOG << "You called greedy refinement";
 
-  bool BasicGreedyRefiner::findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds) {
-    localMoves.clear();
-    thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
+  Gain overall_improvement = 0;
+  size_t consecutive_rounds_with_too_little_improvement = 0;
+  sharedData.release_nodes = context.refinement.fm.release_nodes;
+  tbb::task_group tg;
+  vec<HypernodeWeight> initialPartWeights(size_t(sharedData.numParts));
+  HighResClockTimepoint fm_start = std::chrono::high_resolution_clock::now();
+  utils::Timer &timer = utils::Timer::instance();
 
-    HypernodeID seedNode;
-    while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
-      SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
-      if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
-        fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
-      }
+  for (size_t round = 0; round < context.refinement.fm.multitry_rounds;
+       ++round) { // global multi try rounds
+    for (PartitionID i = 0; i < sharedData.numParts; ++i) {
+      initialPartWeights[i] = phg.partWeight(i);
     }
-    fm_strategy.updatePQs(phg);
 
-    if (runStats.pushes > 0) {
-      if (!context.refinement.fm.perform_moves_global
-          && deltaPhg.combinedMemoryConsumption() > sharedData.deltaMemoryLimitPerThread) {
-        sharedData.deltaExceededMemoryConstraints = true;
-      }
+    timer.start_timer("collect_border_nodes", "Collect Border Nodes");
+    roundInitialization(phg);
+    timer.stop_timer("collect_border_nodes");
 
-      if (sharedData.deltaExceededMemoryConstraints) {
-        deltaPhg.dropMemory();
-      }
+    size_t num_border_nodes = sharedData.refinementNodes.unsafe_size();
+    if (num_border_nodes == 0) {
+      break;
+    }
+    size_t num_seeds = context.refinement.fm.num_seed_nodes;
+    if (context.type == kahypar::ContextType::main &&
+        !refinement_nodes.empty() /* n-level */
+        && num_border_nodes < 20 * context.shared_memory.num_threads) {
+      num_seeds = num_border_nodes / (4 * context.shared_memory.num_threads);
+      num_seeds = std::min(num_seeds, context.refinement.fm.num_seed_nodes);
+      num_seeds = std::max(num_seeds, 1UL);
+    }
 
-      if (context.refinement.fm.perform_moves_global || sharedData.deltaExceededMemoryConstraints) {
-        internalFindMoves<false>(phg);
-      } else {
-        deltaPhg.clear();
-        deltaPhg.setPartitionedHypergraph(&phg);
-        internalFindMoves<true>(phg);
+    timer.start_timer("find_moves", "Find Moves");
+    sharedData.finishedTasks.store(0, std::memory_order_relaxed);
+    auto task = [&](const size_t task_id) {
+      auto &greedy = ets_bgf.local();
+      while (sharedData.finishedTasks.load(std::memory_order_relaxed) <
+                 sharedData.finishedTasksLimit &&
+             greedy.findMoves(phg, task_id, num_seeds)) { /* keep running*/
       }
-      return true;
+      sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
+    };
+    size_t num_tasks =
+        std::min(num_border_nodes, context.shared_memory.num_threads);
+    ASSERT(static_cast<int>(num_tasks) <=
+           TBBNumaArena::instance().total_number_of_threads());
+    for (size_t i = 0; i < num_tasks; ++i) {
+      tg.run(std::bind(task, i));
+    }
+    tg.wait();
+    timer.stop_timer("find_moves");
+
+    timer.start_timer("rollback", "Rollback to Best Solution");
+    HyperedgeWeight improvement = globalRollback.revertToBestPrefix<
+        GainCacheStrategy::maintain_gain_cache_between_rounds>(
+        phg, sharedData, initialPartWeights);
+    timer.stop_timer("rollback");
+
+    const double roundImprovementFraction =
+        improvementFraction(improvement, metrics.km1 - overall_improvement);
+    overall_improvement += improvement;
+    if (roundImprovementFraction < context.refinement.fm.min_improvement) {
+      consecutive_rounds_with_too_little_improvement++;
     } else {
-      return false;
+      consecutive_rounds_with_too_little_improvement = 0;
     }
-  }
 
-  template<typename Partition>
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE std::pair<PartitionID, HypernodeWeight>
-  heaviestPartAndWeight(const Partition& partition) {
-    PartitionID p = kInvalidPartition;
-    HypernodeWeight w = std::numeric_limits<HypernodeWeight>::min();
-    for (PartitionID i = 0; i < partition.k(); ++i) {
-      if (partition.partWeight(i) > w) {
-        w = partition.partWeight(i);
-        p = i;
+    HighResClockTimepoint fm_timestamp =
+        std::chrono::high_resolution_clock::now();
+    const double elapsed_time =
+        std::chrono::duration<double>(fm_timestamp - fm_start).count();
+    if (debug && context.type == kahypar::ContextType::main) {
+      FMStats stats;
+      for (auto &fm : ets_bgf) {
+        fm.stats.merge(stats);
       }
+      LOG << V(round) << V(improvement) << V(metrics::km1(phg))
+          << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
+          << V(roundImprovementFraction) << V(elapsed_time);
+//          << V(current_time_limit) << stats.serialize();
     }
-    return std::make_pair(p, w);
+
+    if (improvement <= 0 ||
+        consecutive_rounds_with_too_little_improvement >= 2) {
+      break;
+    }
   }
 
-  template<typename PHG>
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
-  void BasicGreedyRefiner::updateNeighbors(PHG& phg, const Move& move) {
-    // Note: In theory we should acquire/update all neighbors. It just turned out that this works fine
-    // Actually: only vertices incident to edges with gain changes can become new boundary vertices.
-    // Vertices that already were boundary vertices, can still be considered later since they are in the task queue
-    // --> actually not that bad
-    for (HyperedgeID e : edgesWithGainChanges) {
-      if (phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
-        for (HypernodeID v : phg.pins(e)) {
-          if (neighborDeduplicator[v] != deduplicationTime) {
-            SearchID searchOfV = sharedData.nodeTracker.searchOfNode[v].load(std::memory_order_acq_rel);
-            if (searchOfV == thisSearch) {
-              fm_strategy.updateGain(phg, v, move);
-            }
-            /* TODO: dont aquire neighbor, something else to do? Inform other
-             * thread about update? <26-10-20, @noahares> */
-            //            else if (sharedData.nodeTracker.tryAcquireNode(v,
-            //            thisSearch)) {
-            //              fm_strategy.insertIntoPQ(phg, v, searchOfV);
-            //            }
-            neighborDeduplicator[v] = deduplicationTime;
+  if (context.partition.show_memory_consumption &&
+      context.partition.verbose_output &&
+      context.type == kahypar::ContextType::main &&
+      phg.initialNumNodes() ==
+          sharedData.moveTracker.moveOrder.size() /* top level */) {
+    printMemoryConsumption();
+  }
+
+  metrics.km1 -= overall_improvement;
+  metrics.imbalance = metrics::imbalance(phg, context);
+  ASSERT(metrics.km1 == metrics::km1(phg), V(metrics.km1)
+                                               << V(metrics::km1(phg)));
+  return overall_improvement > 0;
+
+  return false;
+}
+
+/* TODO: task queue strategy via param <28-10-20, @noahares> */
+void BasicGreedyRefiner::roundInitialization(PartitionedHypergraph &phg) {
+  // clear border nodes
+  sharedData.refinementNodes.clear();
+
+  // iterate over all nodes and insert border nodes into task queue
+  tbb::parallel_for(
+      tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+      [&](const tbb::blocked_range<HypernodeID> &r) {
+        const int task_id = tbb::this_task_arena::current_thread_index();
+        ASSERT(task_id >= 0 &&
+               task_id < TBBNumaArena::instance().total_number_of_threads());
+        for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+          if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+            sharedData.refinementNodes.safe_push(u, task_id);
           }
         }
-      }
-    }
-    edgesWithGainChanges.clear();
+      });
 
-    if (++deduplicationTime == 0) {
-      neighborDeduplicator.assign(neighborDeduplicator.size(), 0);
-      deduplicationTime = 1;
-    }
+  // shuffle task queue if requested
+  if (context.refinement.fm.shuffle) {
+    sharedData.refinementNodes.shuffle();
   }
 
+  // requesting new searches activates all nodes by raising the deactivated node
+  // marker also clears the array tracking search IDs in case of overflow
+  sharedData.nodeTracker.requestNewSearches(
+      static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
+}
 
-  template<bool use_delta>
-  void BasicGreedyRefiner::internalFindMoves(PartitionedHypergraph& phg) {
-    Move move;
-
-    auto delta_func = [&](const HyperedgeID he,
-                          const HyperedgeWeight edge_weight,
-                          const HypernodeID,
-                          const HypernodeID pin_count_in_from_part_after,
-                          const HypernodeID pin_count_in_to_part_after) {
-      // Gains of the pins of a hyperedge can only change in the following situations.
-      if (pin_count_in_from_part_after == 0 || pin_count_in_from_part_after == 1 ||
-          pin_count_in_to_part_after == 1 || pin_count_in_to_part_after == 2) {
-        edgesWithGainChanges.push_back(he);
-      }
-
-      if constexpr (use_delta) {
-        fm_strategy.deltaGainUpdates(deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after,
-                                     move.to, pin_count_in_to_part_after);
-      } else {
-        fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from, pin_count_in_from_part_after,
-                                     move.to, pin_count_in_to_part_after);
-      }
-
-    };
-
-    // we can almost make this function take a generic partitioned hypergraph
-    // we would have to add the success func to the interface of DeltaPhg (and then ignore it there...)
-    // and do the local rollback outside this function
-
-
-    size_t bestImprovementIndex = 0;
-    Gain estimatedImprovement = 0;
-    Gain bestImprovement = 0;
-    Gain lastImprovement = std::numeric_limits<Gain>::max();
-
-    HypernodeWeight heaviestPartWeight = 0;
-    HypernodeWeight fromWeight = 0, toWeight = 0;
-
-    /* TODO: is this enough? Any more checks to prevent the negative move? <27-10-20, @noahares> */
-    while (lastImprovement > 0
-           && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
-
-      if constexpr (use_delta) {
-        if (!fm_strategy.findNextMoveNoRetry(deltaPhg, move))
-          break;
-      } else {
-        if (!fm_strategy.findNextMoveNoRetry(phg, move)) break;
-      }
-
-      sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
-      MoveID move_id = std::numeric_limits<MoveID>::max();
-      bool moved = false;
-      if (move.to != kInvalidPartition) {
-        if constexpr (use_delta) {
-          heaviestPartWeight = heaviestPartAndWeight(deltaPhg).second;
-          fromWeight = deltaPhg.partWeight(move.from);
-          toWeight = deltaPhg.partWeight(move.to);
-          moved = deltaPhg.changeNodePart(move.node, move.from, move.to,
-                                          context.partition.max_part_weights[move.to], delta_func);
-        } else {
-          heaviestPartWeight = heaviestPartAndWeight(phg).second;
-          fromWeight = phg.partWeight(move.from);
-          toWeight = phg.partWeight(move.to);
-          moved = phg.changeNodePart(
-              move.node, move.from, move.to,
-              context.partition.max_part_weights[move.to],
-              [&] { move_id = sharedData.moveTracker.insertMove(move); },
-              delta_func);
-        }
-      }
-
-      if (moved) {
-        runStats.moves++;
-        estimatedImprovement += move.gain;
-        localMoves.emplace_back(move, move_id);
-        lastImprovement = move.gain;
-        const bool improved_km1 = estimatedImprovement > bestImprovement;
-        const bool improved_balance_less_equal_km1 = estimatedImprovement >= bestImprovement
-                                                     && fromWeight == heaviestPartWeight
-                                                     && toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
-
-        if (improved_km1 || improved_balance_less_equal_km1) {
-//          stopRule.reset();
-          bestImprovement = estimatedImprovement;
-          bestImprovementIndex = localMoves.size();
-        }
-
-        if constexpr (use_delta) {
-          updateNeighbors(deltaPhg, move);
-        } else {
-          updateNeighbors(phg, move);
-        }
-      }
-
-      if constexpr (use_delta) {
-        fm_strategy.updatePQs(deltaPhg);
-      } else {
-        fm_strategy.updatePQs(phg);
-      }
-
-    }
-
-    runStats.estimated_improvement = bestImprovement;
-    fm_strategy.clearPQs(bestImprovementIndex);
-    runStats.merge(stats);
-  }
-
-
-  void BasicGreedyRefiner::memoryConsumption(utils::MemoryTreeNode *parent) const {
-    ASSERT(parent);
-
-    utils::MemoryTreeNode *localized_fm_node = parent->addChild("Localized k-Way FM");
-
-    utils::MemoryTreeNode *deduplicator_node = localized_fm_node->addChild("Deduplicator");
-    deduplicator_node->updateSize(neighborDeduplicator.capacity() * sizeof(HypernodeID));
-    utils::MemoryTreeNode *edges_to_activate_node = localized_fm_node->addChild("edgesWithGainChanges");
-    edges_to_activate_node->updateSize(edgesWithGainChanges.capacity() * sizeof(HyperedgeID));
-
-    utils::MemoryTreeNode *local_moves_node = parent->addChild("Local FM Moves");
-    local_moves_node->updateSize(localMoves.capacity() * sizeof(std::pair<Move, MoveID>));
-
-    fm_strategy.memoryConsumption(localized_fm_node);
-    // TODO fm_strategy.memoryConsumptiom(..)
-    /*
-    utils::MemoryTreeNode* block_pq_node = localized_fm_node->addChild("Block PQ");
-    block_pq_node->updateSize(blockPQ.size_in_bytes());
-    utils::MemoryTreeNode* vertex_pq_node = localized_fm_node->addChild("Vertex PQ");
-    for ( const VertexPriorityQueue& pq : vertexPQs ) {
-      vertex_pq_node->updateSize(pq.size_in_bytes());
-    }
-     */
-
-    deltaPhg.memoryConsumption(localized_fm_node);
-  }
-
-}   // namespace mt_kahypar
+} // namespace mt_kahypar
