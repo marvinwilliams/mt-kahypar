@@ -23,7 +23,7 @@
 namespace mt_kahypar {
 
 bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID,
-                                    size_t numSeeds) {
+                           size_t numSeeds) {
   localMoves.clear();
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
@@ -40,24 +40,7 @@ bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID,
   fm_strategy.updatePQs(phg);
 
   if (runStats.pushes > 0) {
-    if (!context.refinement.fm.perform_moves_global &&
-        deltaPhg.combinedMemoryConsumption() >
-            sharedData.deltaMemoryLimitPerThread) {
-      sharedData.deltaExceededMemoryConstraints = true;
-    }
-
-    if (sharedData.deltaExceededMemoryConstraints) {
-      deltaPhg.dropMemory();
-    }
-
-    if (context.refinement.fm.perform_moves_global ||
-        sharedData.deltaExceededMemoryConstraints) {
-      internalFindMoves<false>(phg);
-    } else {
-      deltaPhg.clear();
-      deltaPhg.setPartitionedHypergraph(&phg);
-      internalFindMoves<true>(phg);
-    }
+    internalFindMoves(phg);
     return true;
   } else {
     return false;
@@ -115,7 +98,6 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
   }
 }
 
-template <bool use_delta>
 void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Move move;
 
@@ -131,15 +113,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
       edgesWithGainChanges.push_back(he);
     }
 
-    if constexpr (use_delta) {
-      fm_strategy.deltaGainUpdates(deltaPhg, he, edge_weight, move.from,
-                                   pin_count_in_from_part_after, move.to,
-                                   pin_count_in_to_part_after);
-    } else {
-      fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from,
-                                   pin_count_in_from_part_after, move.to,
-                                   pin_count_in_to_part_after);
-    }
+    fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from,
+                                 pin_count_in_from_part_after, move.to,
+                                 pin_count_in_to_part_after);
   };
 
   // we can almost make this function take a generic partitioned hypergraph
@@ -160,35 +136,21 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
          sharedData.finishedTasks.load(std::memory_order_relaxed) <
              sharedData.finishedTasksLimit) {
 
-    if constexpr (use_delta) {
-      if (!fm_strategy.findNextMoveNoRetry(deltaPhg, move))
-        break;
-    } else {
-      if (!fm_strategy.findNextMoveNoRetry(phg, move))
-        break;
-    }
+    if (!fm_strategy.findNextMoveNoRetry(phg, move))
+      break;
 
     sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
     MoveID move_id = std::numeric_limits<MoveID>::max();
     bool moved = false;
     if (move.to != kInvalidPartition) {
-      if constexpr (use_delta) {
-        heaviestPartWeight = heaviestPartAndWeight(deltaPhg).second;
-        fromWeight = deltaPhg.partWeight(move.from);
-        toWeight = deltaPhg.partWeight(move.to);
-        moved = deltaPhg.changeNodePart(
-            move.node, move.from, move.to,
-            context.partition.max_part_weights[move.to], delta_func);
-      } else {
-        heaviestPartWeight = heaviestPartAndWeight(phg).second;
-        fromWeight = phg.partWeight(move.from);
-        toWeight = phg.partWeight(move.to);
-        moved = phg.changeNodePart(
-            move.node, move.from, move.to,
-            context.partition.max_part_weights[move.to],
-            [&] { move_id = sharedData.moveTracker.insertMove(move); },
-            delta_func);
-      }
+      heaviestPartWeight = heaviestPartAndWeight(phg).second;
+      fromWeight = phg.partWeight(move.from);
+      toWeight = phg.partWeight(move.to);
+      moved = phg.changeNodePart(
+          move.node, move.from, move.to,
+          context.partition.max_part_weights[move.to],
+          [&] { move_id = sharedData.moveTracker.insertMove(move); },
+          delta_func);
     }
 
     if (moved) {
@@ -208,18 +170,10 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         bestImprovementIndex = localMoves.size();
       }
 
-      if constexpr (use_delta) {
-        updateNeighbors(deltaPhg, move);
-      } else {
-        updateNeighbors(phg, move);
-      }
+      updateNeighbors(phg, move);
     }
 
-    if constexpr (use_delta) {
-      fm_strategy.updatePQs(deltaPhg);
-    } else {
-      fm_strategy.updatePQs(phg);
-    }
+    fm_strategy.updatePQs(phg);
   }
 
   runStats.estimated_improvement = bestImprovement;
@@ -227,12 +181,10 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   runStats.merge(stats);
 }
 
-void KWayGreedy::memoryConsumption(
-    utils::MemoryTreeNode *parent) const {
+void KWayGreedy::memoryConsumption(utils::MemoryTreeNode *parent) const {
   ASSERT(parent);
 
-  utils::MemoryTreeNode *localized_fm_node =
-      parent->addChild(" k-Way FM");
+  utils::MemoryTreeNode *localized_fm_node = parent->addChild("k-Way Greedy");
 
   utils::MemoryTreeNode *deduplicator_node =
       localized_fm_node->addChild("Deduplicator");
@@ -257,8 +209,6 @@ void KWayGreedy::memoryConsumption(
     vertex_pq_node->updateSize(pq.size_in_bytes());
   }
    */
-
-  deltaPhg.memoryConsumption(localized_fm_node);
 }
 
 } // namespace mt_kahypar

@@ -33,9 +33,9 @@ class KWayGreedy {
 
 public:
   explicit KWayGreedy(const Context &c, HypernodeID numNodes,
-                               FMSharedData &sharedData)
+                      FMSharedData &sharedData)
       : context(c), thisSearch(0), k(context.partition.k),
-        deltaPhg(context.partition.k), neighborDeduplicator(numNodes, 0),
+        neighborDeduplicator(numNodes, 0),
         fm_strategy(context, numNodes, sharedData, runStats),
         sharedData(sharedData) {}
 
@@ -53,19 +53,11 @@ private:
   // void internalFindMovesOnDeltaHypergraph(PartitionedHypergraph& phg,
   // FMSharedData& sharedData);
 
-  template <bool use_delta> void internalFindMoves(PartitionedHypergraph &phg);
+  void internalFindMoves(PartitionedHypergraph &phg);
 
   template <typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void updateNeighbors(PHG &phg,
                                                           const Move &move);
-
-  // ! Makes moves applied on delta hypergraph visible on the global partitioned
-  // hypergraph.
-  //  std::pair<Gain, size_t>
-  //  applyMovesOnGlobalHypergraph(PartitionedHypergraph& phg,
-  //                                                       size_t bestGainIndex,
-  //                                                       Gain
-  //                                                       bestEstimatedImprovement);
 
   // ! Rollback to the best improvement found during local search in case we
   // applied moves ! directly on the global partitioned hypergraph.
@@ -84,10 +76,6 @@ private:
   // ! Local data members required for one localized search run
   // FMLocalData localData;
   vec<std::pair<Move, MoveID>> localMoves;
-
-  // ! Wrapper around the global partitioned hypergraph, that allows
-  // ! to perform moves non-visible for other local searches
-  ds::DeltaPartitionedHypergraph<PartitionedHypergraph> deltaPhg;
 
   // ! Used after a move. Stores whether a neighbor of the just moved vertex has
   // already been updated.
