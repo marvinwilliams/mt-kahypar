@@ -18,11 +18,11 @@
  *
  ******************************************************************************/
 
-#include "mt-kahypar/partition/refinement/greedy/localized_kway_greedy.h"
+#include "mt-kahypar/partition/refinement/greedy/kway_greedy.h"
 
 namespace mt_kahypar {
 
-bool LocalizedKWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID,
+bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID,
                                     size_t numSeeds) {
   localMoves.clear();
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
@@ -80,7 +80,7 @@ heaviestPartAndWeight(const Partition &partition) {
 
 template <typename PHG>
 MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void
-LocalizedKWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
+KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
   // Note: In theory we should acquire/update all neighbors. It just turned out
   // that this works fine Actually: only vertices incident to edges with gain
   // changes can become new boundary vertices. Vertices that already were
@@ -116,7 +116,7 @@ LocalizedKWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
 }
 
 template <bool use_delta>
-void LocalizedKWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
+void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Move move;
 
   auto delta_func = [&](const HyperedgeID he, const HyperedgeWeight edge_weight,
@@ -227,12 +227,12 @@ void LocalizedKWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   runStats.merge(stats);
 }
 
-void LocalizedKWayGreedy::memoryConsumption(
+void KWayGreedy::memoryConsumption(
     utils::MemoryTreeNode *parent) const {
   ASSERT(parent);
 
   utils::MemoryTreeNode *localized_fm_node =
-      parent->addChild("Localized k-Way FM");
+      parent->addChild(" k-Way FM");
 
   utils::MemoryTreeNode *deduplicator_node =
       localized_fm_node->addChild("Deduplicator");

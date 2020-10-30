@@ -29,10 +29,10 @@
 
 namespace mt_kahypar {
 
-class LocalizedKWayGreedy {
+class KWayGreedy {
 
 public:
-  explicit LocalizedKWayGreedy(const Context &c, HypernodeID numNodes,
+  explicit KWayGreedy(const Context &c, HypernodeID numNodes,
                                FMSharedData &sharedData)
       : context(c), thisSearch(0), k(context.partition.k),
         deltaPhg(context.partition.k), neighborDeduplicator(numNodes, 0),

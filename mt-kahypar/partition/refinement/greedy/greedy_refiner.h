@@ -26,7 +26,7 @@
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/global_rollback.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
-#include "mt-kahypar/partition/refinement/greedy/localized_kway_greedy.h"
+#include "mt-kahypar/partition/refinement/greedy/kway_greedy.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 
 namespace mt_kahypar {
@@ -44,7 +44,7 @@ public:
     taskGroupID(taskGroupID),
     sharedData(hypergraph.initialNumNodes(), context),
     globalRollback(hypergraph, context, context.partition.k),
-    ets_bgf([&] { return constructLocalizedKWayGreedySearch(); })
+    ets_bgf([&] { return constructKWayGreedySearch(); })
   {
     if (context.refinement.fm.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
@@ -60,8 +60,8 @@ public:
 
   void roundInitialization(PartitionedHypergraph &phg);
 
-  LocalizedKWayGreedy constructLocalizedKWayGreedySearch() {
-    return LocalizedKWayGreedy(context, initial_num_nodes, sharedData);
+  KWayGreedy constructKWayGreedySearch() {
+    return KWayGreedy(context, initial_num_nodes, sharedData);
   }
 
   static double improvementFraction(Gain gain, HyperedgeWeight old_km1) {
@@ -83,7 +83,7 @@ private:
   FMSharedData sharedData;
   GlobalRollback globalRollback;
   /* TODO: how to init? <28-10-20, @noahares> */
-  tbb::enumerable_thread_specific<LocalizedKWayGreedy> ets_bgf;
+  tbb::enumerable_thread_specific<KWayGreedy> ets_bgf;
 };
 
 } // namespace mt_kahypar
