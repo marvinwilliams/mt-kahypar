@@ -80,6 +80,11 @@ struct WorkContainer {
     return tls_queues[thread_id].try_pop(dest) || steal_work(dest);
   }
 
+  bool try_pop_no_steal(T& dest, size_t thread_id) {
+    ASSERT(thread_id < tls_queues.size());
+    return tls_queues[thread_id].try_pop(dest);
+  }
+
   bool steal_work(T& dest) {
     for (ThreadQueue<T>& q : tls_queues) {
       if (q.try_pop(dest)) {
