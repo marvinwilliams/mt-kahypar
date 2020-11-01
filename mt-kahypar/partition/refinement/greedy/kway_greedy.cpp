@@ -29,7 +29,8 @@ bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID,
 
   HypernodeID seedNode;
   while (runStats.pushes < numSeeds &&
-         sharedData.refinementNodes.try_pop(seedNode, taskID)) {
+         /* TODO: enough to prevent work stealing? <31-10-20, @noahares> */
+         sharedData.refinementNodes.try_pop_no_steal(seedNode, taskID)) {
     SearchID previousSearchOfSeedNode =
         sharedData.nodeTracker.searchOfNode[seedNode].load(
             std::memory_order_relaxed);
@@ -130,8 +131,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   HypernodeWeight heaviestPartWeight = 0;
   HypernodeWeight fromWeight = 0, toWeight = 0;
 
-  /* TODO: is this enough? Any more checks to prevent the negative move?
-   * <27-10-20, @noahares> */
+  /* TODO: Any more checks to prevent the negative move? Yes, use attributed
+   * gains from label propagation <30-10-20, @noahares> */
   while (lastImprovement > 0 &&
          sharedData.finishedTasks.load(std::memory_order_relaxed) <
              sharedData.finishedTasksLimit) {
@@ -165,7 +166,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
           toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
 
       if (improved_km1 || improved_balance_less_equal_km1) {
-        //          stopRule.reset();
         bestImprovement = estimatedImprovement;
         bestImprovementIndex = localMoves.size();
       }

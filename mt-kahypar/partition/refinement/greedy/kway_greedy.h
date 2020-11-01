@@ -46,25 +46,12 @@ public:
   FMStats stats;
 
 private:
-  // ! Performs localized FM local search on the delta partitioned hypergraph.
-  // ! Moves made by this search are not immediately visible to other concurrent
-  // local searches. ! The best prefix of moves is applied to the global
-  // partitioned hypergraph after the search finishes.
-  // void internalFindMovesOnDeltaHypergraph(PartitionedHypergraph& phg,
-  // FMSharedData& sharedData);
-
   void internalFindMoves(PartitionedHypergraph &phg);
 
   template <typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void updateNeighbors(PHG &phg,
                                                           const Move &move);
 
-  // ! Rollback to the best improvement found during local search in case we
-  // applied moves ! directly on the global partitioned hypergraph.
-  //  void revertToBestLocalPrefix(PartitionedHypergraph &phg,
-  //                               size_t bestGainIndex);
-
-private:
   const Context &context;
 
   // ! Unique search id associated with the current local search
