@@ -53,11 +53,11 @@ bool BasicGreedyRefiner::refineImpl(
   LOG << "You called greedy refinement";
 
   Gain overall_improvement = 0;
-  size_t consecutive_rounds_with_too_little_improvement = 0;
   sharedData.release_nodes = context.refinement.fm.release_nodes;
   tbb::task_group tg;
   vec<HypernodeWeight> initialPartWeights(size_t(sharedData.numParts));
-  HighResClockTimepoint fm_start = std::chrono::high_resolution_clock::now();
+  HighResClockTimepoint greedy_start =
+      std::chrono::high_resolution_clock::now();
   utils::Timer &timer = utils::Timer::instance();
 
   for (size_t round = 0; round < context.refinement.fm.multitry_rounds;
@@ -67,7 +67,8 @@ bool BasicGreedyRefiner::refineImpl(
     }
 
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
-    roundInitialization(phg);
+    /* TODO: set strategy in context <01-11-20, @noahares> */
+    roundInitialization(phg, RANDOM);
     timer.stop_timer("collect_border_nodes");
 
     size_t num_border_nodes = sharedData.refinementNodes.unsafe_size();
@@ -75,13 +76,17 @@ bool BasicGreedyRefiner::refineImpl(
       break;
     }
     size_t num_seeds = context.refinement.fm.num_seed_nodes;
-    if (context.type == kahypar::ContextType::main &&
-        !refinement_nodes.empty() /* n-level */
-        && num_border_nodes < 20 * context.shared_memory.num_threads) {
-      num_seeds = num_border_nodes / (4 * context.shared_memory.num_threads);
-      num_seeds = std::min(num_seeds, context.refinement.fm.num_seed_nodes);
-      num_seeds = std::max(num_seeds, 1UL);
-    }
+    /* TODO: not needed? can num_seeds be removed completely <31-10-20,
+     * @noahares>
+     */
+    //    if (context.type == kahypar::ContextType::main &&
+    //        !refinement_nodes.empty() /* n-level */
+    //        && num_border_nodes < 20 * context.shared_memory.num_threads) {
+    //      num_seeds = num_border_nodes / (4 *
+    //      context.shared_memory.num_threads); num_seeds = std::min(num_seeds,
+    //      context.refinement.fm.num_seed_nodes); num_seeds =
+    //      std::max(num_seeds, 1UL);
+    //    }
 
     timer.start_timer("find_moves", "Find Moves");
     sharedData.finishedTasks.store(0, std::memory_order_relaxed);
@@ -103,40 +108,28 @@ bool BasicGreedyRefiner::refineImpl(
     tg.wait();
     timer.stop_timer("find_moves");
 
-    timer.start_timer("rollback", "Rollback to Best Solution");
-    HyperedgeWeight improvement = globalRollback.revertToBestPrefix<
-        GainCacheStrategy::maintain_gain_cache_between_rounds>(
-        phg, sharedData, initialPartWeights);
-    timer.stop_timer("rollback");
-
-    const double roundImprovementFraction =
-        improvementFraction(improvement, metrics.km1 - overall_improvement);
-    overall_improvement += improvement;
-    if (roundImprovementFraction < context.refinement.fm.min_improvement) {
-      consecutive_rounds_with_too_little_improvement++;
-    } else {
-      consecutive_rounds_with_too_little_improvement = 0;
-    }
-
-    HighResClockTimepoint fm_timestamp =
+    HighResClockTimepoint greedy_timestamp =
         std::chrono::high_resolution_clock::now();
     const double elapsed_time =
-        std::chrono::duration<double>(fm_timestamp - fm_start).count();
-    if (debug && context.type == kahypar::ContextType::main) {
-      FMStats stats;
-      for (auto &fm : ets_bgf) {
-        fm.stats.merge(stats);
-      }
-      LOG << V(round) << V(improvement) << V(metrics::km1(phg))
-          << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
-          << V(roundImprovementFraction) << V(elapsed_time);
-//          << V(current_time_limit) << stats.serialize();
+        std::chrono::duration<double>(greedy_timestamp - greedy_start).count();
+    /* TODO: how to extract improvement? Originally with global rollback,
+     * revertToBestPrefix <30-10-20, @noahares> */
+    //    if (debug && context.type == kahypar::ContextType::main) {
+    //        ContextType in {main, initial_partitioning}, 2nd one possible?
+    FMStats stats;
+    for (auto &greedy : ets_bgf) {
+      greedy.stats.merge(stats);
     }
+    Gain improvement = stats.estimated_improvement;
+    LOG << V(round) << V(improvement) << V(metrics::km1(phg))
+        << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
+        << V(elapsed_time) << stats.serialize();
+    //    }
 
-    if (improvement <= 0 ||
-        consecutive_rounds_with_too_little_improvement >= 2) {
+    if (improvement <= 0)
       break;
-    }
+
+    overall_improvement += improvement;
   }
 
   if (context.partition.show_memory_consumption &&
@@ -156,24 +149,68 @@ bool BasicGreedyRefiner::refineImpl(
   return false;
 }
 
-/* TODO: task queue strategy via param <28-10-20, @noahares> */
-void BasicGreedyRefiner::roundInitialization(PartitionedHypergraph &phg) {
+void BasicGreedyRefiner::roundInitialization(
+    PartitionedHypergraph &phg, WorkDistributionStrategy strategy) {
   // clear border nodes
   sharedData.refinementNodes.clear();
+  CAtomic<int> task_id_static(0);
 
-  // iterate over all nodes and insert border nodes into task queue
-  tbb::parallel_for(
-      tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
-      [&](const tbb::blocked_range<HypernodeID> &r) {
-        const int task_id = tbb::this_task_arena::current_thread_index();
+  /* TODO: other possible static assignment? since isBorderNode consumes the
+   * main computation time add_fetch should not produce much overhead <01-11-20,
+   * @noahares> */
+  auto static_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
+    for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+      if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+        const int local_task_id =
+            task_id_static.add_fetch(1, std::memory_order_relaxed) %
+            TBBNumaArena::instance().total_number_of_threads();
+        sharedData.refinementNodes.safe_push(u, local_task_id);
+      }
+    }
+  };
+
+  auto random_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
+    const int task_id = tbb::this_task_arena::current_thread_index();
+    ASSERT(task_id >= 0 &&
+           task_id < TBBNumaArena::instance().total_number_of_threads());
+    for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+      if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+        sharedData.refinementNodes.safe_push(u, task_id);
+      }
+    }
+  };
+
+  auto partition_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
+    for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+      if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+        const PartitionID task_id =
+            phg.partID(u) % TBBNumaArena::instance().total_number_of_threads();
         ASSERT(task_id >= 0 &&
                task_id < TBBNumaArena::instance().total_number_of_threads());
-        for (HypernodeID u = r.begin(); u < r.end(); ++u) {
-          if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-            sharedData.refinementNodes.safe_push(u, task_id);
-          }
-        }
-      });
+        sharedData.refinementNodes.safe_push(u, task_id);
+      }
+    }
+  };
+
+  switch (strategy) {
+  case STATIC:
+    LOG << "Round initialized with static assignment strategy";
+    tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+                      static_assignment);
+    break;
+  case RANDOM:
+    LOG << "Round initialized with random assignment strategy";
+    tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+                      random_assignment);
+    break;
+  case PARTITION:
+    LOG << "Round initialized with partition assignment strategy";
+    tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+                      partition_assignment);
+    break;
+  default:
+    std::runtime_error("no work distribution strategy provided");
+  }
 
   // shuffle task queue if requested
   if (context.refinement.fm.shuffle) {

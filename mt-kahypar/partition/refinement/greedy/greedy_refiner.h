@@ -24,7 +24,6 @@
 
 #include "mt-kahypar/datastructures/delta_partitioned_hypergraph.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
-#include "mt-kahypar/partition/refinement/fm/global_rollback.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
 #include "mt-kahypar/partition/refinement/greedy/kway_greedy.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
@@ -38,18 +37,21 @@ class BasicGreedyRefiner final : public IRefiner {
 
 public:
   BasicGreedyRefiner(const Hypergraph &hypergraph, const Context &c,
-                     const TaskGroupID taskGroupID) :
-    initial_num_nodes(hypergraph.initialNumNodes()),
-    context(c),
-    taskGroupID(taskGroupID),
-    sharedData(hypergraph.initialNumNodes(), context),
-    globalRollback(hypergraph, context, context.partition.k),
-    ets_bgf([&] { return constructKWayGreedySearch(); })
-  {
+                     const TaskGroupID taskGroupID)
+      : initial_num_nodes(hypergraph.initialNumNodes()), context(c),
+        taskGroupID(taskGroupID),
+        sharedData(hypergraph.initialNumNodes(), context),
+        ets_bgf([&] { return constructKWayGreedySearch(); }) {
     if (context.refinement.fm.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
     }
   }
+
+  /*! \enum WorkDistributionStrategy
+   *
+   *  How to distribute vertices to threads for the search
+   */
+  enum WorkDistributionStrategy { STATIC, RANDOM, PARTITION };
 
   bool
   refineImpl(PartitionedHypergraph &phg,
@@ -58,17 +60,11 @@ public:
 
   void initializeImpl(PartitionedHypergraph &phg) final;
 
-  void roundInitialization(PartitionedHypergraph &phg);
+  void roundInitialization(PartitionedHypergraph &phg,
+                           WorkDistributionStrategy strategy);
 
   KWayGreedy constructKWayGreedySearch() {
     return KWayGreedy(context, initial_num_nodes, sharedData);
-  }
-
-  static double improvementFraction(Gain gain, HyperedgeWeight old_km1) {
-    if (old_km1 == 0)
-      return 0;
-    else
-      return static_cast<double>(gain) / static_cast<double>(old_km1);
   }
 
   void printMemoryConsumption();
@@ -81,8 +77,6 @@ private:
   const Context& context;
   const TaskGroupID taskGroupID;
   FMSharedData sharedData;
-  GlobalRollback globalRollback;
-  /* TODO: how to init? <28-10-20, @noahares> */
   tbb::enumerable_thread_specific<KWayGreedy> ets_bgf;
 };
 
