@@ -42,7 +42,7 @@ public:
         taskGroupID(taskGroupID),
         sharedData(hypergraph.initialNumNodes(), context),
         ets_bgf([&] { return constructKWayGreedySearch(); }) {
-    if (context.refinement.fm.obey_minimal_parallelism) {
+    if (context.refinement.greedy.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
     }
   }
@@ -67,6 +67,7 @@ public:
     return KWayGreedy(context, initial_num_nodes, sharedData);
   }
 
+  /* TODO: memory consumption needed? <02-11-20, @noahares> */
   void printMemoryConsumption();
 
 private:

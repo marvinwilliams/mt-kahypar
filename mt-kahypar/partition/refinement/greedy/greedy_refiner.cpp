@@ -53,14 +53,14 @@ bool BasicGreedyRefiner::refineImpl(
   LOG << "You called greedy refinement";
 
   Gain overall_improvement = 0;
-  sharedData.release_nodes = context.refinement.fm.release_nodes;
+  sharedData.release_nodes = context.refinement.greedy.release_nodes;
   tbb::task_group tg;
   vec<HypernodeWeight> initialPartWeights(size_t(sharedData.numParts));
   HighResClockTimepoint greedy_start =
       std::chrono::high_resolution_clock::now();
   utils::Timer &timer = utils::Timer::instance();
 
-  for (size_t round = 0; round < context.refinement.fm.multitry_rounds;
+  for (size_t round = 0; round < context.refinement.greedy.multitry_rounds;
        ++round) { // global multi try rounds
     for (PartitionID i = 0; i < sharedData.numParts; ++i) {
       initialPartWeights[i] = phg.partWeight(i);
@@ -75,7 +75,7 @@ bool BasicGreedyRefiner::refineImpl(
     if (num_border_nodes == 0) {
       break;
     }
-    size_t num_seeds = context.refinement.fm.num_seed_nodes;
+    size_t num_seeds = context.refinement.greedy.num_seed_nodes;
     /* TODO: not needed? can num_seeds be removed completely <31-10-20,
      * @noahares>
      */
@@ -213,7 +213,7 @@ void BasicGreedyRefiner::roundInitialization(
   }
 
   // shuffle task queue if requested
-  if (context.refinement.fm.shuffle) {
+  if (context.refinement.greedy.shuffle) {
     sharedData.refinementNodes.shuffle();
   }
 
