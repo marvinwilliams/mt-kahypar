@@ -118,6 +118,12 @@ enum class GreedyRefinementAlgorithm : uint8_t {
   do_nothing
 };
 
+enum class GreedyAssigmentStrategy : uint8_t {
+  static_assignement,
+  random_assignment,
+  partition_assignment
+};
+
 std::ostream & operator<< (std::ostream& os, const Type& type);
 
 std::ostream & operator<< (std::ostream& os, const Paradigm& paradigm);
