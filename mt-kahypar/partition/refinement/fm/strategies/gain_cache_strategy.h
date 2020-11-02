@@ -130,24 +130,15 @@ public:
     }
     const PartitionID from = blockPQ.top();
     const HypernodeID u = vertexPQs[from].top();
-    const Gain estimated_gain = vertexPQs[from].topKey();
-    ASSERT(estimated_gain == blockPQ.topKey());
     auto [to, gain] = computeBestTargetBlock(phg, u);
-    if (gain >= estimated_gain) { // accept any gain that is at least as good
-      m.node = u; m.to = to; m.from = from;
-      m.gain = gain;
-      runStats.extractions++;
-      vertexPQs[from].deleteTop();  // blockPQ updates are done later, collectively.
-      return true;
-    } else {
-      vertexPQs[from].adjustKey(u, gain);
-      sharedData.targetPart[u] = to;
-      if (vertexPQs[from].topKey() != blockPQ.keyOf(from)) {
-        blockPQ.adjustKey(from, vertexPQs[from].topKey());
-      }
-      /* TODO: really return false? <26-10-20, @noahares> */
-      return false;
-    }
+    m.node = u;
+    m.to = to;
+    m.from = from;
+    m.gain = gain;
+    runStats.extractions++;
+    vertexPQs[from].deleteTop();
+    // blockPQ updates are done later, collectively.
+    return true;
   }
 
 
