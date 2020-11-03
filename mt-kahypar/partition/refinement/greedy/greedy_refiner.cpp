@@ -96,11 +96,12 @@ bool BasicGreedyRefiner::refineImpl(
     const double elapsed_time =
         std::chrono::duration<double>(greedy_timestamp - greedy_start).count();
     FMStats stats;
+    Gain improvement = 0;
     for (auto &greedy : ets_bgf) {
       greedy.stats.merge(stats);
+      improvement += greedy.getGain();
     }
     /* TODO: get imporvement with attributed gains <30-10-20, @noahares> */
-    Gain improvement = stats.estimated_improvement;
     LOG << V(round) << V(improvement) << V(metrics::km1(phg))
         << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
         << V(elapsed_time) << stats.serialize();

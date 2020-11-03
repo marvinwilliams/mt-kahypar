@@ -101,7 +101,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Move move;
 
   auto delta_func = [&](const HyperedgeID he, const HyperedgeWeight edge_weight,
-                        const HypernodeID,
+                        const HypernodeID edge_size,
                         const HypernodeID pin_count_in_from_part_after,
                         const HypernodeID pin_count_in_to_part_after) {
     // Gains of the pins of a hyperedge can only change in the following
@@ -111,6 +111,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         pin_count_in_to_part_after == 2) {
       edgesWithGainChanges.push_back(he);
     }
+    _gain.computeDeltaForHyperedge(he, edge_weight, edge_size,
+                                   pin_count_in_from_part_after,
+                                   pin_count_in_to_part_after);
 
     fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from,
                                  pin_count_in_from_part_after, move.to,
@@ -141,6 +144,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
     MoveID move_id = std::numeric_limits<MoveID>::max();
     bool moved = false;
+    Gain delta_before = _gain.localDelta();
     if (move.to != kInvalidPartition) {
       heaviestPartWeight = heaviestPartAndWeight(phg).second;
       fromWeight = phg.partWeight(move.from);
@@ -153,22 +157,30 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     }
 
     if (moved) {
-      runStats.moves++;
-      estimatedImprovement += move.gain;
-      localMoves.emplace_back(move, move_id);
-      lastImprovement = move.gain;
-      const bool improved_km1 = estimatedImprovement > bestImprovement;
-      const bool improved_balance_less_equal_km1 =
+      Gain move_delta = _gain.localDelta() - delta_before;
+      bool accept_move = move_delta == move.gain || move_delta <= 0;
+      if (accept_move) {
+        runStats.moves++;
+        estimatedImprovement += move.gain;
+        localMoves.emplace_back(move, move_id);
+        lastImprovement = move.gain;
+        const bool improved_km1 = estimatedImprovement > bestImprovement;
+        const bool improved_balance_less_equal_km1 =
           estimatedImprovement >= bestImprovement &&
           fromWeight == heaviestPartWeight &&
           toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
 
-      if (improved_km1 || improved_balance_less_equal_km1) {
-        bestImprovement = estimatedImprovement;
-        bestImprovementIndex = localMoves.size();
+        if (improved_km1 || improved_balance_less_equal_km1) {
+          bestImprovement = estimatedImprovement;
+          bestImprovementIndex = localMoves.size();
+        }
+        updateNeighbors(phg, move);
+      } else {
+        if (phg.changeNodePart(move.node, move.to, move.from, delta_func)) {
+          sharedData.moveTracker.invalidateMove(move_id);
+        }
       }
 
-      updateNeighbors(phg, move);
     }
 
     fm_strategy.updatePQs(phg);
