@@ -22,15 +22,14 @@
 
 namespace mt_kahypar {
 
-bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID,
-                           size_t numSeeds) {
+/* TODO: no task queue, just set refinement nodes and go <02-11-20,
+ * @noahares> */
+bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID) {
   localMoves.clear();
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
   HypernodeID seedNode;
-  while (runStats.pushes < numSeeds &&
-         /* TODO: enough to prevent work stealing? <31-10-20, @noahares> */
-         sharedData.refinementNodes.try_pop_no_steal(seedNode, taskID)) {
+  while (sharedData.refinementNodes.try_pop_no_steal(seedNode, taskID)) {
     SearchID previousSearchOfSeedNode =
         sharedData.nodeTracker.searchOfNode[seedNode].load(
             std::memory_order_relaxed);
@@ -80,12 +79,11 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
           if (searchOfV == thisSearch) {
             fm_strategy.updateGain(phg, v, move);
           }
-          /* TODO: dont aquire neighbor, something else to do? Inform other
-           * thread about update? <26-10-20, @noahares> */
-          //            else if (sharedData.nodeTracker.tryAcquireNode(v,
-          //            thisSearch)) {
-          //              fm_strategy.insertIntoPQ(phg, v, searchOfV);
-          //            }
+          /* TODO: Inform other
+           * thread about update? maybe work with message queue with barrier as
+           * sync point or iterating moves at sync point and check for updates
+           * in gain cache <26-10-20,
+           * @noahares> */
           neighborDeduplicator[v] = deduplicationTime;
         }
       }
@@ -135,7 +133,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
    * gains from label propagation <30-10-20, @noahares> */
   while (lastImprovement > 0 &&
          sharedData.finishedTasks.load(std::memory_order_relaxed) <
-             sharedData.finishedTasksLimit) {
+             sharedData.finishedTasksLimit) { // use this for sync (2-3 tasks)
 
     if (!fm_strategy.findNextMoveNoRetry(phg, move))
       break;
