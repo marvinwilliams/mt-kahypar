@@ -21,6 +21,7 @@
 #pragma once
 
 #include "mt-kahypar/partition/context.h"
+#include "mt-kahypar/partition/context_enum_classes.h"
 
 #include "mt-kahypar/datastructures/delta_partitioned_hypergraph.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
@@ -47,12 +48,6 @@ public:
     }
   }
 
-  /*! \enum WorkDistributionStrategy
-   *
-   *  How to distribute vertices to threads for the search
-   */
-  enum WorkDistributionStrategy { STATIC, RANDOM, PARTITION };
-
   bool
   refineImpl(PartitionedHypergraph &phg,
              const parallel::scalable_vector<HypernodeID> &refinement_nodes,
@@ -61,13 +56,14 @@ public:
   void initializeImpl(PartitionedHypergraph &phg) final;
 
   void roundInitialization(PartitionedHypergraph &phg,
-                           WorkDistributionStrategy strategy);
+                           GreedyAssigmentStrategy assignment_strategy);
 
   KWayGreedy constructKWayGreedySearch() {
     return KWayGreedy(context, initial_num_nodes, sharedData);
   }
 
-  /* TODO: memory consumption needed? <02-11-20, @noahares> */
+  /* TODO: memory consumption needed? No, but leave with default impl <02-11-20,
+   * @noahares> */
   void printMemoryConsumption();
 
 private:

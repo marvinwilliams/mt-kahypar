@@ -55,46 +55,29 @@ bool BasicGreedyRefiner::refineImpl(
   Gain overall_improvement = 0;
   sharedData.release_nodes = context.refinement.greedy.release_nodes;
   tbb::task_group tg;
-  vec<HypernodeWeight> initialPartWeights(size_t(sharedData.numParts));
   HighResClockTimepoint greedy_start =
       std::chrono::high_resolution_clock::now();
   utils::Timer &timer = utils::Timer::instance();
 
   for (size_t round = 0; round < context.refinement.greedy.multitry_rounds;
        ++round) { // global multi try rounds
-    for (PartitionID i = 0; i < sharedData.numParts; ++i) {
-      initialPartWeights[i] = phg.partWeight(i);
-    }
 
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
     /* TODO: set strategy in context <01-11-20, @noahares> */
-    roundInitialization(phg, RANDOM);
+    roundInitialization(phg, context.refinement.greedy.assignment_strategy);
     timer.stop_timer("collect_border_nodes");
 
     size_t num_border_nodes = sharedData.refinementNodes.unsafe_size();
     if (num_border_nodes == 0) {
       break;
     }
-    size_t num_seeds = context.refinement.greedy.num_seed_nodes;
-    /* TODO: not needed? can num_seeds be removed completely <31-10-20,
-     * @noahares>
-     */
-    //    if (context.type == kahypar::ContextType::main &&
-    //        !refinement_nodes.empty() /* n-level */
-    //        && num_border_nodes < 20 * context.shared_memory.num_threads) {
-    //      num_seeds = num_border_nodes / (4 *
-    //      context.shared_memory.num_threads); num_seeds = std::min(num_seeds,
-    //      context.refinement.fm.num_seed_nodes); num_seeds =
-    //      std::max(num_seeds, 1UL);
-    //    }
-
     timer.start_timer("find_moves", "Find Moves");
     sharedData.finishedTasks.store(0, std::memory_order_relaxed);
     auto task = [&](const size_t task_id) {
       auto &greedy = ets_bgf.local();
       while (sharedData.finishedTasks.load(std::memory_order_relaxed) <
                  sharedData.finishedTasksLimit &&
-             greedy.findMoves(phg, task_id, num_seeds)) { /* keep running*/
+             greedy.findMoves(phg, task_id)) { /* keep running*/
       }
       sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
     };
@@ -112,19 +95,15 @@ bool BasicGreedyRefiner::refineImpl(
         std::chrono::high_resolution_clock::now();
     const double elapsed_time =
         std::chrono::duration<double>(greedy_timestamp - greedy_start).count();
-    /* TODO: how to extract improvement? Originally with global rollback,
-     * revertToBestPrefix <30-10-20, @noahares> */
-    //    if (debug && context.type == kahypar::ContextType::main) {
-    //        ContextType in {main, initial_partitioning}, 2nd one possible?
     FMStats stats;
     for (auto &greedy : ets_bgf) {
       greedy.stats.merge(stats);
     }
+    /* TODO: get imporvement with attributed gains <30-10-20, @noahares> */
     Gain improvement = stats.estimated_improvement;
     LOG << V(round) << V(improvement) << V(metrics::km1(phg))
         << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
         << V(elapsed_time) << stats.serialize();
-    //    }
 
     if (improvement <= 0)
       break;
@@ -147,10 +126,12 @@ bool BasicGreedyRefiner::refineImpl(
   return overall_improvement > 0;
 
   return false;
-}
+} // namespace mt_kahypar
 
+/* TODO: when removing the work queue round init can be done easier and static
+ * <02-11-20, @noahares> */
 void BasicGreedyRefiner::roundInitialization(
-    PartitionedHypergraph &phg, WorkDistributionStrategy strategy) {
+    PartitionedHypergraph &phg, GreedyAssigmentStrategy assignment_strategy) {
   // clear border nodes
   sharedData.refinementNodes.clear();
   CAtomic<int> task_id_static(0);
@@ -187,23 +168,24 @@ void BasicGreedyRefiner::roundInitialization(
             phg.partID(u) % TBBNumaArena::instance().total_number_of_threads();
         ASSERT(task_id >= 0 &&
                task_id < TBBNumaArena::instance().total_number_of_threads());
+        /* TODO: mt-methis better for load balancing <2020-11-02, @noahares> */
         sharedData.refinementNodes.safe_push(u, task_id);
       }
     }
   };
 
-  switch (strategy) {
-  case STATIC:
+  switch (assignment_strategy) {
+  case GreedyAssigmentStrategy::static_assignement:
     LOG << "Round initialized with static assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       static_assignment);
     break;
-  case RANDOM:
+  case GreedyAssigmentStrategy::random_assignment:
     LOG << "Round initialized with random assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       random_assignment);
     break;
-  case PARTITION:
+  case GreedyAssigmentStrategy::partition_assignment:
     LOG << "Round initialized with partition assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       partition_assignment);
@@ -222,5 +204,19 @@ void BasicGreedyRefiner::roundInitialization(
   sharedData.nodeTracker.requestNewSearches(
       static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
 }
+
+  void BasicGreedyRefiner::printMemoryConsumption() {
+    utils::MemoryTreeNode greedy_memory("k-Way Greedy",
+                                        utils::OutputType::MEGABYTE);
+
+    for (const auto& greedy : ets_bgf) {
+      greedy.memoryConsumption(&greedy_memory);
+    }
+    sharedData.memoryConsumption(&greedy_memory);
+    greedy_memory.finalize();
+
+    //    LOG << BOLD << "\n FM Memory Consumption" << END;
+    //    LOG << greedy_memory;
+  }
 
 } // namespace mt_kahypar
