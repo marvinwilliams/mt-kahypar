@@ -63,7 +63,6 @@ bool BasicGreedyRefiner::refineImpl(
        ++round) { // global multi try rounds
 
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
-    /* TODO: set strategy in context <01-11-20, @noahares> */
     roundInitialization(phg, context.refinement.greedy.assignment_strategy);
     timer.stop_timer("collect_border_nodes");
 
@@ -101,7 +100,6 @@ bool BasicGreedyRefiner::refineImpl(
       greedy.stats.merge(stats);
       improvement += greedy.getGain();
     }
-    /* TODO: get imporvement with attributed gains <30-10-20, @noahares> */
     LOG << V(round) << V(improvement) << V(metrics::km1(phg))
         << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
         << V(elapsed_time) << stats.serialize();
