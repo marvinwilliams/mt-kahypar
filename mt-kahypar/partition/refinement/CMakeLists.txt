@@ -6,6 +6,7 @@ set(RefinementSources
         label_propagation/label_propagation_refiner.cpp
         rebalancing/rebalancer.cpp
         greedy/greedy_refiner.cpp
+        greedy/kway_greedy.cpp
         )
 
 foreach(modtarget IN LISTS TARGETS_WANTING_ALL_SOURCES)

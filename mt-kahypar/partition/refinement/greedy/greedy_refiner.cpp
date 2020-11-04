@@ -206,18 +206,18 @@ void BasicGreedyRefiner::roundInitialization(
       static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
 }
 
-  void BasicGreedyRefiner::printMemoryConsumption() {
-    utils::MemoryTreeNode greedy_memory("k-Way Greedy",
-                                        utils::OutputType::MEGABYTE);
+void BasicGreedyRefiner::printMemoryConsumption() {
+  utils::MemoryTreeNode greedy_memory("k-Way Greedy",
+                                      utils::OutputType::MEGABYTE);
 
-    for (const auto& greedy : ets_bgf) {
-      greedy.memoryConsumption(&greedy_memory);
-    }
-    sharedData.memoryConsumption(&greedy_memory);
-    greedy_memory.finalize();
-
-    //    LOG << BOLD << "\n FM Memory Consumption" << END;
-    //    LOG << greedy_memory;
+  for (const auto &greedy : ets_bgf) {
+    greedy.memoryConsumption(&greedy_memory);
   }
+  sharedData.memoryConsumption(&greedy_memory);
+  greedy_memory.finalize();
+
+  //    LOG << BOLD << "\n FM Memory Consumption" << END;
+  //    LOG << greedy_memory;
+}
 
 } // namespace mt_kahypar

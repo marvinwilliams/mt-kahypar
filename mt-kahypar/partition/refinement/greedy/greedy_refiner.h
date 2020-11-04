@@ -62,8 +62,6 @@ public:
     return KWayGreedy(context, initial_num_nodes, sharedData);
   }
 
-  /* TODO: memory consumption needed? No, but leave with default impl <02-11-20,
-   * @noahares> */
   void printMemoryConsumption();
 
 private:
