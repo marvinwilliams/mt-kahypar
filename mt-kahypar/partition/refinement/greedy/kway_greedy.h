@@ -26,7 +26,6 @@
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
-#include "mt-kahypar/partition/refinement/policies/gain_policy.h"
 
 namespace mt_kahypar {
 
@@ -38,11 +37,11 @@ public:
       : context(c), thisSearch(0), k(context.partition.k),
         neighborDeduplicator(numNodes, 0),
         fm_strategy(context, numNodes, sharedData, runStats),
-        sharedData(sharedData), _gain(context) {}
+        sharedData(sharedData), _gain(0) {}
 
   bool findMoves(PartitionedHypergraph &phg, size_t taskID);
 
-  Gain getGain() { return _gain.delta(); }
+  Gain getGain() { return _gain; }
 
   void memoryConsumption(utils::MemoryTreeNode *parent) const;
 
@@ -81,7 +80,7 @@ private:
 
   FMSharedData &sharedData;
 
-  GainPolicy<PartitionedHypergraph> _gain;
+  Gain _gain;
 };
 
 } // namespace mt_kahypar

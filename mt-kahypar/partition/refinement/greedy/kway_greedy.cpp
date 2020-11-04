@@ -101,7 +101,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Move move;
 
   auto delta_func = [&](const HyperedgeID he, const HyperedgeWeight edge_weight,
-                        const HypernodeID edge_size,
+                        const HypernodeID,
                         const HypernodeID pin_count_in_from_part_after,
                         const HypernodeID pin_count_in_to_part_after) {
     // Gains of the pins of a hyperedge can only change in the following
@@ -111,9 +111,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         pin_count_in_to_part_after == 2) {
       edgesWithGainChanges.push_back(he);
     }
-    _gain.computeDeltaForHyperedge(he, edge_weight, edge_size,
-                                   pin_count_in_from_part_after,
-                                   pin_count_in_to_part_after);
+    _gain += (pin_count_in_to_part_after == 1 ? edge_weight : 0) +
+             (pin_count_in_from_part_after == 0 ? -edge_weight : 0);
 
     fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from,
                                  pin_count_in_from_part_after, move.to,
@@ -144,7 +143,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
     MoveID move_id = std::numeric_limits<MoveID>::max();
     bool moved = false;
-    Gain delta_before = _gain.localDelta();
+    Gain delta_before = _gain;
     if (move.to != kInvalidPartition) {
       heaviestPartWeight = heaviestPartAndWeight(phg).second;
       fromWeight = phg.partWeight(move.from);
@@ -157,7 +156,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     }
 
     if (moved) {
-      Gain move_delta = _gain.localDelta() - delta_before;
+      Gain move_delta = _gain - delta_before;
       bool accept_move = move_delta == move.gain || move_delta <= 0;
       if (accept_move) {
         runStats.moves++;
