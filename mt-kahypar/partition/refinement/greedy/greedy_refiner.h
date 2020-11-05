@@ -58,6 +58,8 @@ public:
   void roundInitialization(PartitionedHypergraph &phg,
                            GreedyAssigmentStrategy assignment_strategy);
 
+  void determineRefinementNodes(PartitionedHypergraph &phg);
+
   KWayGreedy constructKWayGreedySearch() {
     return KWayGreedy(context, initial_num_nodes, sharedData);
   }
@@ -73,6 +75,10 @@ private:
   const TaskGroupID taskGroupID;
   FMSharedData sharedData;
   tbb::enumerable_thread_specific<KWayGreedy> ets_bgf;
+  /* TODO: would use vec or scalable_vector but their push does not seem to be
+   * thread safe (?) How can the work queue function properly? <04-11-20,
+   * @noahares> */
+  tbb::concurrent_vector<HypernodeID> _refinement_nodes;
 };
 
 } // namespace mt_kahypar

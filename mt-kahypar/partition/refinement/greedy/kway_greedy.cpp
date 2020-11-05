@@ -22,19 +22,16 @@
 
 namespace mt_kahypar {
 
-/* TODO: no task queue, just set refinement nodes and go <02-11-20,
- * @noahares> */
-bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t taskID) {
+bool KWayGreedy::findMoves(PartitionedHypergraph &phg,
+                           std::vector<HypernodeID> &refinement_nodes) {
   localMoves.clear();
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
-  HypernodeID seedNode;
-  while (sharedData.refinementNodes.try_pop_no_steal(seedNode, taskID)) {
-    SearchID previousSearchOfSeedNode =
-        sharedData.nodeTracker.searchOfNode[seedNode].load(
-            std::memory_order_relaxed);
-    if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
-      fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+  for (HypernodeID v : refinement_nodes) {
+    if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
+      /* TODO: why the 3rd param if it is unnamed anyways? <05-11-20, @noahares>
+       */
+      fm_strategy.insertIntoPQ(phg, v, 0);
     }
   }
   fm_strategy.updatePQs(phg);
