@@ -140,7 +140,10 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
       /* TODO: it is not essential to catch every queue entry when checking the
        * message queue. Since the queue is FIFO, no elements get lost and
        * therefore are read sooner or later <07-11-20, @noahares> */
-      for (auto queue : _messages[thisSearch]) {
+      size_t this_index = thisSearch -
+        sharedData.nodeTracker.deactivatedNodeMarker - 1;
+      ASSERT(this_index < _messages.size());
+      for (auto queue : _messages[this_index]) {
         while (!queue.empty()) {
           HypernodeID v = queue.front();
           queue.pop();
