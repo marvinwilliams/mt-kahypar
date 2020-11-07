@@ -61,6 +61,13 @@ bool BasicGreedyRefiner::refineImpl(
   for (size_t round = 0; round < context.refinement.greedy.multitry_rounds;
        ++round) { // global multi try rounds
 
+    // clear message queues
+    for (auto i : _messages) {
+      for (auto queue : i) {
+        parallel::scalable_queue<HyperedgeID>().swap(queue);
+      }
+    }
+
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
     determineRefinementNodes(phg);
     timer.stop_timer("collect_border_nodes");
@@ -74,6 +81,7 @@ bool BasicGreedyRefiner::refineImpl(
     /* task groups seem to have an advantage only if tasks may be appended
      * later on, but here this is not the case, so parallel_for makes a good
      * choice */
+    /* TODO: back to task queue <07-11-20, @noahares> */
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, _refinement_nodes.size()),
         [&](const tbb::blocked_range<size_t> &r) {

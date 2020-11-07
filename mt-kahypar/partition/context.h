@@ -150,6 +150,7 @@ struct GreedyRefinementParameters {
   bool release_nodes = true;
   GreedyAssigmentStrategy assignment_strategy =
       GreedyAssigmentStrategy::random_assignment;
+  size_t num_moves_before_sync = 10;
   // Add your parameters here
 };
 

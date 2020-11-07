@@ -23,6 +23,7 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/context_enum_classes.h"
 
+#include "mt-kahypar/parallel/stl/scalable_queue.h"
 #include "mt-kahypar/datastructures/delta_partitioned_hypergraph.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
@@ -31,6 +32,7 @@
 
 namespace mt_kahypar {
 
+using HypernodeIDMessageMatrix = vec<vec<parallel::scalable_queue<HypernodeID>>>;
 class BasicGreedyRefiner final : public IRefiner {
 
   static constexpr bool debug = false;
@@ -42,6 +44,8 @@ public:
       : initial_num_nodes(hypergraph.initialNumNodes()), context(c),
         taskGroupID(taskGroupID),
         sharedData(hypergraph.initialNumNodes(), context),
+        _messages(context.shared_memory.num_threads,
+                  vec<parallel::scalable_queue<HypernodeID>>(context.shared_memory.num_threads)),
         ets_bgf([&] { return constructKWayGreedySearch(); }) {
     if (context.refinement.greedy.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
@@ -61,7 +65,7 @@ public:
   void determineRefinementNodes(PartitionedHypergraph &phg);
 
   KWayGreedy constructKWayGreedySearch() {
-    return KWayGreedy(context, initial_num_nodes, sharedData);
+    return KWayGreedy(context, initial_num_nodes, sharedData, _messages);
   }
 
   void printMemoryConsumption();
@@ -74,10 +78,8 @@ private:
   const Context& context;
   const TaskGroupID taskGroupID;
   FMSharedData sharedData;
+  HypernodeIDMessageMatrix _messages;
   tbb::enumerable_thread_specific<KWayGreedy> ets_bgf;
-  /* TODO: would use vec or scalable_vector but their push does not seem to be
-   * thread safe (?) How can the work queue function properly? <04-11-20,
-   * @noahares> */
   tbb::concurrent_vector<HypernodeID> _refinement_nodes;
 };
 

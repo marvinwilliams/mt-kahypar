@@ -93,6 +93,12 @@ public:
     vertexPQs[pv].adjustKey(v, gain);
   }
 
+  void updateGainFromOtherSearch(const PartitionedHypergraph& phg, const HypernodeID v) {
+    MoveID move_id = sharedData.moveTracker.moveOfNode[v];
+    Move move = sharedData.moveTracker.getMove(move_id);
+    updateGain(phg, v, move);
+  }
+
   template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   bool findNextMove(const PHG& phg, Move& m) {

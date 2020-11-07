@@ -29,8 +29,6 @@ bool KWayGreedy::findMoves(PartitionedHypergraph &phg,
 
   for (HypernodeID v : refinement_nodes) {
     if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
-      /* TODO: why the 3rd param if it is unnamed anyways? <05-11-20, @noahares>
-       */
       fm_strategy.insertIntoPQ(phg, v, 0);
     }
   }
@@ -75,13 +73,17 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
               std::memory_order_acq_rel);
           if (searchOfV == thisSearch) {
             fm_strategy.updateGain(phg, v, move);
+          }  else {
+            // send hypernode id to responsible threads message queue
+            size_t v_index = searchOfV -
+            sharedData.nodeTracker.deactivatedNodeMarker - 1;
+            size_t this_index = thisSearch -
+            sharedData.nodeTracker.deactivatedNodeMarker - 1;
+            ASSERT(v_index < _messages.size());
+            ASSERT(this_index < _messages[v_index].size());
+            _messages[v_index][this_index].push(v);
           }
-          /* TODO: Inform other
-           * thread about update? maybe work with message queue with barrier as
-           * sync point or iterating moves at sync point and check for updates
-           * in gain cache <26-10-20,
-           * @noahares> */
-          neighborDeduplicator[v] = deduplicationTime;
+            neighborDeduplicator[v] = deduplicationTime;
         }
       }
     }
@@ -124,15 +126,29 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
   Gain lastImprovement = std::numeric_limits<Gain>::max();
+  size_t local_moves_since_sync = 0;
 
   HypernodeWeight heaviestPartWeight = 0;
   HypernodeWeight fromWeight = 0, toWeight = 0;
 
-  /* TODO: Any more checks to prevent the negative move? Yes, use attributed
-   * gains from label propagation <30-10-20, @noahares> */
   while (lastImprovement > 0 &&
          sharedData.finishedTasks.load(std::memory_order_relaxed) <
-             sharedData.finishedTasksLimit) { // use this for sync (2-3 tasks)
+             sharedData.finishedTasksLimit) {
+
+    if (local_moves_since_sync >=
+        context.refinement.greedy.num_moves_before_sync) {
+      /* TODO: it is not essential to catch every queue entry when checking the
+       * message queue. Since the queue is FIFO, no elements get lost and
+       * therefore are read sooner or later <07-11-20, @noahares> */
+      for (auto queue : _messages[thisSearch]) {
+        while (!queue.empty()) {
+          HypernodeID v = queue.front();
+          queue.pop();
+          fm_strategy.updateGainFromOtherSearch(phg, v);
+        }
+      }
+      local_moves_since_sync = 0;
+    }
 
     if (!fm_strategy.findNextMoveNoRetry(phg, move))
       break;
@@ -160,6 +176,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         estimatedImprovement += move.gain;
         localMoves.emplace_back(move, move_id);
         lastImprovement = move.gain;
+        local_moves_since_sync++;
         const bool improved_km1 = estimatedImprovement > bestImprovement;
         const bool improved_balance_less_equal_km1 =
           estimatedImprovement >= bestImprovement &&
