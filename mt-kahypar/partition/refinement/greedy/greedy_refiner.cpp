@@ -62,7 +62,7 @@ bool BasicGreedyRefiner::refineImpl(
        ++round) { // global multi try rounds
 
     // clear message queues
-    for (auto i : _messages) {
+    for (auto i : _greedy_shared_data.messages) {
       for (auto queue : i) {
         parallel::scalable_queue<HyperedgeID>().swap(queue);
       }

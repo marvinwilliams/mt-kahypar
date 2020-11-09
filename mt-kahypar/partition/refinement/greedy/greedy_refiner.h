@@ -23,10 +23,11 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/context_enum_classes.h"
 
-#include "mt-kahypar/parallel/stl/scalable_queue.h"
 #include "mt-kahypar/datastructures/delta_partitioned_hypergraph.h"
+#include "mt-kahypar/parallel/stl/scalable_queue.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
+#include "mt-kahypar/partition/refinement/greedy/greedy_shared_data.h"
 #include "mt-kahypar/partition/refinement/greedy/kway_greedy.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 
@@ -44,8 +45,10 @@ public:
       : initial_num_nodes(hypergraph.initialNumNodes()), context(c),
         taskGroupID(taskGroupID),
         sharedData(hypergraph.initialNumNodes(), context),
-        _messages(context.shared_memory.num_threads,
-                  vec<parallel::scalable_queue<HypernodeID>>(context.shared_memory.num_threads)),
+        _greedy_shared_data(hypergraph.initialNumNodes(),
+                            {context.shared_memory.num_threads,
+                             vec<parallel::scalable_queue<HypernodeID>>(
+                                 context.shared_memory.num_threads)}),
         ets_bgf([&] { return constructKWayGreedySearch(); }) {
     if (context.refinement.greedy.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
@@ -65,7 +68,7 @@ public:
   void determineRefinementNodes(PartitionedHypergraph &phg);
 
   KWayGreedy constructKWayGreedySearch() {
-    return KWayGreedy(context, initial_num_nodes, sharedData, _messages);
+    return KWayGreedy(context, initial_num_nodes, sharedData, _greedy_shared_data);
   }
 
   void printMemoryConsumption();
@@ -78,7 +81,7 @@ private:
   const Context& context;
   const TaskGroupID taskGroupID;
   FMSharedData sharedData;
-  HypernodeIDMessageMatrix _messages;
+  GreedySharedData _greedy_shared_data;
   tbb::enumerable_thread_specific<KWayGreedy> ets_bgf;
   tbb::concurrent_vector<HypernodeID> _refinement_nodes;
 };

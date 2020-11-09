@@ -144,7 +144,6 @@ std::ostream& operator<<(std::ostream& out, const FMParameters& params);
 struct GreedyRefinementParameters {
   GreedyRefinementAlgorithm algorithm = GreedyRefinementAlgorithm::do_nothing;
   size_t multitry_rounds = 1;
-  mutable size_t num_seed_nodes = 1;
   mutable bool obey_minimal_parallelism = false;
   bool shuffle = true;
   bool release_nodes = true;
