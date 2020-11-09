@@ -76,6 +76,8 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
               std::memory_order_acq_rel);
           if (searchOfV == thisSearch) {
             fm_strategy.updateGain(phg, v, move);
+          } else if (searchOfV == 0 && sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
+            fm_strategy.insertIntoPQ(phg, v, 0);
           } else if (searchOfV != 0 &&
                      searchOfV !=
                          sharedData.nodeTracker.deactivatedNodeMarker) {
@@ -83,8 +85,10 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
             int v_index = _greedy_shared_data.thread_of_node[searchOfV];
             int this_index = _greedy_shared_data.thread_of_node[thisSearch];
             if (v_index >= 0) {
-              ASSERT(v_index < _greedy_shared_data.messages.size());
-              ASSERT(this_index < _greedy_shared_data.messages[v_index].size());
+              ASSERT(v_index < static_cast<int>(_greedy_shared_data.messages.size()));
+              ASSERT(this_index <
+                     static_cast<int>(
+                         _greedy_shared_data.messages[v_index].size()));
               _greedy_shared_data.messages[v_index][this_index].push(v);
             }
           }
@@ -146,7 +150,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
        * message queue. Since the queue is FIFO, no elements get lost and
        * therefore are read sooner or later <07-11-20, @noahares> */
       int this_index = _greedy_shared_data.thread_of_node[thisSearch];
-      ASSERT(this_index < _greedy_shared_data.messages.size());
+      ASSERT(this_index <
+             static_cast<int>(_greedy_shared_data.messages.size()));
       for (auto queue : _greedy_shared_data.messages[this_index]) {
         while (!queue.empty()) {
           HypernodeID v = queue.front();
@@ -155,6 +160,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
             fm_strategy.updateGainFromOtherSearch(phg, v);
           }
         }
+        fm_strategy.updatePQs(phg);
       }
       local_moves_since_sync = 0;
     }

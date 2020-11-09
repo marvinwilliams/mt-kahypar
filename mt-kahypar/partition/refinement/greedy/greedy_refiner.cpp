@@ -81,7 +81,7 @@ bool BasicGreedyRefiner::refineImpl(
     /* task groups seem to have an advantage only if tasks may be appended
      * later on, but here this is not the case, so parallel_for makes a good
      * choice */
-    /* TODO: back to task queue <07-11-20, @noahares> */
+    /* TODO: back to task group <07-11-20, @noahares> */
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, _refinement_nodes.size()),
         [&](const tbb::blocked_range<size_t> &r) {
@@ -223,6 +223,11 @@ void BasicGreedyRefiner::determineRefinementNodes(PartitionedHypergraph &phg) {
                         }
                       }
                     });
+  sharedData.nodeTracker.requestNewSearches(
+      static_cast<SearchID>(_refinement_nodes.size()));
+  tbb::parallel_for(
+      0UL, _greedy_shared_data.thread_of_node.size(),
+      [&](const int i) { _greedy_shared_data.thread_of_node[i] = 0; });
 }
 
 void BasicGreedyRefiner::printMemoryConsumption() {
