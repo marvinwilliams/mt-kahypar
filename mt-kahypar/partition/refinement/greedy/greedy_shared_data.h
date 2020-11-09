@@ -24,8 +24,7 @@
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 namespace mt_kahypar {
 
-using HypernodeIDMessageMatrix =
-    vec<vec<parallel::scalable_queue<HypernodeID>>>;
+using HypernodeIDMessageMatrix = vec<vec<HypernodeID>>;
 struct GreedySharedData {
   HypernodeIDMessageMatrix messages;
   GreedySharedData(HypernodeIDMessageMatrix messages) : messages(messages) {}

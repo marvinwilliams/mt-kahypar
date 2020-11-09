@@ -76,20 +76,24 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
             fm_strategy.updateGain(phg, v, move);
             /* TODO: maybe do not aquire unowned nodes for performance
              * <09-11-20, @noahares> */
-          } else if (searchOfV == 0 && sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
+          } else if (searchOfV == 0 &&
+                     sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
             fm_strategy.insertIntoPQ(phg, v, 0);
           } else if (searchOfV != 0 &&
                      searchOfV !=
                          sharedData.nodeTracker.deactivatedNodeMarker) {
             // send hypernode id to responsible threads message queue
-            int v_index = searchOfV - sharedData.nodeTracker.deactivatedNodeMarker;
-            int this_index = thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
+            int v_index =
+                searchOfV - sharedData.nodeTracker.deactivatedNodeMarker;
+            int this_index =
+                thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
+            int num_threads = context.shared_memory.num_threads;
             if (v_index >= 0) {
-              ASSERT(v_index < static_cast<int>(_greedy_shared_data.messages.size()));
-              ASSERT(this_index <
-                     static_cast<int>(
-                         _greedy_shared_data.messages[v_index].size()));
-              _greedy_shared_data.messages[v_index][this_index].push(v);
+              ASSERT((v_index + 1) * num_threads + this_index <
+                     static_cast<int>(_greedy_shared_data.messages.size()));
+              _greedy_shared_data
+                  .messages[(v_index + 1) * num_threads + this_index]
+                  .push_back(v);
             }
           }
           neighborDeduplicator[v] = deduplicationTime;
@@ -147,21 +151,22 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
     if (local_moves_since_sync >=
         context.refinement.greedy.num_moves_before_sync) {
-      /* TODO: it is not essential to catch every queue entry when checking the
-       * message queue. Since the queue is FIFO, no elements get lost and
-       * therefore are read sooner or later <07-11-20, @noahares> */
-      int this_index = thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
-      ASSERT(this_index <
-             static_cast<int>(_greedy_shared_data.messages.size()));
-      for (auto &queue : _greedy_shared_data.messages[this_index]) {
-        while (!queue.empty()) {
-          HypernodeID v = queue.front();
-          queue.pop();
+      /* TODO: semaphore <07-11-20, @noahares> */
+      int this_index =
+          thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
+      int num_threads = context.shared_memory.num_threads;
+      auto mq_begin =
+          _greedy_shared_data.messages.begin() + (this_index + 1) * num_threads;
+      auto mq_end = mq_begin + num_threads;
+      ASSERT(end <= static_cast<int>(_greedy_shared_data.messages.size()));
+      for (auto &mq : {mq_begin, mq_end}) {
+        for (const auto v : *mq) {
           if (!sharedData.nodeTracker.isLocked(v)) {
             fm_strategy.updateGainFromOtherSearch(phg, v);
           }
         }
         fm_strategy.updatePQs(phg);
+        mq->clear();
       }
       local_moves_since_sync = 0;
     }

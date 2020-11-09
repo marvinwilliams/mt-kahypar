@@ -33,7 +33,7 @@
 
 namespace mt_kahypar {
 
-using HypernodeIDMessageMatrix = vec<vec<parallel::scalable_queue<HypernodeID>>>;
+using HypernodeIDMessageMatrix = vec<vec<HypernodeID>>;
 class BasicGreedyRefiner final : public IRefiner {
 
   static constexpr bool debug = false;
@@ -45,9 +45,8 @@ public:
       : initial_num_nodes(hypergraph.initialNumNodes()), context(c),
         taskGroupID(taskGroupID),
         sharedData(hypergraph.initialNumNodes(), context),
-        _greedy_shared_data({context.shared_memory.num_threads,
-                             vec<parallel::scalable_queue<HypernodeID>>(
-                                 context.shared_memory.num_threads)}),
+        _greedy_shared_data(
+            {context.shared_memory.num_threads, vec<HypernodeID>()}),
         ets_bgf([&] { return constructKWayGreedySearch(); }) {
     if (context.refinement.greedy.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
