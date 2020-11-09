@@ -119,8 +119,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         pin_count_in_to_part_after == 2) {
       edgesWithGainChanges.push_back(he);
     }
-    _gain += (pin_count_in_to_part_after == 1 ? edge_weight : 0) +
-             (pin_count_in_from_part_after == 0 ? -edge_weight : 0);
+    _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
+             (pin_count_in_from_part_after == 0 ? edge_weight : 0);
 
     fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from,
                                  pin_count_in_from_part_after, move.to,
@@ -186,13 +186,13 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
     if (moved) {
       Gain move_delta = _gain - delta_before;
-      bool accept_move = move_delta == move.gain || move_delta <= 0;
+      bool accept_move = move_delta == move.gain || move_delta > 0;
       if (accept_move) {
         runStats.moves++;
         estimatedImprovement += move.gain;
         localMoves.emplace_back(move, move_id);
         /* TODO: use move.gain or move_delta?? <09-11-20, @noahares> */
-        lastImprovement = move.gain;
+        lastImprovement = move_delta;
         local_moves_since_sync++;
         const bool improved_km1 = estimatedImprovement > bestImprovement;
         const bool improved_balance_less_equal_km1 =
