@@ -27,9 +27,7 @@ namespace mt_kahypar {
 using HypernodeIDMessageMatrix =
     vec<vec<parallel::scalable_queue<HypernodeID>>>;
 struct GreedySharedData {
-  vec<int> thread_of_node;
   HypernodeIDMessageMatrix messages;
-  GreedySharedData(HypernodeID num_nodes, HypernodeIDMessageMatrix messages)
-      : thread_of_node(num_nodes, -1), messages(messages) {}
+  GreedySharedData(HypernodeIDMessageMatrix messages) : messages(messages) {}
 };
 } // namespace mt_kahypar

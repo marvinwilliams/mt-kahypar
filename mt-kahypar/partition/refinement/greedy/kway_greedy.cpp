@@ -27,8 +27,6 @@ bool KWayGreedy::findMoves(PartitionedHypergraph &phg,
   localMoves.clear();
   thisSearch = sharedData.nodeTracker.highestActiveSearchID.add_fetch(
       1, std::memory_order_relaxed);
-  const int thread_index = tbb::this_task_arena::current_thread_index();
-  _greedy_shared_data.thread_of_node[thisSearch] = thread_index;
 
   for (HypernodeID v : refinement_nodes) {
     if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
@@ -76,14 +74,16 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
               std::memory_order_acq_rel);
           if (searchOfV == thisSearch) {
             fm_strategy.updateGain(phg, v, move);
+            /* TODO: maybe do not aquire unowned nodes for performance
+             * <09-11-20, @noahares> */
           } else if (searchOfV == 0 && sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
             fm_strategy.insertIntoPQ(phg, v, 0);
           } else if (searchOfV != 0 &&
                      searchOfV !=
                          sharedData.nodeTracker.deactivatedNodeMarker) {
             // send hypernode id to responsible threads message queue
-            int v_index = _greedy_shared_data.thread_of_node[searchOfV];
-            int this_index = _greedy_shared_data.thread_of_node[thisSearch];
+            int v_index = searchOfV - sharedData.nodeTracker.deactivatedNodeMarker;
+            int this_index = thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
             if (v_index >= 0) {
               ASSERT(v_index < static_cast<int>(_greedy_shared_data.messages.size()));
               ASSERT(this_index <
@@ -136,6 +136,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Gain bestImprovement = 0;
   Gain lastImprovement = std::numeric_limits<Gain>::max();
   size_t local_moves_since_sync = 0;
+  _gain = 0;
 
   HypernodeWeight heaviestPartWeight = 0;
   HypernodeWeight fromWeight = 0, toWeight = 0;
@@ -149,10 +150,10 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
       /* TODO: it is not essential to catch every queue entry when checking the
        * message queue. Since the queue is FIFO, no elements get lost and
        * therefore are read sooner or later <07-11-20, @noahares> */
-      int this_index = _greedy_shared_data.thread_of_node[thisSearch];
+      int this_index = thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
       ASSERT(this_index <
              static_cast<int>(_greedy_shared_data.messages.size()));
-      for (auto queue : _greedy_shared_data.messages[this_index]) {
+      for (auto &queue : _greedy_shared_data.messages[this_index]) {
         while (!queue.empty()) {
           HypernodeID v = queue.front();
           queue.pop();
@@ -190,6 +191,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         runStats.moves++;
         estimatedImprovement += move.gain;
         localMoves.emplace_back(move, move_id);
+        /* TODO: use move.gain or move_delta?? <09-11-20, @noahares> */
         lastImprovement = move.gain;
         local_moves_since_sync++;
         const bool improved_km1 = estimatedImprovement > bestImprovement;

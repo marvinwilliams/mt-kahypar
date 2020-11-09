@@ -225,9 +225,6 @@ void BasicGreedyRefiner::determineRefinementNodes(PartitionedHypergraph &phg) {
                     });
   sharedData.nodeTracker.requestNewSearches(
       static_cast<SearchID>(_refinement_nodes.size()));
-  tbb::parallel_for(
-      0UL, _greedy_shared_data.thread_of_node.size(),
-      [&](const int i) { _greedy_shared_data.thread_of_node[i] = 0; });
 }
 
 void BasicGreedyRefiner::printMemoryConsumption() {

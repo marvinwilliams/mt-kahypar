@@ -45,8 +45,7 @@ public:
       : initial_num_nodes(hypergraph.initialNumNodes()), context(c),
         taskGroupID(taskGroupID),
         sharedData(hypergraph.initialNumNodes(), context),
-        _greedy_shared_data(hypergraph.initialNumNodes(),
-                            {context.shared_memory.num_threads,
+        _greedy_shared_data({context.shared_memory.num_threads,
                              vec<parallel::scalable_queue<HypernodeID>>(
                                  context.shared_memory.num_threads)}),
         ets_bgf([&] { return constructKWayGreedySearch(); }) {
