@@ -25,7 +25,10 @@ namespace mt_kahypar {
 bool KWayGreedy::findMoves(PartitionedHypergraph &phg,
                            std::vector<HypernodeID> &refinement_nodes) {
   localMoves.clear();
-  thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
+  thisSearch = sharedData.nodeTracker.highestActiveSearchID.add_fetch(
+      1, std::memory_order_relaxed);
+  const int thread_index = tbb::this_task_arena::current_thread_index();
+  _greedy_shared_data.thread_of_node[thisSearch] = thread_index;
 
   for (HypernodeID v : refinement_nodes) {
     if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
@@ -73,17 +76,19 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
               std::memory_order_acq_rel);
           if (searchOfV == thisSearch) {
             fm_strategy.updateGain(phg, v, move);
-          }  else {
+          } else if (searchOfV != 0 &&
+                     searchOfV !=
+                         sharedData.nodeTracker.deactivatedNodeMarker) {
             // send hypernode id to responsible threads message queue
-            size_t v_index = searchOfV -
-            sharedData.nodeTracker.deactivatedNodeMarker - 1;
-            size_t this_index = thisSearch -
-            sharedData.nodeTracker.deactivatedNodeMarker - 1;
-            ASSERT(v_index < _messages.size());
-            ASSERT(this_index < _messages[v_index].size());
-            _messages[v_index][this_index].push(v);
+            int v_index = _greedy_shared_data.thread_of_node[searchOfV];
+            int this_index = _greedy_shared_data.thread_of_node[thisSearch];
+            if (v_index >= 0) {
+              ASSERT(v_index < _greedy_shared_data.messages.size());
+              ASSERT(this_index < _greedy_shared_data.messages[v_index].size());
+              _greedy_shared_data.messages[v_index][this_index].push(v);
+            }
           }
-            neighborDeduplicator[v] = deduplicationTime;
+          neighborDeduplicator[v] = deduplicationTime;
         }
       }
     }
@@ -140,14 +145,15 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
       /* TODO: it is not essential to catch every queue entry when checking the
        * message queue. Since the queue is FIFO, no elements get lost and
        * therefore are read sooner or later <07-11-20, @noahares> */
-      size_t this_index = thisSearch -
-        sharedData.nodeTracker.deactivatedNodeMarker - 1;
-      ASSERT(this_index < _messages.size());
-      for (auto queue : _messages[this_index]) {
+      int this_index = _greedy_shared_data.thread_of_node[thisSearch];
+      ASSERT(this_index < _greedy_shared_data.messages.size());
+      for (auto queue : _greedy_shared_data.messages[this_index]) {
         while (!queue.empty()) {
           HypernodeID v = queue.front();
           queue.pop();
-          fm_strategy.updateGainFromOtherSearch(phg, v);
+          if (!sharedData.nodeTracker.isLocked(v)) {
+            fm_strategy.updateGainFromOtherSearch(phg, v);
+          }
         }
       }
       local_moves_since_sync = 0;
@@ -182,9 +188,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         local_moves_since_sync++;
         const bool improved_km1 = estimatedImprovement > bestImprovement;
         const bool improved_balance_less_equal_km1 =
-          estimatedImprovement >= bestImprovement &&
-          fromWeight == heaviestPartWeight &&
-          toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
+            estimatedImprovement >= bestImprovement &&
+            fromWeight == heaviestPartWeight &&
+            toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
 
         if (improved_km1 || improved_balance_less_equal_km1) {
           bestImprovement = estimatedImprovement;
@@ -196,7 +202,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
           sharedData.moveTracker.invalidateMove(move_id);
         }
       }
-
     }
 
     fm_strategy.updatePQs(phg);

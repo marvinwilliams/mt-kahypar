@@ -26,21 +26,22 @@
 #include "mt-kahypar/datastructures/delta_partitioned_hypergraph.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
+#include "mt-kahypar/partition/refinement/greedy/greedy_shared_data.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 
 namespace mt_kahypar {
 
-using HypernodeIDMessageMatrix = vec<vec<parallel::scalable_queue<HypernodeID>>>;
 class KWayGreedy {
 
 public:
   explicit KWayGreedy(const Context &c, HypernodeID numNodes,
                       FMSharedData &sharedData,
-                      HypernodeIDMessageMatrix &messages)
+                      GreedySharedData &greedy_shared_data)
       : context(c), thisSearch(0), k(context.partition.k),
         neighborDeduplicator(numNodes, 0),
         fm_strategy(context, numNodes, sharedData, runStats),
-        sharedData(sharedData), _gain(0), _messages(messages) {}
+        sharedData(sharedData), _gain(0),
+        _greedy_shared_data(greedy_shared_data) {}
 
   bool findMoves(PartitionedHypergraph &phg,
                  std::vector<HypernodeID> &refinement_nodes);
@@ -86,7 +87,7 @@ private:
 
   Gain _gain;
 
-  HypernodeIDMessageMatrix &_messages;
+  GreedySharedData &_greedy_shared_data;
 };
 
 } // namespace mt_kahypar
