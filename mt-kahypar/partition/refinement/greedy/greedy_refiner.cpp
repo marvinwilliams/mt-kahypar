@@ -117,6 +117,12 @@ bool BasicGreedyRefiner::refineImpl(
       break;
 
     overall_improvement += improvement;
+    /* TODO: is that all? <09-11-20, @noahares> */
+    tbb::parallel_for(MoveID(0), sharedData.moveTracker.numPerformedMoves(),
+                      [&](MoveID move_id) {
+                        phg.recomputeMoveFromBenefit(
+                            sharedData.moveTracker.moveOrder[move_id].node);
+                      });
   }
 
   if (context.partition.show_memory_consumption &&
