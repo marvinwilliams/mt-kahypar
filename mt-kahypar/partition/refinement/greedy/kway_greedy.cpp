@@ -66,8 +66,10 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
   // boundary vertices, can still be considered later since they are in the task
   // queue
   // --> actually not that bad
-  for (HyperedgeID e : edgesWithGainChanges) {
-    if (phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
+  for (const auto& egu : edgesWithGainChanges) {
+    HyperedgeID e = egu.e;
+    if (egu.needs_neighbor_update &&
+        phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
       for (HypernodeID v : phg.pins(e)) {
         if (neighborDeduplicator[v] != deduplicationTime) {
           SearchID searchOfV = sharedData.nodeTracker.searchOfNode[v].load(
@@ -117,17 +119,18 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
                         const HypernodeID pin_count_in_to_part_after) {
     // Gains of the pins of a hyperedge can only change in the following
     // situations.
+    bool needs_neighbor_update = false;
     if (pin_count_in_from_part_after == 0 ||
         pin_count_in_from_part_after == 1 || pin_count_in_to_part_after == 1 ||
         pin_count_in_to_part_after == 2) {
-      edgesWithGainChanges.push_back(he);
+      needs_neighbor_update = true;
     }
+    edgesWithGainChanges.push_back(
+        {he, edge_weight, pin_count_in_from_part_after,
+         pin_count_in_to_part_after, needs_neighbor_update});
+
     _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
              (pin_count_in_from_part_after == 0 ? edge_weight : 0);
-
-    fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from,
-                                 pin_count_in_from_part_after, move.to,
-                                 pin_count_in_to_part_after);
   };
 
   // we can almost make this function take a generic partitioned hypergraph
@@ -192,11 +195,18 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
       Gain move_delta = _gain - delta_before;
       bool accept_move = move_delta == move.gain || move_delta > 0;
       if (accept_move) {
+        for (const auto &egu : edgesWithGainChanges) {
+          // perform directly on phg and not abstract through fm_strategy
+          // because we dont have a delta_phg
+          phg.gainCacheUpdate(egu.e, egu.edge_weight, move.from,
+                              egu.pin_count_in_from_part_after, move.to,
+                              egu.pin_count_in_to_part_after);
+        }
         runStats.moves++;
-        estimatedImprovement += move.gain;
-        localMoves.emplace_back(move, move_id);
         /* TODO: use move.gain or move_delta?? <09-11-20, @noahares> */
         lastImprovement = move_delta;
+        estimatedImprovement += move_delta;
+        localMoves.emplace_back(move, move_id);
         local_moves_since_sync++;
         const bool improved_km1 = estimatedImprovement > bestImprovement;
         const bool improved_balance_less_equal_km1 =
@@ -210,9 +220,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         }
         updateNeighbors(phg, move);
       } else {
-        if (phg.changeNodePart(move.node, move.to, move.from, delta_func)) {
-          sharedData.moveTracker.invalidateMove(move_id);
-        }
+        // implicit max_to_weight = std::numeric_limits<>::max()
+        phg.changeNodePart(move.node, move.to, move.from, delta_func);
+        sharedData.moveTracker.invalidateMove(move_id);
       }
     }
 
@@ -236,7 +246,7 @@ void KWayGreedy::memoryConsumption(utils::MemoryTreeNode *parent) const {
   utils::MemoryTreeNode *edges_to_activate_node =
       localized_fm_node->addChild("edgesWithGainChanges");
   edges_to_activate_node->updateSize(edgesWithGainChanges.capacity() *
-                                     sizeof(HyperedgeID));
+                                     sizeof(EdgeGainUpdate));
 
   utils::MemoryTreeNode *local_moves_node = parent->addChild("Local FM Moves");
   local_moves_node->updateSize(localMoves.capacity() *

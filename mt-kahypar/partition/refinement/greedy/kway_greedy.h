@@ -22,8 +22,8 @@
 
 #include "mt-kahypar/partition/context.h"
 
-#include "mt-kahypar/parallel/stl/scalable_queue.h"
 #include "mt-kahypar/datastructures/delta_partitioned_hypergraph.h"
+#include "mt-kahypar/parallel/stl/scalable_queue.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/strategies/gain_cache_strategy.h"
 #include "mt-kahypar/partition/refinement/greedy/greedy_shared_data.h"
@@ -77,7 +77,14 @@ private:
   HypernodeID deduplicationTime = 0;
 
   // ! Stores hyperedges whose pins's gains may have changed after vertex move
-  vec<HyperedgeID> edgesWithGainChanges;
+  struct EdgeGainUpdate {
+    HyperedgeID e;
+    HyperedgeWeight edge_weight;
+    HypernodeID pin_count_in_from_part_after;
+    HypernodeID pin_count_in_to_part_after;
+    bool needs_neighbor_update;
+  };
+  vec<EdgeGainUpdate> edgesWithGainChanges;
 
   FMStats runStats;
 
