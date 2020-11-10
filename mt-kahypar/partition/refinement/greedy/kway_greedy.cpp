@@ -163,8 +163,11 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
       ASSERT(end <= static_cast<int>(_greedy_shared_data.messages.size()));
       for (auto &mq : {mq_begin, mq_end}) {
         for (const auto v : *mq) {
-          if (!sharedData.nodeTracker.isLocked(v)) {
+          // use deduplicator to prevent uneeded pq updates
+          if (neighborDeduplicator[v] != deduplicationTime &&
+              !sharedData.nodeTracker.isLocked(v)) {
             fm_strategy.updateGainFromOtherSearch(phg, v);
+            neighborDeduplicator[v] = deduplicationTime;
           }
         }
         fm_strategy.updatePQs(phg);
