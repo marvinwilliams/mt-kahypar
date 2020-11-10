@@ -44,7 +44,7 @@ public:
         _greedy_shared_data(greedy_shared_data) {}
 
   bool findMoves(PartitionedHypergraph &phg,
-                 std::vector<HypernodeID> &refinement_nodes);
+                 vec<HypernodeID> &refinement_nodes);
 
   Gain getGain() { return _gain; }
 

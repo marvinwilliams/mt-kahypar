@@ -53,6 +53,7 @@ bool BasicGreedyRefiner::refineImpl(
   LOG << "You called greedy refinement";
 
   Gain overall_improvement = 0;
+  tbb::task_group tg;
   sharedData.release_nodes = context.refinement.greedy.release_nodes;
   HighResClockTimepoint greedy_start =
       std::chrono::high_resolution_clock::now();
@@ -67,34 +68,29 @@ bool BasicGreedyRefiner::refineImpl(
     }
 
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
-    determineRefinementNodes(phg);
+    roundInitialization(phg, context.refinement.greedy.assignment_strategy);
     timer.stop_timer("collect_border_nodes");
 
-    size_t num_border_nodes = _refinement_nodes.size();
+    /* TODO: helper for real size <10-11-20, @noahares> */
+    size_t num_border_nodes = numBorderNodes();
     if (num_border_nodes == 0) {
       break;
     }
     timer.start_timer("find_moves", "Find Moves");
     sharedData.finishedTasks.store(0, std::memory_order_relaxed);
-    /* task groups seem to have an advantage only if tasks may be appended
-     * later on, but here this is not the case, so parallel_for makes a good
-     * choice */
-    /* TODO: back to task group <07-11-20, @noahares> */
-    tbb::parallel_for(
-        tbb::blocked_range<size_t>(0, _refinement_nodes.size()),
-        [&](const tbb::blocked_range<size_t> &r) {
-          auto &greedy = ets_bgf.local();
-          std::vector<HypernodeID> local_nodes(
-              _refinement_nodes.begin() + r.begin(),
-              _refinement_nodes.begin() + r.end());
-          while (sharedData.finishedTasks.load(std::memory_order_relaxed) <
-                     sharedData.finishedTasksLimit &&
-                 greedy.findMoves(phg, local_nodes)) {
-          }
-          sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
-        },
-        /* TODO: check for partitioners <05-11-20, @noahares> */
-        tbb::static_partitioner()); // no work stealing
+    auto task = [&](const size_t task_id) {
+      auto &greedy = ets_bgf.local();
+      greedy.findMoves(phg, _refinement_nodes[task_id]);
+      sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
+    };
+    size_t num_tasks =
+        std::min(num_border_nodes, context.shared_memory.num_threads);
+    ASSERT(static_cast<int>(num_tasks) <=
+           TBBNumaArena::instance().total_number_of_threads());
+    for (size_t i = 0; i < num_tasks; ++i) {
+      tg.run(std::bind(task, i));
+    }
+    tg.wait();
     timer.stop_timer("find_moves");
 
     HighResClockTimepoint greedy_timestamp =
@@ -138,26 +134,22 @@ bool BasicGreedyRefiner::refineImpl(
   return overall_improvement > 0;
 
   return false;
-} // namespace mt_kahypar
+}
 
-/* TODO: when removing the work queue round init can be done easier and static
- * <02-11-20, @noahares> */
+/* TODO: improve assignment strategies <10-11-20, @noahares> */
 void BasicGreedyRefiner::roundInitialization(
     PartitionedHypergraph &phg, GreedyAssigmentStrategy assignment_strategy) {
   // clear border nodes
   sharedData.refinementNodes.clear();
   CAtomic<int> task_id_static(0);
 
-  /* TODO: other possible static assignment? since isBorderNode consumes the
-   * main computation time add_fetch should not produce much overhead <01-11-20,
-   * @noahares> */
   auto static_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
     for (HypernodeID u = r.begin(); u < r.end(); ++u) {
       if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
         const int local_task_id =
             task_id_static.add_fetch(1, std::memory_order_relaxed) %
             TBBNumaArena::instance().total_number_of_threads();
-        sharedData.refinementNodes.safe_push(u, local_task_id);
+        _refinement_nodes[local_task_id].push_back(u);
       }
     }
   };
@@ -168,7 +160,7 @@ void BasicGreedyRefiner::roundInitialization(
            task_id < TBBNumaArena::instance().total_number_of_threads());
     for (HypernodeID u = r.begin(); u < r.end(); ++u) {
       if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-        sharedData.refinementNodes.safe_push(u, task_id);
+        _refinement_nodes[task_id].push_back(u);
       }
     }
   };
@@ -181,7 +173,7 @@ void BasicGreedyRefiner::roundInitialization(
         ASSERT(task_id >= 0 &&
                task_id < TBBNumaArena::instance().total_number_of_threads());
         /* TODO: mt-methis better for load balancing <2020-11-02, @noahares> */
-        sharedData.refinementNodes.safe_push(u, task_id);
+        _refinement_nodes[task_id].push_back(u);
       }
     }
   };
@@ -223,7 +215,7 @@ void BasicGreedyRefiner::determineRefinementNodes(PartitionedHypergraph &phg) {
                     [&](const tbb::blocked_range<HypernodeID> &r) {
                       for (HypernodeID u = r.begin(); u < r.end(); ++u) {
                         if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-                          _refinement_nodes.push_back(u);
+                          //                          _refinement_nodes.push_back(u);
                         }
                       }
                     });

@@ -23,7 +23,7 @@
 namespace mt_kahypar {
 
 bool KWayGreedy::findMoves(PartitionedHypergraph &phg,
-                           std::vector<HypernodeID> &refinement_nodes) {
+                           vec<HypernodeID> &refinement_nodes) {
   localMoves.clear();
   thisSearch = sharedData.nodeTracker.highestActiveSearchID.add_fetch(
       1, std::memory_order_relaxed);
