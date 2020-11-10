@@ -84,15 +84,14 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
                          sharedData.nodeTracker.deactivatedNodeMarker) {
             // send hypernode id to responsible threads message queue
             int v_index =
-                searchOfV - sharedData.nodeTracker.deactivatedNodeMarker;
+                searchOfV - sharedData.nodeTracker.deactivatedNodeMarker - 1;
             int this_index =
-                thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
+                thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
             int num_threads = context.shared_memory.num_threads;
             if (v_index >= 0) {
-              ASSERT((v_index + 1) * num_threads + this_index <
+              ASSERT(v_index * num_threads + this_index <
                      static_cast<int>(_greedy_shared_data.messages.size()));
-              _greedy_shared_data
-                  .messages[(v_index + 1) * num_threads + this_index]
+              _greedy_shared_data.messages[v_index * num_threads + this_index]
                   .push_back(v);
             }
           }
@@ -153,10 +152,10 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         context.refinement.greedy.num_moves_before_sync) {
       /* TODO: semaphore <07-11-20, @noahares> */
       int this_index =
-          thisSearch - sharedData.nodeTracker.deactivatedNodeMarker;
+          thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
       int num_threads = context.shared_memory.num_threads;
       auto mq_begin =
-          _greedy_shared_data.messages.begin() + (this_index + 1) * num_threads;
+          _greedy_shared_data.messages.begin() + this_index * num_threads;
       auto mq_end = mq_begin + num_threads;
       ASSERT(end <= static_cast<int>(_greedy_shared_data.messages.size()));
       for (auto &mq : {mq_begin, mq_end}) {

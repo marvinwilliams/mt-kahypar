@@ -62,8 +62,8 @@ bool BasicGreedyRefiner::refineImpl(
        ++round) { // global multi try rounds
 
     // clear message queues
-    for (auto &queue : _greedy_shared_data.messages) {
-      parallel::scalable_queue<HyperedgeID>().swap(queue);
+    for (auto &mq : _greedy_shared_data.messages) {
+      mq.clear();
     }
 
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
