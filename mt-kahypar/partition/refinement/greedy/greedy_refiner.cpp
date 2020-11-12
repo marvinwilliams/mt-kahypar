@@ -143,7 +143,7 @@ bool BasicGreedyRefiner::refineImpl(
 
 /* TODO: improve assignment strategies <10-11-20, @noahares> */
 void BasicGreedyRefiner::roundInitialization(
-    PartitionedHypergraph &phg, GreedyAssigmentStrategy assignment_strategy) {
+    PartitionedHypergraph &phg, GreedyAssignmentStrategy assignment_strategy) {
   // clear border nodes
   sharedData.refinementNodes.clear();
   CAtomic<int> task_id_static(0);
@@ -184,17 +184,17 @@ void BasicGreedyRefiner::roundInitialization(
   };
 
   switch (assignment_strategy) {
-  case GreedyAssigmentStrategy::static_assignement:
+  case GreedyAssignmentStrategy::static_assignement:
     LOG << "Round initialized with static assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       static_assignment);
     break;
-  case GreedyAssigmentStrategy::random_assignment:
+  case GreedyAssignmentStrategy::random_assignment:
     LOG << "Round initialized with random assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       random_assignment);
     break;
-  case GreedyAssigmentStrategy::partition_assignment:
+  case GreedyAssignmentStrategy::partition_assignment:
     LOG << "Round initialized with partition assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       partition_assignment);

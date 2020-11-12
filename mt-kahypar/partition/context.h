@@ -147,8 +147,8 @@ struct GreedyRefinementParameters {
   mutable bool obey_minimal_parallelism = false;
   bool shuffle = true;
   bool release_nodes = true;
-  GreedyAssigmentStrategy assignment_strategy =
-      GreedyAssigmentStrategy::random_assignment;
+  GreedyAssignmentStrategy assignment_strategy =
+      GreedyAssignmentStrategy::random_assignment;
   size_t num_moves_before_sync = 10;
   // Add your parameters here
 };

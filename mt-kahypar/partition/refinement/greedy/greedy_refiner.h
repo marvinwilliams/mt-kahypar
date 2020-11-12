@@ -62,7 +62,7 @@ public:
   void initializeImpl(PartitionedHypergraph &phg) final;
 
   void roundInitialization(PartitionedHypergraph &phg,
-                           GreedyAssigmentStrategy assignment_strategy);
+                           GreedyAssignmentStrategy assignment_strategy);
 
   void determineRefinementNodes(PartitionedHypergraph &phg);
 

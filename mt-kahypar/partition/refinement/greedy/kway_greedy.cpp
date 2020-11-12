@@ -222,7 +222,7 @@ void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
   auto mq_begin =
       _greedy_shared_data.messages.begin() + this_index * num_threads;
   auto mq_end = mq_begin + num_threads;
-  ASSERT(end <= static_cast<int>(_greedy_shared_data.messages.size()));
+  ASSERT(mq_end <= _greedy_shared_data.messages.end());
   std::for_each(mq_begin, mq_end, [&](auto &mq) {
     for (const auto v : mq) {
       // use deduplicator to prevent uneeded pq updates

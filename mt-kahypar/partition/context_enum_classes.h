@@ -118,7 +118,7 @@ enum class GreedyRefinementAlgorithm : uint8_t {
   do_nothing
 };
 
-enum class GreedyAssigmentStrategy : uint8_t {
+enum class GreedyAssignmentStrategy : uint8_t {
   static_assignement,
   random_assignment,
   partition_assignment
@@ -171,5 +171,8 @@ LabelPropagationAlgorithm labelPropagationAlgorithmFromString(const std::string&
 FMAlgorithm fmAlgorithmFromString(const std::string& type);
 
 GreedyRefinementAlgorithm greedyRefinementAlgorithmFromString(const std::string& type);
+
+GreedyAssignmentStrategy
+greedyAssignmentStrategyFromString(const std::string &strategy);
 
 }  // namesapce mt_kahypar
