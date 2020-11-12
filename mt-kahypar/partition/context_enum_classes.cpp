@@ -309,4 +309,16 @@ namespace mt_kahypar {
     return GreedyRefinementAlgorithm::do_nothing;
   }
 
+  GreedyAssignmentStrategy greedyAssignmentStrategyFromString(const std::string& strategy) {
+    if (strategy == "greedy_random") {
+      return GreedyAssignmentStrategy::random_assignment;
+    } else if (strategy == "greedy_static") {
+      return GreedyAssignmentStrategy::static_assignement;
+    } else if (strategy == "greedy_partition") {
+      return GreedyAssignmentStrategy::partition_assignment;
+    }
+    ERROR("Illegal option: " + strategy);
+    return GreedyAssignmentStrategy::random_assignment;
+  }
+
 }

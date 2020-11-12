@@ -334,7 +334,7 @@ namespace mt_kahypar {
              "If the FM time exceeds time_limit := k * factor * coarsening_time, than the FM config is switched into a light version."
              "If the FM refiner exceeds 2 * time_limit, than the current multitry FM run is aborted and the algorithm proceeds to"
              "the next finer level.")
-            #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
+#ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :
                               &context.initial_partitioning.refinement.global_fm.use_global_fm))->value_name(
@@ -369,6 +369,16 @@ namespace mt_kahypar {
              "Greedy Refinement Algorithm:\n"
              "- greedy_basic\n"
              "- do_nothing")
+            ((initial_partitioning ? "i-r-greedy-assignment-strategy" : "r-greedy-assignment-strategy"),
+             po::value<std::string>()->value_name("<string>")->notifier(
+               [&](const std::string& strategy) {
+               context.refinement.greedy.assignment_strategy =
+               greedyAssignmentStrategyFromString(strategy);
+               })->default_value("greedy_random"),
+             "Greedy Assignment Strategies:\n"
+             "- greedy_static\n"
+             "- greedy_random\n"
+             "- greedy_partition")
             ;
     return options;
   }
