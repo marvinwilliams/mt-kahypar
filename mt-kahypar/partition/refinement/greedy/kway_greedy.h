@@ -40,8 +40,7 @@ public:
       : context(c), thisSearch(0), k(context.partition.k),
         neighborDeduplicator(numNodes, 0),
         fm_strategy(context, numNodes, sharedData, runStats),
-        sharedData(sharedData), _gain(0),
-        _greedy_shared_data(greedy_shared_data) {}
+        sharedData(sharedData), _greedy_shared_data(greedy_shared_data) {}
 
   bool findMoves(PartitionedHypergraph &phg,
                  vec<HypernodeID> &refinement_nodes);
@@ -54,6 +53,7 @@ public:
 
 private:
   void internalFindMoves(PartitionedHypergraph &phg);
+  void syncMessageQueues(PartitionedHypergraph &phg);
 
   template <typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void updateNeighbors(PHG &phg,
@@ -92,9 +92,11 @@ private:
 
   FMSharedData &sharedData;
 
-  Gain _gain;
+  Gain _gain = 0;
 
   GreedySharedData &_greedy_shared_data;
+
+  size_t local_moves_since_sync = 0;
 };
 
 } // namespace mt_kahypar

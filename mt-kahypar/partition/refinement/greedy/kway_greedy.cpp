@@ -137,7 +137,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
   Gain lastImprovement = std::numeric_limits<Gain>::max();
-  size_t local_moves_since_sync = 0;
   _gain = 0;
 
   HypernodeWeight heaviestPartWeight = 0;
@@ -149,32 +148,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
     if (local_moves_since_sync >=
         context.refinement.greedy.num_moves_before_sync) {
-      if (!_greedy_shared_data.hold_barrier.aquire()) {
-        LOG << "tried to aquire barrier to often";
-      }
-      int this_index =
-          thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
-      int num_threads = context.shared_memory.num_threads;
-      auto mq_begin =
-          _greedy_shared_data.messages.begin() + this_index * num_threads;
-      auto mq_end = mq_begin + num_threads;
-      ASSERT(end <= static_cast<int>(_greedy_shared_data.messages.size()));
-      std::for_each(mq_begin, mq_end, [&](auto &mq) {
-        for (const auto v : mq) {
-          // use deduplicator to prevent uneeded pq updates
-          if (neighborDeduplicator[v] != deduplicationTime &&
-              !sharedData.nodeTracker.isLocked(v)) {
-            fm_strategy.updateGainFromOtherSearch(phg, v);
-            neighborDeduplicator[v] = deduplicationTime;
-          }
-        }
-        fm_strategy.updatePQs(phg);
-        mq.clear();
-      });
-      local_moves_since_sync = 0;
-      if (!_greedy_shared_data.hold_barrier.release()) {
-        LOG << "tried to aquire barrier to often";
-      }
+      syncMessageQueues(phg);
     }
 
     if (!fm_strategy.findNextMoveNoRetry(phg, move))
@@ -236,6 +210,35 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   runStats.estimated_improvement = bestImprovement;
   fm_strategy.clearPQs(bestImprovementIndex);
   runStats.merge(stats);
+}
+
+void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
+  if (!_greedy_shared_data.hold_barrier.aquire()) {
+    throw std::runtime_error("Barrier expected less calls to aquire");
+  }
+  int this_index =
+      thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
+  int num_threads = context.shared_memory.num_threads;
+  auto mq_begin =
+      _greedy_shared_data.messages.begin() + this_index * num_threads;
+  auto mq_end = mq_begin + num_threads;
+  ASSERT(end <= static_cast<int>(_greedy_shared_data.messages.size()));
+  std::for_each(mq_begin, mq_end, [&](auto &mq) {
+    for (const auto v : mq) {
+      // use deduplicator to prevent uneeded pq updates
+      if (neighborDeduplicator[v] != deduplicationTime &&
+          !sharedData.nodeTracker.isLocked(v)) {
+        fm_strategy.updateGainFromOtherSearch(phg, v);
+        neighborDeduplicator[v] = deduplicationTime;
+      }
+    }
+    fm_strategy.updatePQs(phg);
+    mq.clear();
+  });
+  local_moves_since_sync = 0;
+  if (!_greedy_shared_data.hold_barrier.release()) {
+    throw std::runtime_error("Barrier expected less calls to release");
+  }
 }
 
 void KWayGreedy::memoryConsumption(utils::MemoryTreeNode *parent) const {
