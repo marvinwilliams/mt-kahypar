@@ -20,14 +20,68 @@
 
 #pragma once
 
-#include "mt-kahypar/parallel/stl/scalable_queue.h"
-#include "mt-kahypar/partition/refinement/fm/fm_commons.h"
+#include "mt-kahypar/datastructures/hypergraph_common.h"
+#include <condition_variable>
+#include <mutex>
 namespace mt_kahypar {
 
+class HoldBarrier {
+public:
+  HoldBarrier(size_t size) : _size(size) {}
+  bool aquire() {
+    std::unique_lock<std::mutex> lock{_mutex};
+    if (_current == _size - 1) {
+      ++_current;
+      _cv.notify_all();
+    } else if (_current == _size) {
+      lock.unlock();
+      return false;
+    } else {
+      ++_current;
+      _cv.wait(lock, [this] { return _current == _size; });
+    }
+    return true;
+  }
+  bool release() {
+    std::unique_lock<std::mutex> lock{_mutex};
+    if (_current == 1) {
+      --_current;
+      _cv.notify_all();
+    } else if (_current == 0) {
+      lock.unlock();
+      return false;
+    } else {
+      --_current;
+      _cv.wait(lock, [this] { return _current == 0; });
+    }
+    return true;
+  }
+  bool lowerSize() {
+    std::unique_lock<std::mutex> lock{_mutex};
+    if (_size > 1) {
+      --_size;
+      _cv.notify_all();
+      lock.unlock();
+      return true;
+    } else {
+      lock.unlock();
+      return false;
+    }
+  }
+  void reset(size_t size) { _size = size; }
+
+private:
+  size_t _size;
+  std::condition_variable _cv;
+  std::mutex _mutex;
+  size_t _current = 0;
+};
 using HypernodeIDMessageMatrix = vec<vec<HypernodeID>>;
 struct GreedySharedData {
   HypernodeIDMessageMatrix messages;
+  HoldBarrier hold_barrier;
   GreedySharedData(size_t num_threads)
-      : messages(num_threads * num_threads, vec<HypernodeID>()) {}
+      : messages(num_threads * num_threads, vec<HypernodeID>()),
+        hold_barrier(num_threads) {}
 };
 } // namespace mt_kahypar

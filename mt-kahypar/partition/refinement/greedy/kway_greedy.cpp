@@ -133,10 +133,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
              (pin_count_in_from_part_after == 0 ? edge_weight : 0);
   };
 
-  // we can almost make this function take a generic partitioned hypergraph
-  // we would have to add the success func to the interface of DeltaPhg (and
-  // then ignore it there...) and do the local rollback outside this function
-
   size_t bestImprovementIndex = 0;
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
@@ -153,7 +149,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
     if (local_moves_since_sync >=
         context.refinement.greedy.num_moves_before_sync) {
-      /* TODO: semaphore <07-11-20, @noahares> */
+      if (!_greedy_shared_data.hold_barrier.aquire()) {
+        LOG << "tried to aquire barrier to often";
+      }
       int this_index =
           thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
       int num_threads = context.shared_memory.num_threads;
@@ -161,8 +159,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
           _greedy_shared_data.messages.begin() + this_index * num_threads;
       auto mq_end = mq_begin + num_threads;
       ASSERT(end <= static_cast<int>(_greedy_shared_data.messages.size()));
-      for (auto &mq : {mq_begin, mq_end}) {
-        for (const auto v : *mq) {
+      std::for_each(mq_begin, mq_end, [&](auto &mq) {
+        for (const auto v : mq) {
           // use deduplicator to prevent uneeded pq updates
           if (neighborDeduplicator[v] != deduplicationTime &&
               !sharedData.nodeTracker.isLocked(v)) {
@@ -171,9 +169,12 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
           }
         }
         fm_strategy.updatePQs(phg);
-        mq->clear();
-      }
+        mq.clear();
+      });
       local_moves_since_sync = 0;
+      if (!_greedy_shared_data.hold_barrier.release()) {
+        LOG << "tried to aquire barrier to often";
+      }
     }
 
     if (!fm_strategy.findNextMoveNoRetry(phg, move))
