@@ -128,10 +128,7 @@ class StaticHypergraph {
       _size = size;
     }
 
-    HyperedgeWeight weight() const {
-      ASSERT(!isDisabled());
-      return _weight;
-    }
+    HyperedgeWeight weight() const { return _weight; }
 
     void setWeight(HyperedgeWeight weight) {
       ASSERT(!isDisabled());
