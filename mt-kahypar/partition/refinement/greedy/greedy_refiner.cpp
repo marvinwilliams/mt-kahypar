@@ -62,18 +62,10 @@ bool BasicGreedyRefiner::refineImpl(
   for (size_t round = 0; round < context.refinement.greedy.multitry_rounds;
        ++round) { // global multi try rounds
 
-    // clear message queues
-    for (auto &mq : _greedy_shared_data.messages) {
-      mq.clear();
-    }
-
-    _greedy_shared_data.hold_barrier.reset(context.shared_memory.num_threads);
-
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
     roundInitialization(phg, context.refinement.greedy.assignment_strategy);
     timer.stop_timer("collect_border_nodes");
 
-    /* TODO: helper for real size <10-11-20, @noahares> */
     size_t num_border_nodes = numBorderNodes();
     if (num_border_nodes == 0) {
       break;
@@ -145,7 +137,17 @@ bool BasicGreedyRefiner::refineImpl(
 void BasicGreedyRefiner::roundInitialization(
     PartitionedHypergraph &phg, GreedyAssignmentStrategy assignment_strategy) {
   // clear border nodes
-  sharedData.refinementNodes.clear();
+  for (auto &v : _refinement_nodes) {
+    v.clear();
+  }
+
+  // clear message queues
+  for (auto &mq : _greedy_shared_data.messages) {
+    mq.clear();
+  }
+
+  _greedy_shared_data.hold_barrier.reset(context.shared_memory.num_threads);
+
   CAtomic<int> task_id_static(0);
 
   auto static_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
@@ -205,13 +207,15 @@ void BasicGreedyRefiner::roundInitialization(
 
   // shuffle task queue if requested
   if (context.refinement.greedy.shuffle) {
-    sharedData.refinementNodes.shuffle();
+    tbb::parallel_for_each(_refinement_nodes, [](vec<HypernodeID> q) {
+      utils::Randomize::instance().shuffleVector(q);
+    });
   }
 
   // requesting new searches activates all nodes by raising the deactivated node
   // marker also clears the array tracking search IDs in case of overflow
   sharedData.nodeTracker.requestNewSearches(
-      static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
+      static_cast<SearchID>(_refinement_nodes.size()));
 }
 
 void BasicGreedyRefiner::determineRefinementNodes(PartitionedHypergraph &phg) {
