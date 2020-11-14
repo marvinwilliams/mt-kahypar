@@ -29,39 +29,46 @@ class HoldBarrier {
 public:
   HoldBarrier(size_t size) : _size(size) {}
   bool aquire() {
-    std::unique_lock<std::mutex> lock{_mutex};
+    std::unique_lock<std::mutex> lock(_mutex);
     if (_current == _size - 1) {
       ++_current;
+      // LOG << _current;
+      lock.unlock();
       _cv.notify_all();
     } else if (_current == _size) {
       lock.unlock();
       return false;
     } else {
       ++_current;
+      // LOG << _current;
       _cv.wait(lock, [this] { return _current == _size; });
     }
     return true;
   }
   bool release() {
-    std::unique_lock<std::mutex> lock{_mutex};
+    std::unique_lock<std::mutex> lock(_mutex);
     if (_current == 1) {
       --_current;
+      // LOG << _current;
+      lock.unlock();
       _cv.notify_all();
     } else if (_current == 0) {
       lock.unlock();
       return false;
     } else {
       --_current;
+      // LOG << _current;
       _cv.wait(lock, [this] { return _current == 0; });
     }
     return true;
   }
   bool lowerSize() {
-    std::unique_lock<std::mutex> lock{_mutex};
+    std::unique_lock<std::mutex> lock(_mutex);
     if (_size > 1) {
       --_size;
-      _cv.notify_all();
+      // LOG << "Size" << _size;
       lock.unlock();
+      _cv.notify_all();
       return true;
     } else {
       lock.unlock();
