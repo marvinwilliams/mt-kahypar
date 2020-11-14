@@ -369,6 +369,14 @@ namespace mt_kahypar {
              "Greedy Refinement Algorithm:\n"
              "- greedy_basic\n"
              "- do_nothing")
+            ((initial_partitioning ? "i-r-greedy-multitry-rounds" : "r-greedy-multitry-rounds"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.greedy.multitry_rounds :
+                 &context.refinement.greedy.multitry_rounds))->value_name("<size_t>")->default_value(10),
+             "Number of Greedy rounds within one level of the multilevel hierarchy.")
+            ((initial_partitioning ? "i-r-greedy-shuffle" : "r-greedy-shuffle"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.greedy.shuffle :
+                 &context.refinement.greedy.shuffle))->value_name("<bool>")->default_value(true),
+             "If true, shuffle refinement nodes before local search.")
             ((initial_partitioning ? "i-r-greedy-assignment-strategy" : "r-greedy-assignment-strategy"),
              po::value<std::string>()->value_name("<string>")->notifier(
                [&](const std::string& strategy) {
