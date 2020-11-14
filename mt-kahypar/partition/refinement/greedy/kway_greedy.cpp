@@ -66,7 +66,7 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
   // boundary vertices, can still be considered later since they are in the task
   // queue
   // --> actually not that bad
-  for (const auto& egu : edgesWithGainChanges) {
+  for (const auto &egu : edgesWithGainChanges) {
     HyperedgeID e = egu.e;
     if (egu.needs_neighbor_update &&
         phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
@@ -90,12 +90,10 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
             int this_index =
                 thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
             int num_threads = context.shared_memory.num_threads;
-            if (v_index >= 0) {
-              ASSERT(v_index * num_threads + this_index <
-                     static_cast<int>(_greedy_shared_data.messages.size()));
-              _greedy_shared_data.messages[v_index * num_threads + this_index]
-                  .push_back(v);
-            }
+            ASSERT(v_index * num_threads + this_index <
+                   static_cast<int>(_greedy_shared_data.messages.size()));
+            _greedy_shared_data.messages[v_index * num_threads + this_index]
+                .push_back(v);
           }
           neighborDeduplicator[v] = deduplicationTime;
         }
@@ -171,7 +169,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
     if (moved) {
       Gain move_delta = _gain - delta_before;
-      bool accept_move = move_delta == move.gain || move_delta > 0;
+      bool accept_move = move_delta == move.gain && move_delta >= 0;
       if (accept_move) {
         for (const auto &egu : edgesWithGainChanges) {
           // perform directly on phg and not abstract through fm_strategy
