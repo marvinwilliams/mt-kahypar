@@ -82,16 +82,15 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
                      sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
             fm_strategy.insertIntoPQ(phg, v, 0);
           } else if (searchOfV != 0 &&
-                     searchOfV !=
-                         sharedData.nodeTracker.deactivatedNodeMarker) {
+                     searchOfV > sharedData.nodeTracker.deactivatedNodeMarker) {
             // send hypernode id to responsible threads message queue
-            int v_index =
+            SearchID v_index =
                 searchOfV - sharedData.nodeTracker.deactivatedNodeMarker - 1;
-            int this_index =
+            SearchID this_index =
                 thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
-            int num_threads = context.shared_memory.num_threads;
+            SearchID num_threads = context.shared_memory.num_threads;
             ASSERT(v_index * num_threads + this_index <
-                   static_cast<int>(_greedy_shared_data.messages.size()));
+                   static_cast<SearchID>(_greedy_shared_data.messages.size()));
             _greedy_shared_data.messages[v_index * num_threads + this_index]
                 .push_back(v);
           }

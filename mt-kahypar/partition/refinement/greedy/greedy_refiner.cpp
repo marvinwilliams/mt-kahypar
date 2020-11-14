@@ -113,6 +113,7 @@ bool BasicGreedyRefiner::refineImpl(
                         phg.recomputeMoveFromBenefit(
                             sharedData.moveTracker.moveOrder[move_id].node);
                       });
+    sharedData.moveTracker.reset();
   }
 
   if (context.partition.show_memory_consumption &&
@@ -130,8 +131,6 @@ bool BasicGreedyRefiner::refineImpl(
   ASSERT(metrics.km1 == metrics::km1(phg), V(metrics.km1)
                                                << V(metrics::km1(phg)));
   return overall_improvement > 0;
-
-  return false;
 }
 
 /* TODO: improve assignment strategies <10-11-20, @noahares> */
