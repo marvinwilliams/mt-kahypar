@@ -95,7 +95,8 @@ public:
   void updateGainFromOtherSearch(const PartitionedHypergraph &phg,
                                  const HypernodeID v) {
     MoveID move_id = sharedData.moveTracker.moveOfNode[v];
-    if (move_id != 0 && sharedData.moveTracker.isMoveStillValid(move_id)) {
+    if (move_id != 0 && !sharedData.moveTracker.isMoveStale(move_id) &&
+        sharedData.moveTracker.isMoveStillValid(move_id)) {
       Move move = sharedData.moveTracker.getMove(move_id);
       updateGain(phg, v, move);
     }
