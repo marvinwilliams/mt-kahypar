@@ -75,9 +75,7 @@ bool BasicGreedyRefiner::refineImpl(
     auto task = [&](const size_t task_id) {
       auto &greedy = ets_bgf.local();
       greedy.findMoves(phg, _refinement_nodes[task_id]);
-      if (sharedData.finishedTasks < sharedData.finishedTasksLimit) {
-        _greedy_shared_data.hold_barrier.lowerSize();
-      }
+      _greedy_shared_data.hold_barrier.lowerSize();
       sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
     };
     size_t num_tasks =

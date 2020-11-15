@@ -210,9 +210,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 }
 
 void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
-  if (!_greedy_shared_data.hold_barrier.aquire()) {
-    throw std::runtime_error("Barrier expected less calls to aquire");
-  }
+  _greedy_shared_data.hold_barrier.aquire();
   int this_index =
       thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
   int num_threads = context.shared_memory.num_threads;
@@ -233,9 +231,7 @@ void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
     mq.clear();
   });
   local_moves_since_sync = 0;
-  if (!_greedy_shared_data.hold_barrier.release()) {
-    throw std::runtime_error("Barrier expected less calls to release");
-  }
+  _greedy_shared_data.hold_barrier.release();
 }
 
 void KWayGreedy::memoryConsumption(utils::MemoryTreeNode *parent) const {
