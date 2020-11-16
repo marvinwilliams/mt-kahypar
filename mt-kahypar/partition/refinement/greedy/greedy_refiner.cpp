@@ -22,6 +22,7 @@
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/memory_tree.h"
 #include "mt-kahypar/utils/timer.h"
+#include <tbb/parallel_sort.h>
 
 namespace mt_kahypar {
 
@@ -170,15 +171,20 @@ void BasicGreedyRefiner::roundInitialization(
     }
   };
 
+  tbb::enumerable_thread_specific<vec<vec<HypernodeID>>>
+      partitioned_border_nodes;
+  vec<std::pair<size_t, PartitionID>> border_part_sizes(context.partition.k);
+  vec<vec<HypernodeID>> border_nodes(context.partition.k);
+  size_t sum;
+  size_t target_size;
+  size_t index = 0;
+
   auto partition_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
+    auto &tl_border_nodes = partitioned_border_nodes.local();
+    tl_border_nodes.resize(context.partition.k);
     for (HypernodeID u = r.begin(); u < r.end(); ++u) {
       if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-        const PartitionID task_id =
-            phg.partID(u) % TBBNumaArena::instance().total_number_of_threads();
-        ASSERT(task_id >= 0 &&
-               task_id < TBBNumaArena::instance().total_number_of_threads());
-        /* TODO: mt-methis better for load balancing <2020-11-02, @noahares> */
-        _refinement_nodes[task_id].push_back(u);
+        tl_border_nodes[phg.partID(u)].push_back(u);
       }
     }
   };
@@ -198,6 +204,53 @@ void BasicGreedyRefiner::roundInitialization(
     LOG << "Round initialized with partition assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       partition_assignment);
+    // make pairs of number of border nodes in a partition and the partition id.
+    // Also combine the found border nodes of each partition into one bucket
+    // list
+    for (const auto &tl_border_nodes : partitioned_border_nodes) {
+      for (PartitionID i = 0; i < context.partition.k; ++i) {
+        border_part_sizes[i] = std::make_pair(
+            border_part_sizes[i].first + tl_border_nodes[i].size(), i);
+        border_nodes[i].insert(
+            std::end(border_nodes[i]),
+            std::make_move_iterator(tl_border_nodes[i].begin()),
+            std::make_move_iterator(tl_border_nodes[i].end()));
+      }
+    }
+
+    // sort pairs by number of border nodes descending
+    tbb::parallel_sort(border_part_sizes.begin(), border_part_sizes.end(),
+                       std::greater<>());
+
+    sum = std::accumulate(border_part_sizes.begin(), border_part_sizes.end(), 0,
+                          [](size_t a, const auto &b) { return a + b.first; });
+
+    // optimal number of border nodes for each thread
+    target_size = sum / context.shared_memory.num_threads;
+
+    // distribute border nodes equally onto threads
+    index = 0;
+    for (const auto &nodes : border_part_sizes) {
+      size_t start_index = index;
+      int diff = target_size - _refinement_nodes[index].size() + nodes.first;
+      int best_diff = diff;
+      int best_diff_index = index;
+      bool all_checked = false;
+      while (diff < 0 && !all_checked) {
+        index = (index + 1) % context.shared_memory.num_threads;
+        diff = target_size - _refinement_nodes[index].size() + nodes.first;
+        best_diff_index = diff > best_diff ? index : best_diff_index;
+        best_diff = std::max(best_diff, diff);
+        if (index == start_index) {
+          all_checked = true;
+        }
+      }
+      _refinement_nodes[best_diff_index].insert(
+          std::end(_refinement_nodes[best_diff_index]),
+          std::make_move_iterator(border_nodes[nodes.second].begin()),
+          std::make_move_iterator(border_nodes[nodes.second].end()));
+    }
+    ASSERT(sum == numBorderNodes());
     break;
   default:
     std::runtime_error("no work distribution strategy provided");
