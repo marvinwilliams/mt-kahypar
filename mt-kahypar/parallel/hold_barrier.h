@@ -42,9 +42,10 @@ public:
     ASSERT(_current < _size);
     if (++_current == _size) {
       lock.unlock();
+      _release = true;
       _cv.notify_all();
     } else {
-      _cv.wait(lock, [this] { return _current == _size; });
+      _cv.wait(lock, [this] { return _current == _size || _release; });
       lock.unlock();
     }
   }
@@ -78,6 +79,7 @@ private:
   std::condition_variable _cv;
   std::mutex _mutex;
   size_t _current = 0;
+  bool _release = false;
 };
 
 } // namespace parallel
