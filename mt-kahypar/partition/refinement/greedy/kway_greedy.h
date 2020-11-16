@@ -79,10 +79,8 @@ private:
   // ! Stores hyperedges whose pins's gains may have changed after vertex move
   struct EdgeGainUpdate {
     HyperedgeID e;
-    HyperedgeWeight edge_weight;
     HypernodeID pin_count_in_from_part_after;
     HypernodeID pin_count_in_to_part_after;
-    bool needs_neighbor_update;
   };
   vec<EdgeGainUpdate> edgesWithGainChanges;
 

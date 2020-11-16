@@ -68,8 +68,7 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
   // --> actually not that bad
   for (const auto &egu : edgesWithGainChanges) {
     HyperedgeID e = egu.e;
-    if (egu.needs_neighbor_update &&
-        phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
+    if (phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
       for (HypernodeID v : phg.pins(e)) {
         if (neighborDeduplicator[v] != deduplicationTime) {
           SearchID searchOfV = sharedData.nodeTracker.searchOfNode[v].load(
@@ -116,15 +115,12 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
                         const HypernodeID pin_count_in_to_part_after) {
     // Gains of the pins of a hyperedge can only change in the following
     // situations.
-    bool needs_neighbor_update = false;
     if (pin_count_in_from_part_after == 0 ||
         pin_count_in_from_part_after == 1 || pin_count_in_to_part_after == 1 ||
         pin_count_in_to_part_after == 2) {
-      needs_neighbor_update = true;
+      edgesWithGainChanges.push_back(
+          {he, pin_count_in_from_part_after, pin_count_in_to_part_after});
     }
-    edgesWithGainChanges.push_back(
-        {he, edge_weight, pin_count_in_from_part_after,
-         pin_count_in_to_part_after, needs_neighbor_update});
 
     _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
              (pin_count_in_from_part_after == 0 ? edge_weight : 0);
@@ -173,7 +169,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         for (const auto &egu : edgesWithGainChanges) {
           // perform directly on phg and not abstract through fm_strategy
           // because we dont have a delta_phg
-          phg.gainCacheUpdate(egu.e, egu.edge_weight, move.from,
+          phg.gainCacheUpdate(egu.e, phg.edgeWeight(egu.e), move.from,
                               egu.pin_count_in_from_part_after, move.to,
                               egu.pin_count_in_to_part_after);
         }
@@ -218,6 +214,7 @@ void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
       _greedy_shared_data.messages.begin() + this_index * num_threads;
   auto mq_end = mq_begin + num_threads;
   ASSERT(mq_end <= _greedy_shared_data.messages.end());
+  ASSERT((mq_begin + this_index)->empty());
   std::for_each(mq_begin, mq_end, [&](auto &mq) {
     for (const auto v : mq) {
       // use deduplicator to prevent uneeded pq updates
