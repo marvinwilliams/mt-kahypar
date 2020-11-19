@@ -20,6 +20,7 @@
 #pragma once
 
 #include "mt-kahypar/macros.h"
+#include "mt-kahypar/parallel/atomic_wrapper.h"
 #include <condition_variable>
 #include <mutex>
 
@@ -38,48 +39,43 @@ public:
   HoldBarrier(size_t size) : _size(size) {}
 
   void aquire() {
-    std::unique_lock<std::mutex> lock(_mutex);
     ASSERT(_current < _size);
     if (++_current == _size) {
-      lock.unlock();
-      _release = true;
-      _cv.notify_all();
+      _release.store(true);
     } else {
-      _cv.wait(lock, [this] { return _current == _size || _release; });
-      lock.unlock();
+      while (_current < _size && !_release) {
+
+      }
     }
   }
 
   void release() {
-    std::unique_lock<std::mutex> lock(_mutex);
     ASSERT(_current > 0);
     if (--_current == 0) {
-      lock.unlock();
-      _cv.notify_all();
+      _release.store(false);
     } else {
-      _cv.wait(lock, [this] { return _current == 0; });
-      lock.unlock();
+      while (_current > 0 && _release) {
+      }
     }
   }
 
   void lowerSize() {
-    std::unique_lock<std::mutex> lock(_mutex);
+    _mutex.lock();
     ASSERT(_size > 0);
     --_size;
-    lock.unlock();
-    _cv.notify_all();
+    _mutex.unlock();
   }
+
   void reset(size_t size) {
     ASSERT(_current == 0);
-    _size = size;
+    _size.store(size);
   }
 
 private:
-  size_t _size;
-  std::condition_variable _cv;
+  CAtomic<size_t> _size;
   std::mutex _mutex;
-  size_t _current = 0;
-  bool _release = false;
+  CAtomic<size_t> _current {0};
+  CAtomic<bool> _release{false};
 };
 
 } // namespace parallel
