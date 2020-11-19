@@ -25,8 +25,7 @@ namespace mt_kahypar {
 bool KWayGreedy::findMoves(PartitionedHypergraph &phg,
                            vec<HypernodeID> &refinement_nodes) {
   localMoves.clear();
-  thisSearch = sharedData.nodeTracker.highestActiveSearchID.add_fetch(
-      1, std::memory_order_relaxed);
+  thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
   for (HypernodeID v : refinement_nodes) {
     if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
@@ -75,11 +74,6 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
               std::memory_order_acq_rel);
           if (searchOfV == thisSearch) {
             fm_strategy.updateGain(phg, v, move);
-            /* TODO: maybe do not aquire unowned nodes for performance
-             * <09-11-20, @noahares> */
-          } else if (searchOfV == 0 &&
-                     sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
-            fm_strategy.insertIntoPQ(phg, v, 0);
           } else if (searchOfV != 0 &&
                      searchOfV > sharedData.nodeTracker.deactivatedNodeMarker) {
             // send hypernode id to responsible threads message queue
@@ -125,6 +119,15 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
              (pin_count_in_from_part_after == 0 ? edge_weight : 0);
   };
+  auto delta_func_revert = [&](const HyperedgeID,
+                               const HyperedgeWeight edge_weight,
+                               const HypernodeID,
+                               const HypernodeID pin_count_in_from_part_after,
+                               const HypernodeID pin_count_in_to_part_after) {
+
+    _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
+             (pin_count_in_from_part_after == 0 ? edge_weight : 0);
+  };
 
   size_t bestImprovementIndex = 0;
   Gain estimatedImprovement = 0;
@@ -163,8 +166,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     }
 
     if (moved) {
-      Gain move_delta = _gain - delta_before;
-      bool accept_move = move_delta == move.gain && move_delta >= 0;
+      const Gain move_delta = _gain - delta_before;
+      const bool accept_move = (move_delta == move.gain && move_delta >= 0) || move_delta >= 0;
       if (accept_move) {
         for (const auto &egu : edgesWithGainChanges) {
           // perform directly on phg and not abstract through fm_strategy
@@ -174,7 +177,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
                               egu.pin_count_in_to_part_after);
         }
         runStats.moves++;
-        /* TODO: use move.gain or move_delta?? <09-11-20, @noahares> */
         lastImprovement = move_delta;
         estimatedImprovement += move_delta;
         localMoves.emplace_back(move, move_id);
@@ -192,7 +194,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         updateNeighbors(phg, move);
       } else {
         // implicit max_to_weight = std::numeric_limits<>::max()
-        phg.changeNodePart(move.node, move.to, move.from, delta_func);
+        phg.changeNodePart(move.node, move.to, move.from, delta_func_revert);
         sharedData.moveTracker.invalidateMove(move_id);
       }
     }
@@ -207,9 +209,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
 void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
   _greedy_shared_data.hold_barrier.aquire();
-  int this_index =
+  SearchID this_index =
       thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
-  int num_threads = context.shared_memory.num_threads;
+  size_t num_threads = context.shared_memory.num_threads;
   auto mq_begin =
       _greedy_shared_data.messages.begin() + this_index * num_threads;
   auto mq_end = mq_begin + num_threads;
