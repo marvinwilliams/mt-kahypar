@@ -119,15 +119,13 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
              (pin_count_in_from_part_after == 0 ? edge_weight : 0);
   };
-  auto delta_func_revert = [&](const HyperedgeID,
-                               const HyperedgeWeight edge_weight,
-                               const HypernodeID,
-                               const HypernodeID pin_count_in_from_part_after,
-                               const HypernodeID pin_count_in_to_part_after) {
-
-    _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
-             (pin_count_in_from_part_after == 0 ? edge_weight : 0);
-  };
+  auto delta_func_revert =
+      [&](const HyperedgeID, const HyperedgeWeight edge_weight,
+          const HypernodeID, const HypernodeID pin_count_in_from_part_after,
+          const HypernodeID pin_count_in_to_part_after) {
+        _gain += (pin_count_in_to_part_after == 1 ? -edge_weight : 0) +
+                 (pin_count_in_from_part_after == 0 ? edge_weight : 0);
+      };
 
   size_t bestImprovementIndex = 0;
   Gain estimatedImprovement = 0;
@@ -167,7 +165,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
     if (moved) {
       const Gain move_delta = _gain - delta_before;
-      const bool accept_move = (move_delta == move.gain && move_delta >= 0) || move_delta >= 0;
+      const bool accept_move =
+          (move_delta == move.gain && move_delta >= 0); // || move_delta >= 0;
+      //      LOG << "diff in deltas" << V(move_delta) << V(move.gain);
       if (accept_move) {
         for (const auto &egu : edgesWithGainChanges) {
           // perform directly on phg and not abstract through fm_strategy
@@ -181,9 +181,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         estimatedImprovement += move_delta;
         localMoves.emplace_back(move, move_id);
         local_moves_since_sync++;
-        const bool improved_km1 = estimatedImprovement > bestImprovement;
+        const bool improved_km1 = move_delta > 0;
         const bool improved_balance_less_equal_km1 =
-            estimatedImprovement >= bestImprovement &&
             fromWeight == heaviestPartWeight &&
             toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
 
@@ -196,6 +195,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         // implicit max_to_weight = std::numeric_limits<>::max()
         phg.changeNodePart(move.node, move.to, move.from, delta_func_revert);
         sharedData.moveTracker.invalidateMove(move_id);
+        edgesWithGainChanges.clear();
       }
     }
 
@@ -207,6 +207,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   runStats.merge(stats);
 }
 
+/* TODO: sync without mqs <19-11-20, @noahares> */
 void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
   _greedy_shared_data.hold_barrier.aquire();
   SearchID this_index =
