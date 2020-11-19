@@ -64,7 +64,8 @@ public:
   void roundInitialization(PartitionedHypergraph &phg,
                            GreedyAssignmentStrategy assignment_strategy);
 
-  void determineRefinementNodes(PartitionedHypergraph &phg);
+  void staticAssignment(PartitionedHypergraph &phg);
+  void partitionAssignment(PartitionedHypergraph &phg);
 
   KWayGreedy constructKWayGreedySearch() {
     return KWayGreedy(context, initial_num_nodes, sharedData, _greedy_shared_data);

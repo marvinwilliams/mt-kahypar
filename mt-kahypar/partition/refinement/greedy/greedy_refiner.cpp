@@ -103,8 +103,8 @@ bool BasicGreedyRefiner::refineImpl(
         << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
         << V(elapsed_time) << stats.serialize();
 
-    if (improvement <= 0)
-      break;
+    //    if (improvement <= 0)
+    //      break;
 
     overall_improvement += improvement;
     tbb::parallel_for(MoveID(0), sharedData.moveTracker.numPerformedMoves(),
@@ -147,19 +147,6 @@ void BasicGreedyRefiner::roundInitialization(
 
   _greedy_shared_data.hold_barrier.reset(context.shared_memory.num_threads);
 
-  CAtomic<int> task_id_static(0);
-
-  auto static_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
-    for (HypernodeID u = r.begin(); u < r.end(); ++u) {
-      if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-        const int local_task_id =
-            task_id_static.add_fetch(1, std::memory_order_relaxed) %
-            TBBNumaArena::instance().total_number_of_threads();
-        _refinement_nodes[local_task_id].push_back(u);
-      }
-    }
-  };
-
   auto random_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
     const int task_id = tbb::this_task_arena::current_thread_index();
     ASSERT(task_id >= 0 &&
@@ -171,29 +158,10 @@ void BasicGreedyRefiner::roundInitialization(
     }
   };
 
-  tbb::enumerable_thread_specific<vec<vec<HypernodeID>>>
-      partitioned_border_nodes;
-  vec<std::pair<size_t, PartitionID>> border_part_sizes(context.partition.k);
-  vec<vec<HypernodeID>> border_nodes(context.partition.k);
-  size_t sum;
-  size_t target_size;
-  size_t index = 0;
-
-  auto partition_assignment = [&](const tbb::blocked_range<HypernodeID> &r) {
-    auto &tl_border_nodes = partitioned_border_nodes.local();
-    tl_border_nodes.resize(context.partition.k);
-    for (HypernodeID u = r.begin(); u < r.end(); ++u) {
-      if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-        tl_border_nodes[phg.partID(u)].push_back(u);
-      }
-    }
-  };
-
   switch (assignment_strategy) {
   case GreedyAssignmentStrategy::static_assignement:
     LOG << "Round initialized with static assignment strategy";
-    tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
-                      static_assignment);
+    staticAssignment(phg);
     break;
   case GreedyAssignmentStrategy::random_assignment:
     LOG << "Round initialized with random assignment strategy";
@@ -202,55 +170,7 @@ void BasicGreedyRefiner::roundInitialization(
     break;
   case GreedyAssignmentStrategy::partition_assignment:
     LOG << "Round initialized with partition assignment strategy";
-    tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
-                      partition_assignment);
-    // make pairs of number of border nodes in a partition and the partition id.
-    // Also combine the found border nodes of each partition into one bucket
-    // list
-    for (const auto &tl_border_nodes : partitioned_border_nodes) {
-      for (PartitionID i = 0; i < context.partition.k; ++i) {
-        border_part_sizes[i] = std::make_pair(
-            border_part_sizes[i].first + tl_border_nodes[i].size(), i);
-        border_nodes[i].insert(
-            std::end(border_nodes[i]),
-            std::make_move_iterator(tl_border_nodes[i].begin()),
-            std::make_move_iterator(tl_border_nodes[i].end()));
-      }
-    }
-
-    // sort pairs by number of border nodes descending
-    tbb::parallel_sort(border_part_sizes.begin(), border_part_sizes.end(),
-                       std::greater<>());
-
-    sum = std::accumulate(border_part_sizes.begin(), border_part_sizes.end(), 0,
-                          [](size_t a, const auto &b) { return a + b.first; });
-
-    // optimal number of border nodes for each thread
-    target_size = sum / context.shared_memory.num_threads;
-
-    // distribute border nodes equally onto threads
-    index = 0;
-    for (const auto &nodes : border_part_sizes) {
-      size_t start_index = index;
-      int diff = target_size - _refinement_nodes[index].size() + nodes.first;
-      int best_diff = diff;
-      int best_diff_index = index;
-      bool all_checked = false;
-      while (diff < 0 && !all_checked) {
-        index = (index + 1) % context.shared_memory.num_threads;
-        diff = target_size - _refinement_nodes[index].size() + nodes.first;
-        best_diff_index = diff > best_diff ? index : best_diff_index;
-        best_diff = std::max(best_diff, diff);
-        if (index == start_index) {
-          all_checked = true;
-        }
-      }
-      _refinement_nodes[best_diff_index].insert(
-          std::end(_refinement_nodes[best_diff_index]),
-          std::make_move_iterator(border_nodes[nodes.second].begin()),
-          std::make_move_iterator(border_nodes[nodes.second].end()));
-    }
-    ASSERT(sum == numBorderNodes());
+    partitionAssignment(phg);
     break;
   default:
     std::runtime_error("no work distribution strategy provided");
@@ -269,18 +189,127 @@ void BasicGreedyRefiner::roundInitialization(
       static_cast<SearchID>(_refinement_nodes.size()));
 }
 
-void BasicGreedyRefiner::determineRefinementNodes(PartitionedHypergraph &phg) {
-  _refinement_nodes.clear();
+void BasicGreedyRefiner::staticAssignment(PartitionedHypergraph &phg) {
+
+  tbb::enumerable_thread_specific<vec<HypernodeID>> ets_border_nodes;
+
+  // thread local border node calculation
   tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                     [&](const tbb::blocked_range<HypernodeID> &r) {
+                      auto &tl_border_nodes = ets_border_nodes.local();
                       for (HypernodeID u = r.begin(); u < r.end(); ++u) {
                         if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-                          //                          _refinement_nodes.push_back(u);
+                          tl_border_nodes.push_back(u);
                         }
                       }
                     });
-  sharedData.nodeTracker.requestNewSearches(
-      static_cast<SearchID>(_refinement_nodes.size()));
+  // combine thread local border nodes
+  vec<HypernodeID> border_nodes;
+  for (const auto& tl_border_nodes : ets_border_nodes) {
+    border_nodes.insert(border_nodes.end(),
+        tl_border_nodes.begin(), tl_border_nodes.end());
+  }
+  size_t nodes_per_thread =
+      (border_nodes.size() / context.shared_memory.num_threads) + 1;
+  tbb::task_group tg;
+  // distribute border nodes to threads
+  auto task = [&](const auto thread_id) {
+    auto begin = border_nodes.begin() + thread_id * nodes_per_thread;
+    auto end = std::min(begin + nodes_per_thread, border_nodes.end());
+    _refinement_nodes[thread_id].insert(_refinement_nodes[thread_id].end(),
+                                        begin, end);
+  };
+  for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {
+    tg.run(std::bind(task, i));
+  }
+  tg.wait();
+}
+
+void BasicGreedyRefiner::partitionAssignment(PartitionedHypergraph &phg) {
+
+  tbb::enumerable_thread_specific<vec<vec<HypernodeID>>>
+      ets_border_nodes;
+
+  // thread local border node calculation
+  tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+                    [&](const tbb::blocked_range<HypernodeID> &r) {
+                      auto &tl_border_nodes = ets_border_nodes.local();
+                      tl_border_nodes.resize(context.partition.k);
+                      for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+                        if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+                          tl_border_nodes[phg.partID(u)].push_back(u);
+                        }
+                      }
+                    });
+
+  vec<std::pair<size_t, PartitionID>> part_sizes_with_id(context.partition.k);
+  vec<vec<HypernodeID>> border_nodes(context.partition.k);
+
+  // make pairs of number of border nodes in a partition and the partition id.
+  // Also combine the found border nodes of each partition into one bucket
+  // list
+  tbb::parallel_for(PartitionID(0), context.partition.k,
+                    [&](const auto i) {
+                      part_sizes_with_id[i] = std::make_pair(0, i);
+                    });
+  for (const auto &tl_border_nodes : ets_border_nodes) {
+    tbb::parallel_for(
+        PartitionID(0), context.partition.k, [&](const auto i) {
+          part_sizes_with_id[i].first += tl_border_nodes[i].size();
+          border_nodes[i].insert(border_nodes[i].end(),
+                                 tl_border_nodes[i].begin(),
+                                 tl_border_nodes[i].end());
+        });
+  }
+
+  // sort pairs by number of border nodes descending
+  std::sort(part_sizes_with_id.begin(), part_sizes_with_id.end(),
+            std::greater<>());
+
+  size_t sum = std::accumulate(part_sizes_with_id.begin(), part_sizes_with_id.end(), 0,
+                        [](auto a, const auto &b) { return a + b.first; });
+
+  // optimal number of border nodes for each thread
+  size_t target_size = (sum / context.shared_memory.num_threads) + 1;
+
+  // distribute border nodes equally onto threads
+  /* TODO: can bin packing be made prettier? <19-11-20, @noahares> */
+  vec<vec<PartitionID>> partitions_of_thread(context.shared_memory.num_threads);
+  size_t index = 0;
+  for (const auto &nodes : part_sizes_with_id) {
+    size_t start_index = index;
+    int remaining_space = target_size - _refinement_nodes[index].size() + nodes.first;
+    int best_remaining_space = remaining_space;
+    int best_index = index;
+    bool all_bins_checked = false;
+    while (remaining_space < 0 && !all_bins_checked) {
+      index = (index + 1) % context.shared_memory.num_threads;
+      remaining_space = target_size - _refinement_nodes[index].size() + nodes.first;
+      best_index = remaining_space > best_remaining_space ? index : best_index;
+      best_remaining_space = std::max(best_remaining_space, remaining_space);
+      if (index == start_index) {
+        all_bins_checked = true;
+      }
+    }
+    partitions_of_thread[best_index].push_back(nodes.second);
+    index = (index + 1) % context.shared_memory.num_threads;
+  }
+
+  // actually copy hypernode ids to final assignment
+  tbb::task_group tg;
+  auto task = [&](const auto i) {
+    for (auto id : partitions_of_thread[i]) {
+      _refinement_nodes[i].insert(_refinement_nodes[i].end(),
+                                  border_nodes[id].begin(),
+                                  border_nodes[id].end());
+    }
+  };
+  for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {
+    tg.run(std::bind(task, i));
+  }
+  tg.wait();
+
+  ASSERT(sum == numBorderNodes());
 }
 
 void BasicGreedyRefiner::printMemoryConsumption() {
