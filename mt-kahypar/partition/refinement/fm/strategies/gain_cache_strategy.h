@@ -94,12 +94,14 @@ public:
 
   void updateGainFromOtherSearch(const PartitionedHypergraph &phg,
                                  const HypernodeID v) {
-    MoveID move_id = sharedData.moveTracker.moveOfNode[v];
-    if (move_id != 0 && !sharedData.moveTracker.isMoveStale(move_id) &&
-        sharedData.moveTracker.isMoveStillValid(move_id)) {
-      Move move = sharedData.moveTracker.getMove(move_id);
-      updateGain(phg, v, move);
-    }
+    const PartitionID pv = phg.partID(v);
+    ASSERT(vertexPQs[pv].contains(v));
+    Gain gain = 0;
+    PartitionID newTarget = kInvalidPartition;
+
+      std::tie(newTarget, gain) = computeBestTargetBlock(phg, v);
+    sharedData.targetPart[v] = newTarget;
+    vertexPQs[pv].adjustKey(v, gain);
   }
 
   template <typename PHG>
