@@ -42,8 +42,7 @@ public:
         fm_strategy(context, numNodes, sharedData, runStats),
         sharedData(sharedData), _greedy_shared_data(greedy_shared_data) {}
 
-  bool findMoves(PartitionedHypergraph &phg,
-                 vec<HypernodeID> &refinement_nodes);
+  bool findMoves(PartitionedHypergraph &phg, size_t task_id);
 
   Gain getGain() { return _gain; }
 

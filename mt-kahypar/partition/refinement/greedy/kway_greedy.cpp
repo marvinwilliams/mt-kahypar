@@ -22,12 +22,11 @@
 
 namespace mt_kahypar {
 
-bool KWayGreedy::findMoves(PartitionedHypergraph &phg,
-                           vec<HypernodeID> &refinement_nodes) {
+bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t task_id) {
   localMoves.clear();
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
-  for (HypernodeID v : refinement_nodes) {
+  for (HypernodeID v : _greedy_shared_data.refinement_nodes[task_id]) {
     if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
       fm_strategy.insertIntoPQ(phg, v, 0);
     }

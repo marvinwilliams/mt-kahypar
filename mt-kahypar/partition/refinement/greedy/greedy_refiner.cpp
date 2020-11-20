@@ -75,7 +75,7 @@ bool BasicGreedyRefiner::refineImpl(
     sharedData.finishedTasks.store(0, std::memory_order_relaxed);
     auto task = [&](const size_t task_id) {
       auto &greedy = ets_bgf.local();
-      greedy.findMoves(phg, _refinement_nodes[task_id]);
+      greedy.findMoves(phg, task_id);
       _greedy_shared_data.hold_barrier.lowerSize();
       sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
     };
@@ -136,7 +136,7 @@ bool BasicGreedyRefiner::refineImpl(
 void BasicGreedyRefiner::roundInitialization(
     PartitionedHypergraph &phg, GreedyAssignmentStrategy assignment_strategy) {
   // clear border nodes
-  for (auto &v : _refinement_nodes) {
+  for (auto &v : _greedy_shared_data.refinement_nodes) {
     v.clear();
   }
 
@@ -153,7 +153,7 @@ void BasicGreedyRefiner::roundInitialization(
            task_id < TBBNumaArena::instance().total_number_of_threads());
     for (HypernodeID u = r.begin(); u < r.end(); ++u) {
       if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
-        _refinement_nodes[task_id].push_back(u);
+        _greedy_shared_data.refinement_nodes[task_id].push_back(u);
       }
     }
   };
@@ -178,15 +178,16 @@ void BasicGreedyRefiner::roundInitialization(
 
   // shuffle task queue if requested
   if (context.refinement.greedy.shuffle) {
-    tbb::parallel_for_each(_refinement_nodes, [](vec<HypernodeID> q) {
-      utils::Randomize::instance().shuffleVector(q);
-    });
+    tbb::parallel_for_each(_greedy_shared_data.refinement_nodes,
+                           [](vec<HypernodeID> q) {
+                             utils::Randomize::instance().shuffleVector(q);
+                           });
   }
 
   // requesting new searches activates all nodes by raising the deactivated node
   // marker also clears the array tracking search IDs in case of overflow
   sharedData.nodeTracker.requestNewSearches(
-      static_cast<SearchID>(_refinement_nodes.size()));
+      static_cast<SearchID>(_greedy_shared_data.refinement_nodes.size()));
 }
 
 void BasicGreedyRefiner::staticAssignment(PartitionedHypergraph &phg) {
@@ -205,9 +206,9 @@ void BasicGreedyRefiner::staticAssignment(PartitionedHypergraph &phg) {
                     });
   // combine thread local border nodes
   vec<HypernodeID> border_nodes;
-  for (const auto& tl_border_nodes : ets_border_nodes) {
-    border_nodes.insert(border_nodes.end(),
-        tl_border_nodes.begin(), tl_border_nodes.end());
+  for (const auto &tl_border_nodes : ets_border_nodes) {
+    border_nodes.insert(border_nodes.end(), tl_border_nodes.begin(),
+                        tl_border_nodes.end());
   }
   size_t nodes_per_thread =
       (border_nodes.size() / context.shared_memory.num_threads) + 1;
@@ -216,8 +217,8 @@ void BasicGreedyRefiner::staticAssignment(PartitionedHypergraph &phg) {
   auto task = [&](const auto thread_id) {
     auto begin = border_nodes.begin() + thread_id * nodes_per_thread;
     auto end = std::min(begin + nodes_per_thread, border_nodes.end());
-    _refinement_nodes[thread_id].insert(_refinement_nodes[thread_id].end(),
-                                        begin, end);
+    _greedy_shared_data.refinement_nodes[thread_id].insert(
+        _greedy_shared_data.refinement_nodes[thread_id].end(), begin, end);
   };
   for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {
     tg.run(std::bind(task, i));
@@ -227,8 +228,7 @@ void BasicGreedyRefiner::staticAssignment(PartitionedHypergraph &phg) {
 
 void BasicGreedyRefiner::partitionAssignment(PartitionedHypergraph &phg) {
 
-  tbb::enumerable_thread_specific<vec<vec<HypernodeID>>>
-      ets_border_nodes;
+  tbb::enumerable_thread_specific<vec<vec<HypernodeID>>> ets_border_nodes;
 
   // thread local border node calculation
   tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
@@ -248,26 +248,24 @@ void BasicGreedyRefiner::partitionAssignment(PartitionedHypergraph &phg) {
   // make pairs of number of border nodes in a partition and the partition id.
   // Also combine the found border nodes of each partition into one bucket
   // list
-  tbb::parallel_for(PartitionID(0), context.partition.k,
-                    [&](const auto i) {
-                      part_sizes_with_id[i] = std::make_pair(0, i);
-                    });
+  tbb::parallel_for(PartitionID(0), context.partition.k, [&](const auto i) {
+    part_sizes_with_id[i] = std::make_pair(0, i);
+  });
   for (const auto &tl_border_nodes : ets_border_nodes) {
-    tbb::parallel_for(
-        PartitionID(0), context.partition.k, [&](const auto i) {
-          part_sizes_with_id[i].first += tl_border_nodes[i].size();
-          border_nodes[i].insert(border_nodes[i].end(),
-                                 tl_border_nodes[i].begin(),
-                                 tl_border_nodes[i].end());
-        });
+    tbb::parallel_for(PartitionID(0), context.partition.k, [&](const auto i) {
+      part_sizes_with_id[i].first += tl_border_nodes[i].size();
+      border_nodes[i].insert(border_nodes[i].end(), tl_border_nodes[i].begin(),
+                             tl_border_nodes[i].end());
+    });
   }
 
   // sort pairs by number of border nodes descending
   std::sort(part_sizes_with_id.begin(), part_sizes_with_id.end(),
             std::greater<>());
 
-  size_t sum = std::accumulate(part_sizes_with_id.begin(), part_sizes_with_id.end(), 0,
-                        [](auto a, const auto &b) { return a + b.first; });
+  size_t sum =
+      std::accumulate(part_sizes_with_id.begin(), part_sizes_with_id.end(), 0,
+                      [](auto a, const auto &b) { return a + b.first; });
 
   // optimal number of border nodes for each thread
   size_t target_size = (sum / context.shared_memory.num_threads) + 1;
@@ -278,13 +276,17 @@ void BasicGreedyRefiner::partitionAssignment(PartitionedHypergraph &phg) {
   size_t index = 0;
   for (const auto &nodes : part_sizes_with_id) {
     size_t start_index = index;
-    int remaining_space = target_size - _refinement_nodes[index].size() + nodes.first;
+    int remaining_space = target_size -
+                          _greedy_shared_data.refinement_nodes[index].size() +
+                          nodes.first;
     int best_remaining_space = remaining_space;
     int best_index = index;
     bool all_bins_checked = false;
     while (remaining_space < 0 && !all_bins_checked) {
       index = (index + 1) % context.shared_memory.num_threads;
-      remaining_space = target_size - _refinement_nodes[index].size() + nodes.first;
+      remaining_space = target_size -
+                        _greedy_shared_data.refinement_nodes[index].size() +
+                        nodes.first;
       best_index = remaining_space > best_remaining_space ? index : best_index;
       best_remaining_space = std::max(best_remaining_space, remaining_space);
       if (index == start_index) {
@@ -299,9 +301,9 @@ void BasicGreedyRefiner::partitionAssignment(PartitionedHypergraph &phg) {
   tbb::task_group tg;
   auto task = [&](const auto i) {
     for (auto id : partitions_of_thread[i]) {
-      _refinement_nodes[i].insert(_refinement_nodes[i].end(),
-                                  border_nodes[id].begin(),
-                                  border_nodes[id].end());
+      _greedy_shared_data.refinement_nodes[i].insert(
+          _greedy_shared_data.refinement_nodes[i].end(),
+          border_nodes[id].begin(), border_nodes[id].end());
     }
   };
   for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {

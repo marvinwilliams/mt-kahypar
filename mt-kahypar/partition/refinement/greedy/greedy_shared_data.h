@@ -30,8 +30,10 @@ using HypernodeIDMessageMatrix = vec<vec<HypernodeID>>;
 struct GreedySharedData {
   HypernodeIDMessageMatrix messages;
   parallel::HoldBarrier hold_barrier;
+  vec<vec<HypernodeID>> refinement_nodes;
   GreedySharedData(size_t num_threads)
       : messages(num_threads * num_threads, vec<HypernodeID>()),
-        hold_barrier(num_threads) {}
+        hold_barrier(num_threads),
+        refinement_nodes(num_threads, vec<HypernodeID>()) {}
 };
 } // namespace mt_kahypar
