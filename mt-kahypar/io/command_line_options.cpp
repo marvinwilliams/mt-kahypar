@@ -377,6 +377,10 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.greedy.shuffle :
                  &context.refinement.greedy.shuffle))->value_name("<bool>")->default_value(true),
              "If true, shuffle refinement nodes before local search.")
+            ((initial_partitioning ? "i-r-greedy-sync-with-mq" : "r-greedy-sync-with-mq"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.greedy.sync_with_mq :
+                 &context.refinement.greedy.sync_with_mq))->value_name("<bool>")->default_value(true),
+             "If true, use message queues for synchronizing gain updates.")
             ((initial_partitioning ? "i-r-greedy-assignment-strategy" : "r-greedy-assignment-strategy"),
              po::value<std::string>()->value_name("<string>")->notifier(
                [&](const std::string& strategy) {

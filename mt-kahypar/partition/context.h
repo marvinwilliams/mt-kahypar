@@ -150,6 +150,7 @@ struct GreedyRefinementParameters {
   GreedyAssignmentStrategy assignment_strategy =
       GreedyAssignmentStrategy::random_assignment;
   size_t num_moves_before_sync = 10;
+  bool sync_with_mq = true;
   // Add your parameters here
 };
 

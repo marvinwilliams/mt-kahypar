@@ -25,6 +25,7 @@ namespace mt_kahypar {
 bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t task_id) {
   localMoves.clear();
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
+  _task_id = task_id;
 
   for (HypernodeID v : _greedy_shared_data.refinement_nodes[task_id]) {
     if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
@@ -141,7 +142,11 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
     if (local_moves_since_sync >=
         context.refinement.greedy.num_moves_before_sync) {
-      syncMessageQueues(phg);
+      if (context.refinement.greedy.sync_with_mq) {
+        syncMessageQueues(phg);
+      } else {
+        syncAllLocalNodes(phg);
+      }
     }
 
     if (!fm_strategy.findNextMoveNoRetry(phg, move))
@@ -231,6 +236,16 @@ void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
   });
   local_moves_since_sync = 0;
   _greedy_shared_data.hold_barrier.release();
+}
+
+void KWayGreedy::syncAllLocalNodes(PartitionedHypergraph &phg) {
+
+  for (const auto v : _greedy_shared_data.refinement_nodes[_task_id]) {
+    if (!sharedData.nodeTracker.isLocked(v)) {
+      fm_strategy.updateGainFromOtherSearch(phg, v);
+    }
+  }
+  fm_strategy.updatePQs(phg);
 }
 
 void KWayGreedy::memoryConsumption(utils::MemoryTreeNode *parent) const {

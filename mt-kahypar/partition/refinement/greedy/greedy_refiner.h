@@ -46,9 +46,7 @@ public:
         taskGroupID(taskGroupID),
         sharedData(hypergraph.initialNumNodes(), context),
         _greedy_shared_data(context.shared_memory.num_threads),
-        ets_bgf([&] { return constructKWayGreedySearch(); }),
-        _refinement_nodes(context.shared_memory.num_threads,
-                          vec<HypernodeID>()) {
+        ets_bgf([&] { return constructKWayGreedySearch(); }) {
     if (context.refinement.greedy.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
     }
@@ -75,7 +73,7 @@ public:
 
   size_t numBorderNodes() {
     size_t num_border_nodes = 0;
-    for (const auto &i : _refinement_nodes) {
+    for (const auto &i : _greedy_shared_data.refinement_nodes) {
       num_border_nodes += i.size();
     }
     return num_border_nodes;
@@ -91,7 +89,6 @@ private:
   FMSharedData sharedData;
   GreedySharedData _greedy_shared_data;
   tbb::enumerable_thread_specific<KWayGreedy> ets_bgf;
-  vec<vec<HypernodeID>> _refinement_nodes;
 };
 
 } // namespace mt_kahypar

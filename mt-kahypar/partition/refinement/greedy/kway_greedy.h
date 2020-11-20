@@ -50,6 +50,8 @@ public:
 
   FMStats stats;
 
+  void syncAllLocalNodes(PartitionedHypergraph &phg);
+
 private:
   void internalFindMoves(PartitionedHypergraph &phg);
   void syncMessageQueues(PartitionedHypergraph &phg);
@@ -94,6 +96,8 @@ private:
   GreedySharedData &_greedy_shared_data;
 
   size_t local_moves_since_sync = 0;
+
+  size_t _task_id;
 };
 
 } // namespace mt_kahypar
