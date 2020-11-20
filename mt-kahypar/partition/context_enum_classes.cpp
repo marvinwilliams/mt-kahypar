@@ -167,6 +167,16 @@ namespace mt_kahypar {
     return os << static_cast<uint8_t>(algo);
   }
 
+  std::ostream & operator<< (std::ostream& os, const GreedyAssignmentStrategy& strategy) {
+    switch (strategy) {
+      case GreedyAssignmentStrategy::random_assignment: return os << "greedy_random";
+      case GreedyAssignmentStrategy::partition_assignment: return os << "greedy_partition";
+      case GreedyAssignmentStrategy::static_assignement: return os << "greedy_static";
+        // omit default case to trigger compiler warning for missing cases
+    }
+    return os << static_cast<uint8_t>(strategy);
+  }
+
   LouvainEdgeWeight louvainEdgeWeightFromString(const std::string& type) {
     if (type == "hybrid") {
       return LouvainEdgeWeight::hybrid;

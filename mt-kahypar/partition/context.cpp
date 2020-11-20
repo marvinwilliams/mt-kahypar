@@ -125,6 +125,11 @@ namespace mt_kahypar {
     out << "  Greedy Refinement Parameters: \n";
     out << "    Algorithm:                        " << params.algorithm << std::endl;
     if ( params.algorithm != GreedyRefinementAlgorithm::do_nothing ) {
+      out << "    Multitry Rounds:                  " << params.multitry_rounds << std::endl;
+      out << "    Enable Random Shuffle:            " << std::boolalpha << params.shuffle << std::endl;
+      out << "    Number Of Moves Before Sync:      " << params.num_moves_before_sync << std::endl;
+      out << "    Sync With Message Queues:         " << std::boolalpha << params.sync_with_mq << std::endl;
+      out << "    Node Assignment Strategy:         " << params.assignment_strategy << std::endl;
     }
     out << std::flush;
     return out;

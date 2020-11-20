@@ -150,6 +150,8 @@ std::ostream & operator<< (std::ostream& os, const FMAlgorithm& algo);
 
 std::ostream & operator<< (std::ostream& os, const GreedyRefinementAlgorithm& algo);
 
+std::ostream & operator<< (std::ostream& os, const GreedyAssignmentStrategy& strategy);
+
 LouvainEdgeWeight louvainEdgeWeightFromString(const std::string& type);
 
 SimiliarNetCombinerStrategy similiarNetCombinerStrategyFromString(const std::string& type);
