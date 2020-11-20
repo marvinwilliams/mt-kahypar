@@ -37,8 +37,7 @@ public:
   explicit KWayGreedy(const Context &c, HypernodeID numNodes,
                       FMSharedData &sharedData,
                       GreedySharedData &greedy_shared_data)
-      : context(c), thisSearch(0), k(context.partition.k),
-        neighborDeduplicator(numNodes, 0),
+      : context(c), thisSearch(0), neighborDeduplicator(numNodes, 0),
         fm_strategy(context, numNodes, sharedData, runStats),
         sharedData(sharedData), _greedy_shared_data(greedy_shared_data) {}
 
@@ -50,11 +49,25 @@ public:
 
   FMStats stats;
 
-  void syncAllLocalNodes(PartitionedHypergraph &phg);
+  void reset() {
+    thisSearch = 0;
+    localMoves.clear();
+    edgesWithGainChanges.clear();
+    _gain = 0;
+    _local_moves_since_sync = 0;
+  }
 
 private:
   void internalFindMoves(PartitionedHypergraph &phg);
   void syncMessageQueues(PartitionedHypergraph &phg);
+  void syncAllLocalNodes(PartitionedHypergraph &phg);
+
+  void updateNeighborDeduplicator() {
+    if (++deduplicationTime == 0) {
+      neighborDeduplicator.assign(neighborDeduplicator.size(), 0);
+      deduplicationTime = 1;
+    }
+  }
 
   template <typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void updateNeighbors(PHG &phg,
@@ -64,9 +77,6 @@ private:
 
   // ! Unique search id associated with the current local search
   SearchID thisSearch;
-
-  // ! Number of blocks
-  PartitionID k;
 
   // ! Local data members required for one localized search run
   // FMLocalData localData;
@@ -95,7 +105,7 @@ private:
 
   GreedySharedData &_greedy_shared_data;
 
-  size_t local_moves_since_sync = 0;
+  size_t _local_moves_since_sync = 0;
 
   size_t _task_id;
 };

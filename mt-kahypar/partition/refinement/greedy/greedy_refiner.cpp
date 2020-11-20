@@ -75,6 +75,7 @@ bool BasicGreedyRefiner::refineImpl(
     sharedData.finishedTasks.store(0, std::memory_order_relaxed);
     auto task = [&](const size_t task_id) {
       auto &greedy = ets_bgf.local();
+      greedy.reset();
       greedy.findMoves(phg, task_id);
       _greedy_shared_data.hold_barrier.lowerSize();
       sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);

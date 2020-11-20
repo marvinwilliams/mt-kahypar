@@ -23,7 +23,6 @@
 namespace mt_kahypar {
 
 bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t task_id) {
-  localMoves.clear();
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
   _task_id = task_id;
 
@@ -94,10 +93,7 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
   }
   edgesWithGainChanges.clear();
 
-  if (++deduplicationTime == 0) {
-    neighborDeduplicator.assign(neighborDeduplicator.size(), 0);
-    deduplicationTime = 1;
-  }
+  updateNeighborDeduplicator();
 }
 
 void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
@@ -131,7 +127,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
   Gain lastImprovement = std::numeric_limits<Gain>::max();
-  _gain = 0;
 
   HypernodeWeight heaviestPartWeight = 0;
   HypernodeWeight fromWeight = 0, toWeight = 0;
@@ -140,7 +135,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
          sharedData.finishedTasks.load(std::memory_order_relaxed) <
              sharedData.finishedTasksLimit) {
 
-    if (local_moves_since_sync >=
+    if (_local_moves_since_sync >=
         context.refinement.greedy.num_moves_before_sync) {
       if (context.refinement.greedy.sync_with_mq) {
         syncMessageQueues(phg);
@@ -184,7 +179,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         lastImprovement = move_delta;
         estimatedImprovement += move_delta;
         localMoves.emplace_back(move, move_id);
-        local_moves_since_sync++;
+        _local_moves_since_sync++;
         const bool improved_km1 = move_delta > 0;
         const bool improved_balance_less_equal_km1 =
             fromWeight == heaviestPartWeight &&
@@ -233,7 +228,8 @@ void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
     fm_strategy.updatePQs(phg);
     mq.clear();
   });
-  local_moves_since_sync = 0;
+  updateNeighborDeduplicator();
+  _local_moves_since_sync = 0;
   _greedy_shared_data.hold_barrier.release();
 }
 
