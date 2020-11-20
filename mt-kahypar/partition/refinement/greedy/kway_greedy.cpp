@@ -74,7 +74,7 @@ KWayGreedy::updateNeighbors(PHG &phg, const Move &move) {
               std::memory_order_acq_rel);
           if (searchOfV == thisSearch) {
             fm_strategy.updateGain(phg, v, move);
-          } else if (searchOfV != 0 &&
+          } else if (context.refinement.greedy.sync_with_mq && searchOfV != 0 &&
                      searchOfV > sharedData.nodeTracker.deactivatedNodeMarker) {
             // send hypernode id to responsible threads message queue
             SearchID v_index =
@@ -211,7 +211,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   runStats.merge(stats);
 }
 
-/* TODO: sync without mqs <19-11-20, @noahares> */
 void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
   _greedy_shared_data.hold_barrier.aquire();
   SearchID this_index =
