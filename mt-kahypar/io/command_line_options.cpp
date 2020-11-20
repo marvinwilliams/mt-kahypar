@@ -373,6 +373,10 @@ namespace mt_kahypar {
              po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.greedy.multitry_rounds :
                  &context.refinement.greedy.multitry_rounds))->value_name("<size_t>")->default_value(10),
              "Number of Greedy rounds within one level of the multilevel hierarchy.")
+            ((initial_partitioning ? "i-r-greedy-num-moves-before-sync" : "r-greedy-num-moves-before-sync"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.greedy.num_moves_before_sync :
+                 &context.refinement.greedy.num_moves_before_sync))->value_name("<size_t>")->default_value(10),
+             "Number of local moves before synchronizing gain updates.")
             ((initial_partitioning ? "i-r-greedy-shuffle" : "r-greedy-shuffle"),
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.greedy.shuffle :
                  &context.refinement.greedy.shuffle))->value_name("<bool>")->default_value(true),
