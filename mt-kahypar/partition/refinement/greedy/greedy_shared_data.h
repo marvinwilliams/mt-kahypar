@@ -24,6 +24,7 @@
 #include "mt-kahypar/parallel/hold_barrier.h"
 #include <condition_variable>
 #include <mutex>
+#include <numeric>
 namespace mt_kahypar {
 
 using HypernodeIDMessageMatrix = vec<vec<HypernodeID>>;
@@ -35,5 +36,12 @@ struct GreedySharedData {
       : messages(num_threads * num_threads, vec<HypernodeID>()),
         hold_barrier(num_threads),
         refinement_nodes(num_threads, vec<HypernodeID>()) {}
+
+  size_t numRefinementNodes() {
+    size_t num_border_nodes = std::accumulate(
+        refinement_nodes.begin(), refinement_nodes.end(), 0,
+        [&](const auto n, const auto &i) { return n + i.size(); });
+    return num_border_nodes;
+  }
 };
 } // namespace mt_kahypar

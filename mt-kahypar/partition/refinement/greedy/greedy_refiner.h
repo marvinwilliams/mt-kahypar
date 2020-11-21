@@ -71,14 +71,6 @@ public:
 
   void printMemoryConsumption();
 
-  size_t numBorderNodes() {
-    size_t num_border_nodes = 0;
-    for (const auto &i : _greedy_shared_data.refinement_nodes) {
-      num_border_nodes += i.size();
-    }
-    return num_border_nodes;
-  }
-
 private:
   /* TODO: refactor all vars to snake_case and private (_var) <27-10-20,
    * @noahares> */

@@ -67,7 +67,7 @@ bool BasicGreedyRefiner::refineImpl(
     roundInitialization(phg, context.refinement.greedy.assignment_strategy);
     timer.stop_timer("collect_border_nodes");
 
-    size_t num_border_nodes = numBorderNodes();
+    size_t num_border_nodes = _greedy_shared_data.numRefinementNodes();
     if (num_border_nodes == 0) {
       break;
     }
@@ -311,7 +311,7 @@ void BasicGreedyRefiner::partitionAssignment(PartitionedHypergraph &phg) {
   }
   tg.wait();
 
-  ASSERT(sum == numBorderNodes());
+  ASSERT(sum == _greedy_shared_data.numRefinementNodes());
 }
 
 void BasicGreedyRefiner::printMemoryConsumption() {
