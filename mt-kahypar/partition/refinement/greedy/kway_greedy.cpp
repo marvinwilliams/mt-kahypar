@@ -22,7 +22,7 @@
 
 namespace mt_kahypar {
 
-bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t task_id) {
+void KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t task_id) {
   thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
   _task_id = task_id;
 
@@ -35,9 +35,7 @@ bool KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t task_id) {
 
   if (runStats.pushes > 0) {
     internalFindMoves(phg);
-    return true;
-  } else {
-    return false;
+    /* TODO: sync message queues after finishing ? <21-11-20, @noahares> */
   }
 }
 
@@ -165,8 +163,8 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
     if (moved) {
       const Gain move_delta = _gain - delta_before;
       const bool accept_move =
-          (move_delta == move.gain && move_delta >= 0); // || move_delta >= 0;
-      //      LOG << "diff in deltas" << V(move_delta) << V(move.gain);
+          (move_delta == move.gain && move_delta >= 0) || move_delta >= 0;
+//      LOG << "diff in deltas" << V(move_delta) << V(move.gain);
       if (accept_move) {
         for (const auto &egu : edgesWithGainChanges) {
           // perform directly on phg and not abstract through fm_strategy
