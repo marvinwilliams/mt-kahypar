@@ -51,8 +51,8 @@ bool BasicGreedyRefiner::refineImpl(
   if (!_is_initialized) {
     throw std::runtime_error("Call initialize before calling refine");
   }
-  LOG << "You called greedy refinement";
 
+  unused(refinement_nodes);
   Gain overall_improvement = 0;
   tbb::task_group tg;
   sharedData.release_nodes = context.refinement.greedy.release_nodes;
@@ -75,7 +75,6 @@ bool BasicGreedyRefiner::refineImpl(
     sharedData.finishedTasks.store(0, std::memory_order_relaxed);
     auto task = [&](const size_t task_id) {
       auto &greedy = ets_bgf.local();
-      greedy.reset();
       greedy.findMoves(phg, task_id);
       _greedy_shared_data.hold_barrier.lowerSize();
       sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
@@ -99,13 +98,11 @@ bool BasicGreedyRefiner::refineImpl(
     for (auto &greedy : ets_bgf) {
       greedy.stats.merge(stats);
       improvement += greedy.getGain();
+      greedy.reset();
     }
     LOG << V(round) << V(improvement) << V(metrics::km1(phg))
         << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
         << V(elapsed_time) << stats.serialize();
-
-    //    if (improvement <= 0)
-    //      break;
 
     overall_improvement += improvement;
     tbb::parallel_for(MoveID(0), sharedData.moveTracker.numPerformedMoves(),
@@ -114,6 +111,8 @@ bool BasicGreedyRefiner::refineImpl(
                             sharedData.moveTracker.moveOrder[move_id].node);
                       });
     sharedData.moveTracker.reset();
+    if (improvement <= 0)
+      break;
   }
 
   if (context.partition.show_memory_consumption &&
