@@ -125,14 +125,11 @@ bool BasicGreedyRefiner::refineImpl(
 
   metrics.km1 -= overall_improvement;
   metrics.imbalance = metrics::imbalance(phg, context);
-  /* TODO: check attributed gains. This asserts fails sometimes <13-11-20,
-   * @noahares> */
   ASSERT(metrics.km1 == metrics::km1(phg), V(metrics.km1)
                                                << V(metrics::km1(phg)));
   return overall_improvement > 0;
 }
 
-/* TODO: improve assignment strategies <10-11-20, @noahares> */
 void BasicGreedyRefiner::roundInitialization(
     PartitionedHypergraph &phg, GreedyAssignmentStrategy assignment_strategy) {
   // clear border nodes
