@@ -578,7 +578,6 @@ class StaticHypergraph {
 
   // ! Returns a range to loop over the pins of hyperedge e.
   IteratorRange<IncidenceIterator> pins(const HyperedgeID e) const {
-    ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
     const Hyperedge& he = hyperedge(e);
     return IteratorRange<IncidenceIterator>(
       _incidence_array.cbegin() + he.firstEntry(),
