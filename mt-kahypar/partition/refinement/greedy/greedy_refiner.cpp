@@ -170,7 +170,7 @@ void BasicGreedyRefiner::roundInitialization(
     partitionAssignment(phg);
     break;
   default:
-    std::runtime_error("no work distribution strategy provided");
+    throw std::runtime_error("no work distribution strategy provided");
   }
 
   // shuffle task queue if requested
