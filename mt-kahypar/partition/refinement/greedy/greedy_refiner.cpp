@@ -100,9 +100,11 @@ bool BasicGreedyRefiner::refineImpl(
       improvement += greedy.getGain();
       greedy.reset();
     }
-    LOG << V(round) << V(improvement) << V(metrics::km1(phg))
-        << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
-        << V(elapsed_time) << stats.serialize();
+    if (context.partition.verbose_output) {
+      LOG << V(round) << V(improvement) << V(metrics::km1(phg))
+          << V(metrics::imbalance(phg, context)) << V(num_border_nodes)
+          << V(elapsed_time) << stats.serialize();
+    }
 
     overall_improvement += improvement;
     tbb::parallel_for(MoveID(0), sharedData.moveTracker.numPerformedMoves(),
@@ -157,16 +159,13 @@ void BasicGreedyRefiner::roundInitialization(
 
   switch (assignment_strategy) {
   case GreedyAssignmentStrategy::static_assignement:
-    LOG << "Round initialized with static assignment strategy";
     staticAssignment(phg);
     break;
   case GreedyAssignmentStrategy::random_assignment:
-    LOG << "Round initialized with random assignment strategy";
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
                       random_assignment);
     break;
   case GreedyAssignmentStrategy::partition_assignment:
-    LOG << "Round initialized with partition assignment strategy";
     partitionAssignment(phg);
     break;
   default:
