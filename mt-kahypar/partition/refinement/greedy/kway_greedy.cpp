@@ -129,10 +129,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   HypernodeWeight heaviestPartWeight = 0;
   HypernodeWeight fromWeight = 0, toWeight = 0;
 
-  while (lastImprovement > 0 &&
-         sharedData.finishedTasks.load(std::memory_order_relaxed) <
-             sharedData.finishedTasksLimit) {
-
+  while (lastImprovement > 0) {
     if (_local_moves_since_sync >=
         context.refinement.greedy.num_moves_before_sync) {
       if (context.refinement.greedy.sync_with_mq) {
