@@ -332,6 +332,15 @@ IncidentNetArray IncidentNetArray::copy() {
   return incident_nets;
 }
 
+void IncidentNetArray::reset() {
+  tbb::parallel_for(ID(0), _num_hypernodes, [&](const HypernodeID u) {
+    header(u)->current_version = 0;
+    for ( Entry* entry = firstEntry(u); entry != lastEntry(u); ++entry ) {
+      entry->version = 0;
+    }
+  });
+}
+
 void IncidentNetArray::append(const HypernodeID u, const HypernodeID v) {
   const HypernodeID tail_u = header(u)->prev;
   const HypernodeID tail_v = header(v)->prev;
@@ -423,7 +432,7 @@ void IncidentNetArray::construct(const HyperedgeVector& edge_vector) {
   }
 
   // Compute start positon of the incident nets of each vertex via a parallel prefix sum
-  parallel::TBBPrefixSum<size_t> incident_net_prefix_sum(_index_array);
+  parallel::TBBPrefixSum<size_t, Array> incident_net_prefix_sum(_index_array);
   tbb::parallel_scan(tbb::blocked_range<size_t>(
           0UL, UI64(_num_hypernodes + 1)), incident_net_prefix_sum);
   _size_in_bytes = incident_net_prefix_sum.total_sum();

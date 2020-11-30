@@ -281,12 +281,30 @@ namespace mt_kahypar {
   }
 
   void Context::sanityCheck() {
+    if ( partition.paradigm == Paradigm::nlevel &&
+         coarsening.algorithm == CoarseningAlgorithm::multilevel_coarsener ) {
+        ALGO_SWITCH("Coarsening algorithm" << coarsening.algorithm << "is only supported in multilevel mode."
+                                           << "Do you want to use the n-level version instead (Y/N)?",
+                    "Partitioning with" << coarsening.algorithm
+                                        << "coarsener in n-level mode is not supported!",
+                    coarsening.algorithm,
+                    CoarseningAlgorithm::nlevel_coarsener);
+    } else if ( partition.paradigm == Paradigm::multilevel &&
+                coarsening.algorithm == CoarseningAlgorithm::nlevel_coarsener ) {
+        ALGO_SWITCH("Coarsening algorithm" << coarsening.algorithm << "is only supported in n-Level mode."
+                                           << "Do you want to use the multilevel version instead (Y/N)?",
+                    "Partitioning with" << coarsening.algorithm
+                                        << "coarsener in multilevel mode is not supported!",
+                    coarsening.algorithm,
+                    CoarseningAlgorithm::multilevel_coarsener);
+    }
+
     if (partition.objective == kahypar::Objective::cut) {
       if ( refinement.label_propagation.algorithm == LabelPropagationAlgorithm::label_propagation_km1 ) {
         ALGO_SWITCH("Refinement algorithm" << refinement.label_propagation.algorithm << "only works for km1 metric."
                                            << "Do you want to use the cut version of the label propagation refiner (Y/N)?",
                     "Partitioning with" << refinement.label_propagation.algorithm
-                                        << "refiner in combination with cut metric is not possible!",
+                                        << "refiner in combination with cut metric is not supported!",
                     refinement.label_propagation.algorithm,
                     LabelPropagationAlgorithm::label_propagation_cut);
       }
@@ -295,7 +313,7 @@ namespace mt_kahypar {
         ALGO_SWITCH("Refinement algorithm" << refinement.fm.algorithm << "only works for km1 metric."
                                            << "Do you want to disable FM refinement (Y/N)?",
                     "Partitioning with" << refinement.fm.algorithm
-                                        << "refiner in combination with cut metric is not possible!",
+                                        << "refiner in combination with cut metric is not supported!",
                     refinement.fm.algorithm,
                     FMAlgorithm::do_nothing);
       }
@@ -304,7 +322,7 @@ namespace mt_kahypar {
       ALGO_SWITCH("Refinement algorithm" << refinement.label_propagation.algorithm << "only works for cut metric."
                                          << "Do you want to use the km1 version of the label propagation refiner (Y/N)?",
                   "Partitioning with" << refinement.label_propagation.algorithm
-                                      << "refiner in combination with km1 metric is not possible!",
+                                      << "refiner in combination with km1 metric is not supported!",
                   refinement.label_propagation.algorithm,
                   LabelPropagationAlgorithm::label_propagation_km1);
     }
@@ -317,7 +335,7 @@ namespace mt_kahypar {
                             << "only works for km1 metric."
                             << "Do you want to use the cut version of the label propagation refiner (Y/N)?",
                     "Partitioning with" << initial_partitioning.refinement.label_propagation.algorithm
-                                        << "refiner in combination with cut metric is not possible!",
+                                        << "refiner in combination with cut metric is not supported!",
                     initial_partitioning.refinement.label_propagation.algorithm,
                     LabelPropagationAlgorithm::label_propagation_cut);
       }
@@ -328,7 +346,7 @@ namespace mt_kahypar {
                             << "only works for km1 metric."
                             << "Do you want to disable FM refinement (Y/N)?",
                     "Partitioning with" << initial_partitioning.refinement.fm.algorithm
-                                        << "refiner in combination with cut metric is not possible!",
+                                        << "refiner in combination with cut metric is not supported!",
                     initial_partitioning.refinement.fm.algorithm,
                     FMAlgorithm::do_nothing);
       }
@@ -340,7 +358,7 @@ namespace mt_kahypar {
                           << "only works for cut metric."
                           << "Do you want to use the km1 version of the label propagation refiner (Y/N)?",
                   "Partitioning with" << initial_partitioning.refinement.label_propagation.algorithm
-                                      << "refiner in combination with km1 metric is not possible!",
+                                      << "refiner in combination with km1 metric is not supported!",
                   initial_partitioning.refinement.label_propagation.algorithm,
                   LabelPropagationAlgorithm::label_propagation_km1);
     }
