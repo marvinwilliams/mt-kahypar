@@ -334,6 +334,11 @@ namespace mt_kahypar {
              "If the FM time exceeds time_limit := k * factor * coarsening_time, than the FM config is switched into a light version."
              "If the FM refiner exceeds 2 * time_limit, than the current multitry FM run is aborted and the algorithm proceeds to"
              "the next finer level.")
+            ((initial_partitioning ? "i-r-fm-greedy" : "r-fm-greedy"),
+             po::value<bool>(
+                     (initial_partitioning ? &context.initial_partitioning.refinement.fm.greedy :
+                      &context.refinement.fm.greedy))->value_name("<bool>")->default_value(true),
+             "If true, then parallel FM refinement round stops if the improvement is < 0.")
 #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :
