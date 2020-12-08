@@ -202,6 +202,10 @@ namespace mt_kahypar {
         fm_strategy.updatePQs(phg);
       }
 
+      if (context.refinement.fm.greedy && estimatedImprovement < 0) {
+        break;
+      }
+
     }
 
     if constexpr (use_delta) {
