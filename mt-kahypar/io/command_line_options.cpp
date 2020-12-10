@@ -337,7 +337,7 @@ namespace mt_kahypar {
             ((initial_partitioning ? "i-r-fm-greedy" : "r-fm-greedy"),
              po::value<bool>(
                      (initial_partitioning ? &context.initial_partitioning.refinement.fm.greedy :
-                      &context.refinement.fm.greedy))->value_name("<bool>")->default_value(true),
+                      &context.refinement.fm.greedy))->value_name("<bool>")->default_value(false),
              "If true, then parallel FM refinement round stops if the improvement is < 0.")
 #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),

@@ -137,7 +137,7 @@ struct FMParameters {
   double min_improvement = -1.0;
   bool release_nodes = true;
   double time_limit_factor = std::numeric_limits<double>::max();
-  bool greedy = true;
+  bool greedy = false;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);
