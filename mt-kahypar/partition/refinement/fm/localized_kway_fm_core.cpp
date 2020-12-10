@@ -202,7 +202,7 @@ namespace mt_kahypar {
         fm_strategy.updatePQs(phg);
       }
 
-      if (context.refinement.fm.greedy && estimatedImprovement < 0) {
+      if (context.refinement.fm.greedy && move.gain < 0) {
         break;
       }
 
