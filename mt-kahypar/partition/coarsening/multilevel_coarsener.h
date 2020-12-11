@@ -144,10 +144,13 @@ class MultilevelCoarsener : public ICoarsener,
     if ( _context.partition.verbose_output && _context.partition.enable_progress_bar ) {
       _progress_bar.enable();
     }
-
     int pass_nr = 0;
     const HypernodeID initial_num_nodes = Base::currentNumNodes();
     while ( Base::currentNumNodes() > _context.coarsening.contraction_limit ) {
+      
+      //debug
+      std::cout << "\npass_nr: " << pass_nr << std::endl;
+
       HighResClockTimepoint round_start = std::chrono::high_resolution_clock::now();
       Hypergraph& current_hg = Base::currentHypergraph();
       DBG << V(pass_nr)
@@ -192,6 +195,8 @@ class MultilevelCoarsener : public ICoarsener,
       const HypernodeID hierarchy_contraction_limit = hierarchyContractionLimit(current_hg);
       DBG << V(current_hg.initialNumNodes()) << V(hierarchy_contraction_limit);
       HypernodeID current_num_nodes = num_hns_before_pass;
+      //tbb::enumerable_thread_specific< std::vector< std::pair < HypernodeID, HypernodeID>>> opt_targets;
+      tbb::concurrent_vector< std::pair < HypernodeID, HypernodeID>> opt_targets;
       tbb::enumerable_thread_specific<HypernodeID> contracted_nodes(0);
       tbb::enumerable_thread_specific<HypernodeID> num_nodes_update_threshold(0);
       tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID id) {
@@ -231,6 +236,13 @@ class MultilevelCoarsener : public ICoarsener,
                   num_nodes_update_threshold.local() +=
                     (current_num_nodes - hierarchy_contraction_limit) /
                     _context.shared_memory.num_threads;
+                }
+              } else {
+                //std::cout << "What:" << pass_nr << "\n";
+                //Store preferred cluster for all nodes that don't get matched so they can be used for two hop matching
+                if (rating.opt_valid) {
+                  //opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(u, rating.opt_target));
+                  opt_targets.push_back(std::pair<HypernodeID, HypernodeID>(rating.opt_target, u));
                 }
               }
             }
@@ -276,7 +288,78 @@ class MultilevelCoarsener : public ICoarsener,
         static_cast<double>(num_hns_before_pass) /
         static_cast<double>(current_num_nodes);
       if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
-        break;
+        //debug
+        //std::cout << "Size of opt_targets:" << opt_targets.size() << std::endl;
+        //tbb::parallel_for(0,8, [&](const HypernodeID id) {
+        //  std::cout << "Size of opt_targets:" << opt_targets.local().size() << std::endl;
+        //});
+        //TODO rewrite to use counting sort
+        tbb::parallel_sort(opt_targets.begin(), opt_targets.end());
+        std::vector<int> bounds = {0};
+        for (int i = 1; i < (int) opt_targets.size(); i++) {
+          if(opt_targets[i].first != opt_targets[i-1].first) {
+            bounds.push_back(i);
+          }
+          //debug
+          //std::string opt = "pair: " + std::to_string(opt_targets[i-1].first) + ", " + std::to_string(opt_targets[i-1].second) + "\n";
+          //std::cout << opt;
+        }
+        bounds.push_back(opt_targets.size()-1);
+        tbb::enumerable_thread_specific<HypernodeID> two_hop_contracted_nodes(0);
+        tbb::parallel_for(1, (int) bounds.size()-1, [&](const int index) {
+            uint8_t unmatched = STATE(MatchingState::UNMATCHED);
+            uint8_t match_in_progress = STATE(MatchingState::MATCHING_IN_PROGRESS);
+            //debug
+            //std::string bucket_size = "Bucket size: " + std::to_string(bounds[index]-bounds[index-1]) + "\n";
+            //std::cout << bucket_size;
+            for (int j = bounds[index]; j < bounds[index+1]; j+=2) {
+              if (j + 1 < bounds[index + 1]) {
+                HypernodeID u = opt_targets[j].second;
+                HypernodeID v = opt_targets[j + 1].second;
+                const HypernodeWeight weight_u = current_hg.nodeWeight(u);
+                HypernodeWeight weight_v = current_hg.nodeWeight(v);
+                if (weight_u + weight_v <= _max_allowed_node_weight) {
+
+                  if (_matching_state[u].compare_exchange_strong(unmatched, match_in_progress)) {
+                    _matching_partner[u] = v;
+                    // Current thread gets "ownership" for vertex u. Only threads with "ownership"
+                    // can change the cluster id of a vertex.
+
+                    if (_matching_state[v].compare_exchange_strong(unmatched, match_in_progress)) {
+                      // Current thread has the "ownership" for u and v and can change the cluster id
+                      // of both vertices thread-safe.
+                      cluster_ids[u] = v;
+                      _cluster_weight[v] += weight_u;
+                      ++(two_hop_contracted_nodes.local());
+                      _matching_state[v] = STATE(MatchingState::MATCHED);
+                    }
+
+                    _rater.markAsMatched(u);
+                    _rater.markAsMatched(v);
+                    _matching_partner[u] = u;
+                    _matching_state[u] = STATE(MatchingState::MATCHED);
+                  }
+                }
+              }
+            }
+        });
+        current_num_nodes = num_hns_before_pass -
+                            two_hop_contracted_nodes.combine(std::plus<HypernodeID>());
+        //debug
+        std::string two_hop = "Two hop contractions: " + std::to_string(two_hop_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
+        std::cout << two_hop;
+        const double reduction_vertices_percentage =
+            static_cast<double>(num_hns_before_pass) /
+            static_cast<double>(current_num_nodes);
+        if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
+          //debug
+          std::cout << "Contraction limit not reached" << std::endl;
+          std::cout << "num_hns_before_pass: " << num_hns_before_pass << std::endl;
+          std::cout << "current_num_nodes: " << current_num_nodes << std::endl;
+          std::cout << "contraction_limit: " << _context.coarsening.contraction_limit << std::endl;
+          std::cout << "current_num_nodes/context.coarsening.contraction_limit: " << ((1.0*(current_num_nodes))/(_context.coarsening.contraction_limit)) << std::endl;
+          break;
+        }
       }
       _progress_bar += (num_hns_before_pass - current_num_nodes);
 
@@ -433,7 +516,11 @@ class MultilevelCoarsener : public ICoarsener,
         _matching_partner[u] = u;
         _matching_state[u] = STATE(MatchingState::MATCHED);
       }
+    } else {
+      //debug
+      //std::cout << "Valid rejected due to size\n";
     }
+
     return success;
   }
 

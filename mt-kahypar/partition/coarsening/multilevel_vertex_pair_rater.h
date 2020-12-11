@@ -53,13 +53,21 @@ class MultilevelVertexPairRater {
   class VertexPairRating {
    public:
     VertexPairRating(HypernodeID trgt, RatingType val, bool is_valid) :
+      source(std::numeric_limits<HypernodeID>::max()),
       target(trgt),
+      opt_target(trgt),
       value(val),
+      opt_value(val),
+      opt_valid(false),
       valid(is_valid) { }
 
     VertexPairRating() :
+      source(std::numeric_limits<HypernodeID>::max()),
       target(std::numeric_limits<HypernodeID>::max()),
+      opt_target(std::numeric_limits<HypernodeID>::max()),
       value(std::numeric_limits<RatingType>::min()),
+      opt_value(std::numeric_limits<RatingType>::min()),
+      opt_valid(false),
       valid(false) { }
 
     VertexPairRating(const VertexPairRating&) = delete;
@@ -68,8 +76,12 @@ class MultilevelVertexPairRater {
     VertexPairRating(VertexPairRating&&) = default;
     VertexPairRating & operator= (VertexPairRating &&) = delete;
 
+    HypernodeID source;
     HypernodeID target;
+    HypernodeID opt_target;
     RatingType value;
+    RatingType opt_value;
+    bool opt_valid;
     bool valid;
   };
 
@@ -159,16 +171,27 @@ class MultilevelVertexPairRater {
       fillRatingMap(hypergraph, u, tmp_ratings, cluster_ids);
     }
 
+    //debug
+    //int validFound = 0;
+
     int cpu_id = sched_getcpu();
     const HypernodeWeight weight_u = cluster_weight[u];
     const PartitionID community_u_id = hypergraph.communityID(u);
     RatingType max_rating = std::numeric_limits<RatingType>::min();
     HypernodeID target = std::numeric_limits<HypernodeID>::max();
     HypernodeID target_id = std::numeric_limits<HypernodeID>::max();
+    RatingType opt_max_rating = std::numeric_limits<RatingType>::min();
+    HypernodeID opt_target = std::numeric_limits<HypernodeID>::max();
+    HypernodeID opt_target_id = std::numeric_limits<HypernodeID>::max();
     for (auto it = tmp_ratings.end() - 1; it >= tmp_ratings.begin(); --it) {
       const HypernodeID tmp_target_id = it->key;
       const HypernodeID tmp_target = tmp_target_id;
       const HypernodeWeight target_weight = cluster_weight[tmp_target_id];
+
+      //debug
+      //if (validFound == 0) {
+      //  validFound = 1;
+      //}
 
       if ( tmp_target != u && weight_u + target_weight <= max_allowed_node_weight ) {
         HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
@@ -184,17 +207,55 @@ class MultilevelVertexPairRater {
           target_id = tmp_target_id;
           target = tmp_target;
         }
+      } else {
+        HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
+        penalty = penalty == 0 ? std::max(std::max(weight_u, target_weight), 1) : penalty;
+        const RatingType tmp_rating = it->value / static_cast<double>(penalty);
+
+        if ( community_u_id == hypergraph.communityID(tmp_target) &&
+             tmp_target != u &&
+             AcceptancePolicy::acceptRating(tmp_rating, opt_max_rating,
+                                            opt_target_id, tmp_target_id,
+                                            cpu_id, _already_matched) ) {
+          opt_max_rating = tmp_rating;
+          opt_target_id = tmp_target_id;
+          opt_target = tmp_target;
+        }
+        //debug
+        //validFound = 2;
       }
     }
 
     VertexPairRating ret;
+    ret.source = u;
     if (max_rating != std::numeric_limits<RatingType>::min()) {
       ASSERT(target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
       ret.value = max_rating;
       ret.target = target;
       ret.valid = true;
     }
+    if (opt_max_rating != std::numeric_limits<RatingType>::min()) {
+      ASSERT(opt_target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
+      ret.opt_value = opt_max_rating;
+      ret.opt_target = opt_target;
+      ret.opt_valid = true;
+    }
     tmp_ratings.clear();
+
+    //debug
+    /*if (!ret.valid) {
+      switch (validFound) {
+        case 0:
+          std::cout << "No valid Neighbour\n";
+          break;
+        case 2:
+          std::cout << "Size too big\n";
+          break;
+        default:
+          std::cout << "What the fuck\n";
+      }
+    }*/
+
     return ret;
   }
 
