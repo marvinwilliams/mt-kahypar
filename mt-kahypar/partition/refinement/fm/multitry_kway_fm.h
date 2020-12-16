@@ -65,6 +65,9 @@ public:
   void roundInitialization(PartitionedHypergraph& phg,
                            const parallel::scalable_vector<HypernodeID>& refinement_nodes);
 
+  void staticAssignment(PartitionedHypergraph &phg);
+  void partitionAssignment(PartitionedHypergraph &phg);
+
 
   LocalizedKWayFM<FMStrategy> constructLocalizedKWayFMSearch() {
     return LocalizedKWayFM<FMStrategy>(context, initial_num_nodes, sharedData);

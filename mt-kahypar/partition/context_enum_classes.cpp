@@ -158,6 +158,16 @@ namespace mt_kahypar {
     return os << static_cast<uint8_t>(algo);
   }
 
+  std::ostream & operator<< (std::ostream& os, const FMAssignmentStrategy& strategy) {
+    switch (strategy) {
+      case FMAssignmentStrategy::random_assignment: return os << "fm_random";
+      case FMAssignmentStrategy::partition_assignment: return os << "fm_partition";
+      case FMAssignmentStrategy::static_assignement: return os << "fm_static";
+        // omit default case to trigger compiler warning for missing cases
+    }
+    return os << static_cast<uint8_t>(strategy);
+  }
+
   std::ostream & operator<< (std::ostream& os, const GreedyRefinementAlgorithm& algo) {
     switch (algo) {
       case GreedyRefinementAlgorithm::greedy_basic: return os << "greedy_basic";
@@ -307,6 +317,18 @@ namespace mt_kahypar {
     }
     ERROR("Illegal option: " + type);
     return FMAlgorithm::do_nothing;
+  }
+
+  FMAssignmentStrategy fmAssignmentStrategyFromString(const std::string& strategy) {
+    if (strategy == "fm_random") {
+      return FMAssignmentStrategy::random_assignment;
+    } else if (strategy == "fm_static") {
+      return FMAssignmentStrategy::static_assignement;
+    } else if (strategy == "fm_partition") {
+      return FMAssignmentStrategy::partition_assignment;
+    }
+    ERROR("Illegal option: " + strategy);
+    return FMAssignmentStrategy::random_assignment;
   }
 
   GreedyRefinementAlgorithm greedyRefinementAlgorithmFromString(const std::string& type) {
