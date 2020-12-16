@@ -138,6 +138,7 @@ struct FMParameters {
   bool release_nodes = true;
   double time_limit_factor = std::numeric_limits<double>::max();
   bool greedy = false;
+  FMAssignmentStrategy assignment_strategy = FMAssignmentStrategy::random_assignment;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);

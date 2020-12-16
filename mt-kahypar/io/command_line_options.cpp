@@ -339,6 +339,16 @@ namespace mt_kahypar {
                      (initial_partitioning ? &context.initial_partitioning.refinement.fm.greedy :
                       &context.refinement.fm.greedy))->value_name("<bool>")->default_value(false),
              "If true, then parallel FM refinement round stops if the improvement is < 0.")
+            ((initial_partitioning ? "i-r-fm-assignment-strategy" : "r-fm-assignment-strategy"),
+             po::value<std::string>()->value_name("<string>")->notifier(
+               [&](const std::string& strategy) {
+               context.refinement.fm.assignment_strategy =
+               fmAssignmentStrategyFromString(strategy);
+               })->default_value("fm_random"),
+             "FM Assignment Strategies:\n"
+             "- fm_static\n"
+             "- fm_random\n"
+             "- fm_partition")
 #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :
