@@ -344,6 +344,14 @@ namespace mt_kahypar {
              "- fm_static\n"
              "- fm_random\n"
              "- fm_partition")
+            ((initial_partitioning ? "i-r-fm-num-moves-before-sync" : "r-fm-num-moves-before-sync"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.num_moves_before_sync :
+                 &context.refinement.fm.num_moves_before_sync))->value_name("<size_t>")->default_value(100),
+             "Number of local moves before synchronizing gain updates.")
+            ((initial_partitioning ? "i-r-fm-sync-with-mq" : "r-fm-sync-with-mq"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.sync_with_mq :
+                 &context.refinement.fm.sync_with_mq))->value_name("<bool>")->default_value(false),
+             "If true, use message queues for synchronizing gain updates.")
 #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :

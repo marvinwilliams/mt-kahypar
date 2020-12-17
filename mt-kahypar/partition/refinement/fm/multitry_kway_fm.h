@@ -53,6 +53,10 @@ public:
     if (context.refinement.fm.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
     }
+    if (context.refinement.fm.sync_with_mq) {
+      size_t num_threads = context.shared_memory.num_threads;
+      sharedData.messages = HypernodeIDMessageMatrix(num_threads * num_threads, vec<HypernodeID>());
+    }
   }
 
   bool refineImpl(PartitionedHypergraph& phg,

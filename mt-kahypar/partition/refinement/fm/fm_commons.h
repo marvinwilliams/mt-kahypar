@@ -27,6 +27,7 @@
 #include <mt-kahypar/parallel/work_stack.h>
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
+#include "mt-kahypar/parallel/hold_barrier.h"
 
 #include <tbb/parallel_for.h>
 
@@ -145,6 +146,7 @@ struct NodeTracker {
   }
 };
 
+using HypernodeIDMessageMatrix = vec<vec<HypernodeID>>;
 
 struct FMSharedData {
 
@@ -177,13 +179,17 @@ struct FMSharedData {
   bool release_nodes = true;
   bool perform_moves_global = true;
 
+  HypernodeIDMessageMatrix messages;
+  parallel::HoldBarrier holdBarrier;
+
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
           vertexPQHandles(), //numPQHandles, invalid_position),
           numParts(numParts),
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
-          targetPart()
+          targetPart(),
+          holdBarrier(numThreads)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 

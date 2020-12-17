@@ -77,6 +77,15 @@ private:
   // ! directly on the global partitioned hypergraph.
   void revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex);
 
+  void syncMessageQueues(PartitionedHypergraph& phg);
+
+  void updateNeighborDeduplicator() {
+    if (++deduplicationTime == 0) {
+      neighborDeduplicator.assign(neighborDeduplicator.size(), 0);
+      deduplicationTime = 1;
+    }
+  }
+
  private:
 
   const Context& context;
@@ -108,6 +117,7 @@ private:
 
   FMSharedData& sharedData;
 
+  size_t _local_moves_since_sync = 0;
 };
 
 }
