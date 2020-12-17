@@ -151,6 +151,13 @@ namespace mt_kahypar {
     // clear border nodes
     sharedData.refinementNodes.clear();
 
+    // clear message queues
+    if (context.refinement.fm.sync_with_mq) {
+      for (auto &mq : sharedData.messages) {
+        mq.clear();
+      }
+    }
+
     if ( refinement_nodes.empty() ) {
       // log(n) level case
       // iterate over all nodes and insert border nodes into task queue

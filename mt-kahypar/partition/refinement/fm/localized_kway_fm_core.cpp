@@ -90,6 +90,18 @@ namespace mt_kahypar {
               fm_strategy.updateGain(phg, v, move);
             } else if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
               fm_strategy.insertIntoPQ(phg, v, searchOfV);
+            } else if (context.refinement.greedy.sync_with_mq && searchOfV != 0 &&
+                searchOfV > sharedData.nodeTracker.deactivatedNodeMarker) {
+              // send hypernode id to responsible threads message queue
+              SearchID v_index =
+                searchOfV - sharedData.nodeTracker.deactivatedNodeMarker - 1;
+              SearchID this_index =
+                thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
+              SearchID num_threads = context.shared_memory.num_threads;
+              ASSERT(v_index * num_threads + this_index <
+                  static_cast<SearchID>(sharedData.messages.size()));
+              sharedData.messages[v_index * num_threads + this_index]
+                .push_back(v);
             }
             neighborDeduplicator[v] = deduplicationTime;
           }
@@ -98,10 +110,7 @@ namespace mt_kahypar {
     }
     edgesWithGainChanges.clear();
 
-    if (++deduplicationTime == 0) {
-      neighborDeduplicator.assign(neighborDeduplicator.size(), 0);
-      deduplicationTime = 1;
-    }
+    updateNeighborDeduplicator();
   }
 
 
@@ -146,6 +155,11 @@ namespace mt_kahypar {
 
     while (!stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
+
+      if (context.refinement.fm.sync_with_mq && _local_moves_since_sync >=
+          context.refinement.fm.num_moves_before_sync) {
+        syncMessageQueues(phg);
+      }
 
       if constexpr (use_delta) {
         if (!fm_strategy.findNextMove(deltaPhg, move)) break;
@@ -311,6 +325,37 @@ namespace mt_kahypar {
       localMoves.pop_back();
     }
   }
+
+  template<typename FMStrategy>
+    void LocalizedKWayFM<FMStrategy>::syncMessageQueues(PartitionedHypergraph &phg) {
+      sharedData.holdBarrier.aquire();
+      SearchID this_index =
+        thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
+      size_t num_threads = context.shared_memory.num_threads;
+      auto mq_begin =
+        sharedData.messages.begin() + this_index * num_threads;
+      auto mq_end = mq_begin + num_threads;
+      ASSERT(mq_end <= sharedData.messages.end());
+      ASSERT((mq_begin + this_index)->empty());
+      Move m;
+      std::for_each(mq_begin, mq_end, [&](auto &mq) {
+          for (const auto v : mq) {
+          // use deduplicator to prevent uneeded pq updates
+          if (neighborDeduplicator[v] != deduplicationTime &&
+              !sharedData.nodeTracker.isLocked(v)) {
+          // this forces gain recalculation as we do not want to put moves into the mq
+          m.from = sharedData.targetPart[v];
+          fm_strategy.updateGain(phg, v, m);
+          neighborDeduplicator[v] = deduplicationTime;
+          }
+          }
+          fm_strategy.updatePQs(phg);
+          mq.clear();
+          });
+      updateNeighborDeduplicator();
+      _local_moves_since_sync = 0;
+      sharedData.holdBarrier.release();
+    }
 
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::memoryConsumption(utils::MemoryTreeNode *parent) const {
