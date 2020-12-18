@@ -151,11 +151,17 @@ namespace mt_kahypar {
     // clear border nodes
     sharedData.refinementNodes.clear();
 
+    // clear message queues
+    if (context.refinement.fm.sync_with_mq) {
+      for (auto &mq : sharedData.messages) {
+        mq.clear();
+      }
+    }
+
     if ( refinement_nodes.empty() ) {
       // log(n) level case
       // iterate over all nodes and insert border nodes into task queue
-      tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
-        [&](const tbb::blocked_range<HypernodeID>& r) {
+        auto random_assignment = [&](const tbb::blocked_range<HypernodeID>& r) {
           const int task_id = tbb::this_task_arena::current_thread_index();
           ASSERT(task_id >= 0 && task_id < TBBNumaArena::instance().total_number_of_threads());
           for (HypernodeID u = r.begin(); u < r.end(); ++u) {
@@ -163,7 +169,22 @@ namespace mt_kahypar {
               sharedData.refinementNodes.safe_push(u, task_id);
             }
           }
-        });
+        };
+        FMAssignmentStrategy assignment_strategy = context.refinement.fm.assignment_strategy;
+        switch (assignment_strategy) {
+          case FMAssignmentStrategy::static_assignement:
+            staticAssignment(phg);
+            break;
+          case FMAssignmentStrategy::random_assignment:
+            tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+                random_assignment);
+            break;
+          case FMAssignmentStrategy::partition_assignment:
+            partitionAssignment(phg);
+            break;
+          default:
+            throw std::runtime_error("no work distribution strategy provided");
+        }
     } else {
       // n-level case
       tbb::parallel_for(0UL, refinement_nodes.size(), [&](const size_t i) {
@@ -186,6 +207,131 @@ namespace mt_kahypar {
     sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
   }
 
+  template<typename FMStrategy>
+  void MultiTryKWayFM<FMStrategy>::staticAssignment(PartitionedHypergraph &phg) {
+
+    tbb::enumerable_thread_specific<vec<HypernodeID>> ets_border_nodes;
+
+    // thread local border node calculation
+    tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+        [&](const tbb::blocked_range<HypernodeID> &r) {
+        auto &tl_border_nodes = ets_border_nodes.local();
+        for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+        if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+        tl_border_nodes.push_back(u);
+        }
+        }
+        });
+    // combine thread local border nodes
+    vec<HypernodeID> border_nodes;
+    for (const auto &tl_border_nodes : ets_border_nodes) {
+      border_nodes.insert(border_nodes.end(), tl_border_nodes.begin(),
+          tl_border_nodes.end());
+    }
+    size_t nodes_per_thread =
+      (border_nodes.size() / context.shared_memory.num_threads) + 1;
+    tbb::task_group tg;
+    // distribute border nodes to threads
+    auto task = [&](const auto thread_id) {
+      auto begin = border_nodes.begin() + thread_id * nodes_per_thread;
+      auto end = std::min(begin + nodes_per_thread, border_nodes.end());
+      sharedData.refinementNodes.tls_queues[thread_id].elements.insert(
+          sharedData.refinementNodes.tls_queues[thread_id].elements.end(), begin, end);
+    };
+    for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {
+      tg.run(std::bind(task, i));
+    }
+    tg.wait();
+  }
+
+  template<typename FMStrategy>
+  void MultiTryKWayFM<FMStrategy>::partitionAssignment(PartitionedHypergraph &phg) {
+
+    tbb::enumerable_thread_specific<vec<vec<HypernodeID>>> ets_border_nodes;
+
+    // thread local border node calculation
+    tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
+        [&](const tbb::blocked_range<HypernodeID> &r) {
+        auto &tl_border_nodes = ets_border_nodes.local();
+        tl_border_nodes.resize(context.partition.k);
+        for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+        if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+        tl_border_nodes[phg.partID(u)].push_back(u);
+        }
+        }
+        });
+
+    vec<std::pair<size_t, PartitionID>> part_sizes_with_id(context.partition.k);
+    vec<vec<HypernodeID>> border_nodes(context.partition.k);
+
+    // make pairs of number of border nodes in a partition and the partition id.
+    // Also combine the found border nodes of each partition into one bucket
+    // list
+    tbb::parallel_for(PartitionID(0), context.partition.k, [&](const auto i) {
+        part_sizes_with_id[i] = std::make_pair(0, i);
+        });
+    for (const auto &tl_border_nodes : ets_border_nodes) {
+      tbb::parallel_for(PartitionID(0), context.partition.k, [&](const auto i) {
+          part_sizes_with_id[i].first += tl_border_nodes[i].size();
+          border_nodes[i].insert(border_nodes[i].end(), tl_border_nodes[i].begin(),
+              tl_border_nodes[i].end());
+          });
+    }
+
+    // sort pairs by number of border nodes descending
+    std::sort(part_sizes_with_id.begin(), part_sizes_with_id.end(),
+        std::greater<>());
+
+    size_t sum =
+      std::accumulate(part_sizes_with_id.begin(), part_sizes_with_id.end(), 0,
+          [](auto a, const auto &b) { return a + b.first; });
+
+    // optimal number of border nodes for each thread
+    size_t target_size = (sum / context.shared_memory.num_threads) + 1;
+
+    // distribute border nodes equally onto threads
+    /* TODO: can bin packing be made prettier? <19-11-20, @noahares> */
+    vec<vec<PartitionID>> partitions_of_thread(context.shared_memory.num_threads);
+    size_t index = 0;
+    for (const auto &nodes : part_sizes_with_id) {
+      size_t start_index = index;
+      int remaining_space = target_size -
+        sharedData.refinementNodes.tls_queues[index].elements.size() +
+        nodes.first;
+      int best_remaining_space = remaining_space;
+      int best_index = index;
+      bool all_bins_checked = false;
+      while (remaining_space < 0 && !all_bins_checked) {
+        index = (index + 1) % context.shared_memory.num_threads;
+        remaining_space = target_size -
+        sharedData.refinementNodes.tls_queues[index].elements.size() +
+          nodes.first;
+        best_index = remaining_space > best_remaining_space ? index : best_index;
+        best_remaining_space = std::max(best_remaining_space, remaining_space);
+        if (index == start_index) {
+          all_bins_checked = true;
+        }
+      }
+      partitions_of_thread[best_index].push_back(nodes.second);
+      index = (index + 1) % context.shared_memory.num_threads;
+    }
+
+    // actually copy hypernode ids to final assignment
+    tbb::task_group tg;
+    auto task = [&](const auto i) {
+      for (auto id : partitions_of_thread[i]) {
+        sharedData.refinementNodes.tls_queues[i].elements.insert(
+            sharedData.refinementNodes.tls_queues[i].elements.end(),
+            border_nodes[id].begin(), border_nodes[id].end());
+      }
+    };
+    for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {
+      tg.run(std::bind(task, i));
+    }
+    tg.wait();
+
+    ASSERT(sum == sharedData.refinementNodes.unsafe_size());
+  }
 
   template<typename FMStrategy>
   void MultiTryKWayFM<FMStrategy>::initializeImpl(PartitionedHypergraph& phg) {

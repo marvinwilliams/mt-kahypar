@@ -112,6 +112,12 @@ enum class FMAlgorithm : uint8_t {
   do_nothing
 };
 
+enum class FMAssignmentStrategy : uint8_t {
+  static_assignement,
+  random_assignment,
+  partition_assignment
+};
+
 enum class GreedyRefinementAlgorithm : uint8_t {
   greedy_basic,
   /* greedy_hill_scanning, */
@@ -148,6 +154,8 @@ std::ostream & operator<< (std::ostream& os, const LabelPropagationAlgorithm& al
 
 std::ostream & operator<< (std::ostream& os, const FMAlgorithm& algo);
 
+std::ostream & operator<< (std::ostream& os, const FMAssignmentStrategy& strategy);
+
 std::ostream & operator<< (std::ostream& os, const GreedyRefinementAlgorithm& algo);
 
 std::ostream & operator<< (std::ostream& os, const GreedyAssignmentStrategy& strategy);
@@ -171,6 +179,9 @@ InitialPartitioningMode initialPartitioningModeFromString(const std::string& mod
 LabelPropagationAlgorithm labelPropagationAlgorithmFromString(const std::string& type);
 
 FMAlgorithm fmAlgorithmFromString(const std::string& type);
+
+FMAssignmentStrategy
+fmAssignmentStrategyFromString(const std::string &strategy);
 
 GreedyRefinementAlgorithm greedyRefinementAlgorithmFromString(const std::string& type);
 

@@ -27,6 +27,7 @@
 #include <mt-kahypar/parallel/work_stack.h>
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
+#include "mt-kahypar/parallel/hold_barrier.h"
 
 #include <tbb/parallel_for.h>
 
@@ -145,6 +146,7 @@ struct NodeTracker {
   }
 };
 
+using HypernodeIDMessageMatrix = vec<vec<HypernodeID>>;
 
 struct FMSharedData {
 
@@ -177,13 +179,19 @@ struct FMSharedData {
   bool release_nodes = true;
   bool perform_moves_global = true;
 
+  HypernodeIDMessageMatrix messages;
+  vec<size_t> mqToSearchMap;
+  parallel::HoldBarrier holdBarrier;
+
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
           vertexPQHandles(), //numPQHandles, invalid_position),
           numParts(numParts),
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
-          targetPart()
+          targetPart(),
+          mqToSearchMap(numThreads, 0),
+          holdBarrier(numThreads)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 
@@ -219,6 +227,15 @@ struct FMSharedData {
       return numNodes * context.partition.k;
     } else {
       return numNodes;
+    }
+  }
+
+  std::optional<size_t> getMQFromSearchID(size_t searchID) {
+    const auto first_free = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), searchID);
+    if (*first_free == searchID) {
+      return std::distance(mqToSearchMap.begin(), first_free);
+    } else {
+      return {};
     }
   }
 
