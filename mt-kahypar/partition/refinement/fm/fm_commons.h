@@ -180,6 +180,7 @@ struct FMSharedData {
   bool perform_moves_global = true;
 
   HypernodeIDMessageMatrix messages;
+  vec<size_t> mqToSearchMap;
   parallel::HoldBarrier holdBarrier;
 
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
@@ -189,6 +190,7 @@ struct FMSharedData {
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
           targetPart(),
+          mqToSearchMap(numThreads, 0),
           holdBarrier(numThreads)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
@@ -225,6 +227,15 @@ struct FMSharedData {
       return numNodes * context.partition.k;
     } else {
       return numNodes;
+    }
+  }
+
+  std::optional<size_t> getMQFromSearchID(size_t searchID) {
+    const auto first_free = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), searchID);
+    if (*first_free == searchID) {
+      return std::distance(mqToSearchMap.begin(), first_free);
+    } else {
+      return {};
     }
   }
 
