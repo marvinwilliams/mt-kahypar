@@ -181,7 +181,9 @@ struct FMSharedData {
 
   HypernodeIDMessageMatrix messages;
   vec<size_t> mqToSearchMap;
+  std::mutex mutex;
   parallel::HoldBarrier holdBarrier;
+  size_t numThreads;
 
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
@@ -191,7 +193,8 @@ struct FMSharedData {
           nodeTracker(), //numNodes),
           targetPart(),
           mqToSearchMap(numThreads, 0),
-          holdBarrier(numThreads)
+          holdBarrier(numThreads),
+          numThreads(numThreads)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 
@@ -230,14 +233,35 @@ struct FMSharedData {
     }
   }
 
-  std::optional<size_t> getMQFromSearchID(size_t searchID) {
-    const auto first_free = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), searchID);
-    if (*first_free == searchID) {
-      return std::distance(mqToSearchMap.begin(), first_free);
+  std::optional<size_t> getMQFromSearchID(SearchID searchID) {
+    const auto mq_index = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), searchID);
+    if (mq_index != mqToSearchMap.end()) {
+      return std::distance(mqToSearchMap.begin(), mq_index);
     } else {
       return {};
     }
   }
+
+  void aquireMQ(SearchID searchID) {
+    mutex.lock();
+    auto first_free = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), 0);
+    ASSERT(first_free != mqToSearchMap.end());
+    *first_free = searchID;
+    mutex.unlock();
+  }
+
+  void releaseMQ(SearchID searchID) {
+      size_t index = getMQFromSearchID(searchID).value();
+      mutex.lock();
+      mqToSearchMap[index] = 0;
+      auto mq_begin = messages.begin() + index * numThreads;
+      auto mq_end = mq_begin + numThreads;
+      std::for_each(mq_begin, mq_end, [&](auto &mq) {
+          mq.clear();
+          });
+      mutex.unlock();
+  }
+
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const {
     ASSERT(parent);

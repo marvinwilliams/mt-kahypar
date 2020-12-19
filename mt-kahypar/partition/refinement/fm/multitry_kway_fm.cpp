@@ -73,7 +73,12 @@ namespace mt_kahypar {
       auto task = [&](const size_t task_id) {
         auto& fm = ets_fm.local();
         while(sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit
-              && fm.findMoves(phg, task_id, num_seeds)) { /* keep running*/ }
+              && fm.findMoves(phg, task_id, num_seeds)) {
+        }
+        /* TODO: manage size of barrier <18-12-20, @noahares> */
+        if (context.refinement.fm.sync_with_mq) {
+          sharedData.holdBarrier.lowerSize();
+        }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
       size_t num_tasks = std::min(num_border_nodes, context.shared_memory.num_threads);
@@ -156,6 +161,7 @@ namespace mt_kahypar {
       for (auto &mq : sharedData.messages) {
         mq.clear();
       }
+      sharedData.holdBarrier.reset(context.shared_memory.num_threads);
     }
 
     if ( refinement_nodes.empty() ) {
