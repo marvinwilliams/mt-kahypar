@@ -77,7 +77,9 @@ private:
   // ! directly on the global partitioned hypergraph.
   void revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex);
 
-  void syncMessageQueues(PartitionedHypergraph& phg);
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  void syncMessageQueues(PHG& phg);
 
   void updateNeighborDeduplicator() {
     if (++deduplicationTime == 0) {

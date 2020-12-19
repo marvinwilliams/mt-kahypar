@@ -26,7 +26,9 @@ namespace mt_kahypar {
   bool LocalizedKWayFM<FMStrategy>::findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds) {
     localMoves.clear();
     thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
-    sharedData.mqToSearchMap[sharedData.getMQFromSearchID(0).value()] = thisSearch;
+    if (context.refinement.fm.sync_with_mq) {
+      sharedData.aquireMQ(thisSearch);
+    }
 
     HypernodeID seedNode;
     while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
@@ -54,8 +56,14 @@ namespace mt_kahypar {
         deltaPhg.setPartitionedHypergraph(&phg);
         internalFindMoves<true>(phg);
       }
+      if (context.refinement.fm.sync_with_mq) {
+        sharedData.releaseMQ(thisSearch);
+      }
       return true;
     } else {
+      if (context.refinement.fm.sync_with_mq) {
+        sharedData.releaseMQ(thisSearch);
+      }
       return false;
     }
   }
@@ -95,11 +103,9 @@ namespace mt_kahypar {
             } else if (context.refinement.fm.sync_with_mq && searchOfV != 0 &&
                 indexOfV.has_value()) {
               // send hypernode id to responsible threads message queue
-              SearchID v_index = sharedData.getMQFromSearchID(searchOfV).value();
+              SearchID v_index = indexOfV.value();
               SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
               SearchID num_threads = context.shared_memory.num_threads;
-              /* TODO: fm does allow threads to run multiple searches before updating the deactivedNodeMarker
-                 Need to manually set something similar when searches exit <18-12-20, @noahares> */
               ASSERT(v_index * num_threads + this_index <
                   static_cast<SearchID>(sharedData.messages.size()));
               sharedData.messages[v_index * num_threads + this_index]
@@ -160,7 +166,11 @@ namespace mt_kahypar {
 
       if (context.refinement.fm.sync_with_mq && _local_moves_since_sync >=
           context.refinement.fm.num_moves_before_sync) {
-        syncMessageQueues(phg);
+        if constexpr (use_delta) {
+          syncMessageQueues(deltaPhg);
+        } else {
+          syncMessageQueues(phg);
+        }
       }
 
       if constexpr (use_delta) {
@@ -235,7 +245,6 @@ namespace mt_kahypar {
     runStats.estimated_improvement = bestImprovement;
     fm_strategy.clearPQs(bestImprovementIndex);
     runStats.merge(stats);
-    sharedData.mqToSearchMap[thisSearch] = 0;
   }
 
 
@@ -331,7 +340,9 @@ namespace mt_kahypar {
   }
 
   template<typename FMStrategy>
-    void LocalizedKWayFM<FMStrategy>::syncMessageQueues(PartitionedHypergraph &phg) {
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    void LocalizedKWayFM<FMStrategy>::syncMessageQueues(PHG &phg) {
       sharedData.holdBarrier.aquire();
       SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
       size_t num_threads = context.shared_memory.num_threads;
