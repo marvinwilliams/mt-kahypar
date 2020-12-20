@@ -189,9 +189,9 @@ class MultilevelVertexPairRater {
       const HypernodeWeight target_weight = cluster_weight[tmp_target_id];
 
       //debug
-      //if (validFound == 0) {
-      //  validFound = 1;
-      //}
+      /*if (validFound == 0) {
+        validFound = 1;
+      }*/
 
       if ( tmp_target != u && weight_u + target_weight <= max_allowed_node_weight ) {
         HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
@@ -207,22 +207,25 @@ class MultilevelVertexPairRater {
           target_id = tmp_target_id;
           target = tmp_target;
         }
-      } else {
+      } else if (tmp_target != u) {
         HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
         penalty = penalty == 0 ? std::max(std::max(weight_u, target_weight), 1) : penalty;
         const RatingType tmp_rating = it->value / static_cast<double>(penalty);
 
         if ( community_u_id == hypergraph.communityID(tmp_target) &&
-             tmp_target != u &&
              AcceptancePolicy::acceptRating(tmp_rating, opt_max_rating,
                                             opt_target_id, tmp_target_id,
                                             cpu_id, _already_matched) ) {
           opt_max_rating = tmp_rating;
           opt_target_id = tmp_target_id;
           opt_target = tmp_target;
+
+          //debug
+          //validFound = 2;
+        } /*else {
+          //debug
+          validFound = 3;*/
         }
-        //debug
-        //validFound = 2;
       }
     }
 
@@ -250,6 +253,9 @@ class MultilevelVertexPairRater {
           break;
         case 2:
           std::cout << "Size too big\n";
+          break;
+        case 3:
+          std::cout << "Not Accepted size too big\n";
           break;
         default:
           std::cout << "What the fuck\n";

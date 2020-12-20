@@ -150,6 +150,10 @@ class MultilevelCoarsener : public ICoarsener,
       
       //debug
       std::cout << "\npass_nr: " << pass_nr << std::endl;
+      /*int notValid = 0;
+      int pushed = 0;
+      tbb::enumerable_thread_specific<int> t_notValid(0);
+      tbb::enumerable_thread_specific<int> t_pushed(0);*/
 
       HighResClockTimepoint round_start = std::chrono::high_resolution_clock::now();
       Hypergraph& current_hg = Base::currentHypergraph();
@@ -238,9 +242,10 @@ class MultilevelCoarsener : public ICoarsener,
                     _context.shared_memory.num_threads;
                 }
               } else {
-                //std::cout << "What:" << pass_nr << "\n";
+                //(t_notValid.local())++;
                 //Store preferred cluster for all nodes that don't get matched so they can be used for two hop matching
                 if (rating.opt_valid) {
+                  //(t_pushed.local())++;
                   //opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(u, rating.opt_target));
                   opt_targets.push_back(std::pair<HypernodeID, HypernodeID>(rating.opt_target, u));
                 }
@@ -289,7 +294,11 @@ class MultilevelCoarsener : public ICoarsener,
         static_cast<double>(current_num_nodes);
       if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
         //debug
-        //std::cout << "Size of opt_targets:" << opt_targets.size() << std::endl;
+        /*notValid = t_notValid.combine(std::plus<int>());
+        pushed = t_pushed.combine(std::plus<int>());
+        std::cout << "Size of opt_targets:" << opt_targets.size() << std::endl;
+        std::cout << "Non-Valid Ratings this pass:" << notValid << std::endl;
+        std::cout << "Pushed this pass:" << pushed << std::endl;*/
         //tbb::parallel_for(0,8, [&](const HypernodeID id) {
         //  std::cout << "Size of opt_targets:" << opt_targets.local().size() << std::endl;
         //});
