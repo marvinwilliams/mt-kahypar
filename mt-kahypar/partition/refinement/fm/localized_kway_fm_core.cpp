@@ -342,34 +342,32 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
-    void LocalizedKWayFM<FMStrategy>::syncMessageQueues(PHG &phg) {
-      sharedData.holdBarrier.aquire();
-      SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
-      size_t num_threads = context.shared_memory.num_threads;
-      auto mq_begin =
-        sharedData.messages.begin() + this_index * num_threads;
-      auto mq_end = mq_begin + num_threads;
-      ASSERT(mq_end <= sharedData.messages.end());
-      ASSERT((mq_begin + this_index)->empty());
-      Move m;
-      std::for_each(mq_begin, mq_end, [&](auto &mq) {
-          for (const auto v : mq) {
-          // use deduplicator to prevent uneeded pq updates
-          if (neighborDeduplicator[v] != deduplicationTime &&
-              !sharedData.nodeTracker.isLocked(v)) {
-          // this forces gain recalculation as we do not want to put moves into the mq
-          m.from = sharedData.targetPart[v];
-          fm_strategy.updateGain(phg, v, m);
-          neighborDeduplicator[v] = deduplicationTime;
+  void LocalizedKWayFM<FMStrategy>::syncMessageQueues(PHG &phg) {
+    sharedData.holdBarrier.aquire();
+    SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
+    size_t num_threads = context.shared_memory.num_threads;
+    auto mq_begin = sharedData.messages.begin() + this_index * num_threads;
+    auto mq_end = mq_begin + num_threads;
+    ASSERT(mq_end <= sharedData.messages.end());
+    ASSERT((mq_begin + this_index)->empty());
+    Move m;
+    std::for_each(mq_begin, mq_end, [&](auto &mq) {
+        for (const auto v : mq) {
+        // use deduplicator to prevent uneeded pq updates
+          if (neighborDeduplicator[v] != deduplicationTime && !sharedData.nodeTracker.isLocked(v)) {
+            // this forces gain recalculation as we do not want to put moves into the mq
+            m.from = sharedData.targetPart[v];
+            fm_strategy.updateGain(phg, v, m);
+            neighborDeduplicator[v] = deduplicationTime;
           }
-          }
-          fm_strategy.updatePQs(phg);
-          mq.clear();
-          });
-      updateNeighborDeduplicator();
-      _local_moves_since_sync = 0;
-      sharedData.holdBarrier.release();
-    }
+        }
+        fm_strategy.updatePQs(phg);
+        mq.clear();
+        });
+    updateNeighborDeduplicator();
+    _local_moves_since_sync = 0;
+    sharedData.holdBarrier.release();
+  }
 
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::memoryConsumption(utils::MemoryTreeNode *parent) const {
