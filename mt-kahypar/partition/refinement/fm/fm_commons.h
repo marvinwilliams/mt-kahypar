@@ -243,23 +243,25 @@ struct FMSharedData {
   }
 
   void aquireMQ(SearchID searchID) {
+    // maybe spinlock
     mutex.lock();
     auto first_free = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), 0);
     ASSERT(first_free != mqToSearchMap.end());
     *first_free = searchID;
     mutex.unlock();
+    size_t index = std::distance(mqToSearchMap.begin(), first_free);
+    auto mq_begin = messages.begin() + index * numThreads;
+    auto mq_end = mq_begin + numThreads;
+    std::for_each(mq_begin, mq_end, [&](auto &mq) {
+        mq.clear();
+        });
   }
 
   void releaseMQ(SearchID searchID) {
-      size_t index = getMQFromSearchID(searchID).value();
-      mutex.lock();
-      mqToSearchMap[index] = 0;
-      auto mq_begin = messages.begin() + index * numThreads;
-      auto mq_end = mq_begin + numThreads;
-      std::for_each(mq_begin, mq_end, [&](auto &mq) {
-          mq.clear();
-          });
-      mutex.unlock();
+    size_t index = getMQFromSearchID(searchID).value();
+    mutex.lock();
+    mqToSearchMap[index] = 0;
+    mutex.unlock();
   }
 
 
