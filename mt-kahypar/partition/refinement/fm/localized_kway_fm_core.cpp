@@ -104,21 +104,22 @@ namespace mt_kahypar {
         for (HypernodeID v : phg.pins(e)) {
           if (neighborDeduplicator[v] != deduplicationTime) {
             SearchID searchOfV = sharedData.nodeTracker.searchOfNode[v].load(std::memory_order_acq_rel);
-            auto indexOfV = sharedData.getMQFromSearchID(searchOfV);
             if (searchOfV == thisSearch) {
               fm_strategy.updateGain(phg, v, move);
             } else if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
               fm_strategy.insertIntoPQ(phg, v, searchOfV);
-            } else if (context.refinement.fm.sync_with_mq && searchOfV != 0 &&
-                indexOfV.has_value()) {
-              // send hypernode id to responsible threads message queue
-              SearchID v_index = indexOfV.value();
-              SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
-              SearchID num_threads = context.shared_memory.num_threads;
-              ASSERT(v_index * num_threads + this_index <
-                  static_cast<SearchID>(sharedData.messages.size()));
-              sharedData.messages[v_index * num_threads + this_index]
-                .push_back(v);
+            } else if (context.refinement.fm.sync_with_mq && searchOfV != 0) {
+              auto indexOfV = sharedData.getMQFromSearchID(searchOfV);
+              if (indexOfV.has_value()) {
+                // send hypernode id to responsible threads message queue
+                SearchID v_index = indexOfV.value();
+                SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
+                SearchID num_threads = context.shared_memory.num_threads;
+                ASSERT(v_index * num_threads + this_index <
+                    static_cast<SearchID>(sharedData.messages.size()));
+                sharedData.messages[v_index * num_threads + this_index]
+                  .push_back(v);
+              }
             }
             neighborDeduplicator[v] = deduplicationTime;
           }
