@@ -28,16 +28,25 @@ namespace mt_kahypar {
     thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
     if (context.refinement.fm.sync_with_mq) {
       sharedData.aquireMQ(thisSearch);
-    }
-
-    HypernodeID seedNode;
-    while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
-      SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
-      if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
-        fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+      /* TODO: map searchID to thread id and use thread id as mq index <21-12-20, yourname> */
+      HypernodeID seedNode;
+      while (sharedData.refinementNodes.try_pop_no_steal(seedNode, taskID)) {
+        SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
+        if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
+          fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+        }
+      }
+    } else {
+      HypernodeID seedNode;
+      while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
+        SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
+        if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
+          fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+        }
       }
     }
     fm_strategy.updatePQs(phg);
+    //sync here to aquire nodes later without stealing
 
     if (runStats.pushes > 0) {
       if (!context.refinement.fm.perform_moves_global
