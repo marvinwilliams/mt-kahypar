@@ -28,6 +28,8 @@ namespace mt_kahypar {
     thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
     if (context.refinement.fm.sync_with_mq) {
       sharedData.aquireMQ(thisSearch);
+    }
+    if (context.refinement.fm.greedy) {
       /* TODO: map searchID to thread id and use thread id as mq index <21-12-20, yourname> */
       HypernodeID seedNode;
       while (sharedData.refinementNodes.try_pop_no_steal(seedNode, taskID)) {

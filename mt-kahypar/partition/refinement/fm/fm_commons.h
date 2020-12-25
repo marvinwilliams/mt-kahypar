@@ -250,11 +250,9 @@ struct FMSharedData {
     *first_free = searchID;
     mutex.unlock();
     size_t index = std::distance(mqToSearchMap.begin(), first_free);
-    auto mq_begin = messages.begin() + index * numThreads;
-    auto mq_end = mq_begin + numThreads;
-    std::for_each(mq_begin, mq_end, [&](auto &mq) {
-        mq.clear();
-        });
+    for (size_t i = 0; i < numThreads; ++i) {
+      messages[index * numThreads + i].clear();
+    }
   }
 
   void releaseMQ(SearchID searchID) {
