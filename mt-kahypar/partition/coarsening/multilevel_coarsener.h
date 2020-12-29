@@ -150,10 +150,6 @@ class MultilevelCoarsener : public ICoarsener,
       
       //debug
       std::cout << "\npass_nr: " << pass_nr << std::endl;
-      /*int notValid = 0;
-      int pushed = 0;
-      tbb::enumerable_thread_specific<int> t_notValid(0);
-      tbb::enumerable_thread_specific<int> t_pushed(0);*/
 
       HighResClockTimepoint round_start = std::chrono::high_resolution_clock::now();
       Hypergraph& current_hg = Base::currentHypergraph();
@@ -201,6 +197,7 @@ class MultilevelCoarsener : public ICoarsener,
       HypernodeID current_num_nodes = num_hns_before_pass;
       //tbb::enumerable_thread_specific< std::vector< std::pair < HypernodeID, HypernodeID>>> opt_targets;
       tbb::concurrent_vector< std::pair < HypernodeID, HypernodeID>> opt_targets;
+      tbb::concurrent_vector< std::pair < HyperedgeID, HypernodeID>> edge_targets;
       tbb::enumerable_thread_specific<HypernodeID> contracted_nodes(0);
       tbb::enumerable_thread_specific<HypernodeID> num_nodes_update_threshold(0);
       tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID id) {
@@ -242,12 +239,13 @@ class MultilevelCoarsener : public ICoarsener,
                     _context.shared_memory.num_threads;
                 }
               } else {
-                //(t_notValid.local())++;
-                //Store preferred cluster for all nodes that don't get matched so they can be used for two hop matching
-                if (rating.opt_valid) {
-                  //(t_pushed.local())++;
+                if (rating.state == STATE(Rater::RatingState::VERTEX_TOO_BIG)) {
+                  //Store preferred cluster for all nodes that don't get matched so they can be used for two hop matching
                   //opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(u, rating.opt_target));
                   opt_targets.push_back(std::pair<HypernodeID, HypernodeID>(rating.opt_target, u));
+                } else if (rating.state == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
+                  //Store edge that was to big too be considered in rating for all nodes that didn't find a contraction target
+                  edge_targets.push_back(std::pair<HyperedgeID, HypernodeID>(rating.opt_target, u));
                 }
               }
             }
@@ -294,14 +292,9 @@ class MultilevelCoarsener : public ICoarsener,
         static_cast<double>(current_num_nodes);
       if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
         //debug
-        /*notValid = t_notValid.combine(std::plus<int>());
-        pushed = t_pushed.combine(std::plus<int>());
-        std::cout << "Size of opt_targets:" << opt_targets.size() << std::endl;
-        std::cout << "Non-Valid Ratings this pass:" << notValid << std::endl;
-        std::cout << "Pushed this pass:" << pushed << std::endl;*/
-        //tbb::parallel_for(0,8, [&](const HypernodeID id) {
-        //  std::cout << "Size of opt_targets:" << opt_targets.local().size() << std::endl;
-        //});
+        //std::cout << "Size of opt_targets:" << opt_targets.size() << std::endl;
+
+        //Contract vertices which want to join a cluster that is to big with vertices that wan to join the same cluster
         //TODO rewrite to use counting sort
         tbb::parallel_sort(opt_targets.begin(), opt_targets.end());
         std::vector<int> bounds = {0};
@@ -315,7 +308,7 @@ class MultilevelCoarsener : public ICoarsener,
         }
         bounds.push_back(opt_targets.size()-1);
         tbb::enumerable_thread_specific<HypernodeID> two_hop_contracted_nodes(0);
-        tbb::parallel_for(1, (int) bounds.size()-1, [&](const int index) {
+        tbb::parallel_for(0, (int) bounds.size()-1, [&](const int index) {
             uint8_t unmatched = STATE(MatchingState::UNMATCHED);
             uint8_t match_in_progress = STATE(MatchingState::MATCHING_IN_PROGRESS);
             //debug
@@ -357,6 +350,76 @@ class MultilevelCoarsener : public ICoarsener,
         //debug
         std::string two_hop = "Two hop contractions: " + std::to_string(two_hop_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
         std::cout << two_hop;
+
+        //debug
+        //std::cout << "Size of edge_targets:" << edge_targets.size() << std::endl;
+        // Contract vertices that don't have a contraction target, but are both pins of the same edge that is too big
+        // too be considered during rating
+        //TODO rewrite to use counting sort
+        tbb::parallel_sort(edge_targets.begin(), edge_targets.end());
+        std::vector<int> edge_bounds = {0};
+        for (int i = 1; i < (int) edge_targets.size(); i++) {
+          if(edge_targets[i].first != edge_targets[i-1].first) {
+            edge_bounds.push_back(i);
+            std::string s = "bucket entry:" + std::to_string(i) + "\n";
+            std::cout << s;
+          }
+          //debug
+          //std::string opt = "pair: " + std::to_string(edge_targets[i-1].first) + ", " + std::to_string(edge_targets[i-1].second) + "\n";
+          //std::cout << opt;
+        }
+        edge_bounds.push_back(edge_targets.size()-1);
+        tbb::enumerable_thread_specific<HypernodeID> edge_contracted_nodes(0);
+        tbb::parallel_for(0, (int) edge_bounds.size()-1, [&](const int index) {
+          uint8_t unmatched = STATE(MatchingState::UNMATCHED);
+          uint8_t match_in_progress = STATE(MatchingState::MATCHING_IN_PROGRESS);
+          int bucket_begin = edge_bounds[index];
+          int bucket_size = edge_bounds[index+1] - bucket_begin;
+          std::vector<size_t> min_hash = {0};
+          for (int i = 0; i < bucket_size; i++) {
+            min_hash.push_back(minhash(current_hg.incidentEdges(edge_targets[bucket_begin + i].second)));
+          }
+          for (int i = 0; i < bucket_size; i++) {
+            int u = edge_targets[bucket_begin + i].second;
+            if (_matching_state[u] == STATE(MatchingState::UNMATCHED)) {
+              for (int j = i; j < bucket_size; j++) {
+                int v = edge_targets[bucket_begin + j].second;
+                if (_matching_state[v] == STATE(MatchingState::UNMATCHED)) {
+                  if (min_hash[u] == min_hash[v]) {
+                    const HypernodeWeight weight_u = current_hg.nodeWeight(u);
+                    HypernodeWeight weight_v = current_hg.nodeWeight(v);
+                    if (weight_u + weight_v <= _max_allowed_node_weight) {
+                      if (_matching_state[u].compare_exchange_strong(unmatched, match_in_progress)) {
+                        _matching_partner[u] = v;
+                        // Current thread gets "ownership" for vertex u. Only threads with "ownership"
+                        // can change the cluster id of a vertex.
+                        if (_matching_state[v].compare_exchange_strong(unmatched, match_in_progress)) {
+                          // Current thread has the "ownership" for u and v and can change the cluster id
+                          // of both vertices thread-safe.
+                          cluster_ids[u] = v;
+                          _cluster_weight[v] += weight_u;
+                          ++(edge_contracted_nodes.local());
+                          _matching_state[v] = STATE(MatchingState::MATCHED);
+                        }
+                        _rater.markAsMatched(u);
+                        _rater.markAsMatched(v);
+                        _matching_partner[u] = u;
+                        _matching_state[u] = STATE(MatchingState::MATCHED);
+                        continue;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+        current_num_nodes = num_hns_before_pass -
+                            edge_contracted_nodes.combine(std::plus<HypernodeID>());
+        //debug
+        std::string edge = "Edge contractions: " + std::to_string(edge_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
+        std::cout << edge;
+
         const double reduction_vertices_percentage =
             static_cast<double>(num_hns_before_pass) /
             static_cast<double>(current_num_nodes);
@@ -561,6 +624,15 @@ class MultilevelCoarsener : public ICoarsener,
     return std::min( multiplier * static_cast<double>(_max_allowed_node_weight),
       std::max( max_part_weight / _context.coarsening.max_allowed_weight_fraction,
         static_cast<double>(_context.coarsening.max_allowed_node_weight ) ) );
+  }
+
+  template<class T>
+  size_t minhash(T edges/*const HypernodeID u*/) {
+    size_t min_hash = std::numeric_limits<size_t>::max();
+    for (const auto& edge : edges) {
+      min_hash = std::min(min_hash, std::hash<int32_t>{}(edge));
+    }
+    return min_hash;
   }
 
   using Base::_context;
