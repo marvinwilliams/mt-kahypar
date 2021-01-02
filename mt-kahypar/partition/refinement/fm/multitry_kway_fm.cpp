@@ -75,7 +75,6 @@ namespace mt_kahypar {
         while(sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit
               && fm.findMoves(phg, task_id, num_seeds)) {
         }
-        /* TODO: manage size of barrier <18-12-20, @noahares> */
         if (context.refinement.fm.sync_with_mq) {
           sharedData.holdBarrier.lowerSize();
         }

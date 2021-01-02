@@ -56,6 +56,9 @@ public:
     if (context.refinement.fm.sync_with_mq) {
       size_t num_threads = context.shared_memory.num_threads;
       sharedData.messages = HypernodeIDMessageMatrix(num_threads * num_threads, vec<HypernodeID>());
+      tbb::parallel_for(0UL, num_threads * num_threads, [&](const size_t i){
+          sharedData.messages[i].reserve(1 << 10);
+          });
     }
   }
 
