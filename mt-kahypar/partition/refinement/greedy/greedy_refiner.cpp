@@ -64,7 +64,7 @@ bool BasicGreedyRefiner::refineImpl(
        ++round) { // global multi try rounds
 
     timer.start_timer("collect_border_nodes", "Collect Border Nodes");
-    roundInitialization(phg, context.refinement.greedy.assignment_strategy);
+    roundInitialization(phg);
     timer.stop_timer("collect_border_nodes");
 
     size_t num_border_nodes = _greedy_shared_data.numRefinementNodes();
@@ -132,8 +132,7 @@ bool BasicGreedyRefiner::refineImpl(
   return overall_improvement > 0;
 }
 
-void BasicGreedyRefiner::roundInitialization(
-    PartitionedHypergraph &phg, GreedyAssignmentStrategy assignment_strategy) {
+void BasicGreedyRefiner::roundInitialization(PartitionedHypergraph &phg) {
   // clear border nodes
   for (auto &v : _greedy_shared_data.refinement_nodes) {
     v.clear();
@@ -157,6 +156,7 @@ void BasicGreedyRefiner::roundInitialization(
     }
   };
 
+  GreedyAssignmentStrategy assignment_strategy = context.refinement.greedy.assignment_strategy;
   switch (assignment_strategy) {
   case GreedyAssignmentStrategy::static_assignement:
     staticAssignment(phg);

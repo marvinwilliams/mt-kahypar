@@ -35,7 +35,6 @@ void KWayGreedy::findMoves(PartitionedHypergraph &phg, size_t task_id) {
 
   if (runStats.pushes > 0) {
     internalFindMoves(phg);
-    /* TODO: sync message queues after finishing ? <21-11-20, @noahares> */
   }
 }
 
@@ -121,7 +120,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
                  (pin_count_in_from_part_after == 0 ? edge_weight : 0);
       };
 
-  size_t bestImprovementIndex = 0;
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
   Gain lastImprovement = std::numeric_limits<Gain>::max();
@@ -130,13 +128,9 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   HypernodeWeight fromWeight = 0, toWeight = 0;
 
   while (lastImprovement > 0) {
-    if (_local_moves_since_sync >=
+    if (context.refinement.greedy.sync_with_mq && _local_moves_since_sync >=
         context.refinement.greedy.num_moves_before_sync) {
-      if (context.refinement.greedy.sync_with_mq) {
-        syncMessageQueues(phg);
-      } else {
-        syncAllLocalNodes(phg);
-      }
+      syncMessageQueues(phg);
     }
 
     if (!fm_strategy.findNextMoveNoRetry(phg, move))
@@ -173,7 +167,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
         runStats.moves++;
         lastImprovement = move_delta;
         estimatedImprovement += move_delta;
-        localMoves.emplace_back(move, move_id);
         _local_moves_since_sync++;
         const bool improved_km1 = move_delta > 0;
         const bool improved_balance_less_equal_km1 =
@@ -182,7 +175,6 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
 
         if (improved_km1 || improved_balance_less_equal_km1) {
           bestImprovement = estimatedImprovement;
-          bestImprovementIndex = localMoves.size();
         }
         updateNeighbors(phg, move);
       } else {
@@ -197,7 +189,7 @@ void KWayGreedy::internalFindMoves(PartitionedHypergraph &phg) {
   }
 
   runStats.estimated_improvement = bestImprovement;
-  fm_strategy.clearPQs(bestImprovementIndex);
+  fm_strategy.clearPQs(0);
   runStats.merge(stats);
 }
 
@@ -206,36 +198,26 @@ void KWayGreedy::syncMessageQueues(PartitionedHypergraph &phg) {
   SearchID this_index =
       thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
   size_t num_threads = context.shared_memory.num_threads;
-  auto mq_begin =
-      _greedy_shared_data.messages.begin() + this_index * num_threads;
-  auto mq_end = mq_begin + num_threads;
-  ASSERT(mq_end <= _greedy_shared_data.messages.end());
-  ASSERT((mq_begin + this_index)->empty());
-  std::for_each(mq_begin, mq_end, [&](auto &mq) {
-    for (const auto v : mq) {
+  size_t mq_begin = this_index * num_threads;
+  ASSERT(mq_begin + num_threads <= _greedy_shared_data.messages.size());
+  ASSERT(_greedy_shared_data.messages[mq_begin + this_index].empty());
+  Move m;
+  for(size_t i = this_index * num_threads; i < mq_begin + num_threads; ++i) {
+    for (const auto v : _greedy_shared_data.messages[i]) {
       // use deduplicator to prevent uneeded pq updates
       if (neighborDeduplicator[v] != deduplicationTime &&
           !sharedData.nodeTracker.isLocked(v)) {
-        fm_strategy.updateGainFromOtherSearch(phg, v);
+        m.from = sharedData.targetPart[v];
+        fm_strategy.updateGain(phg, v, m);
         neighborDeduplicator[v] = deduplicationTime;
       }
     }
     fm_strategy.updatePQs(phg);
-    mq.clear();
-  });
+    _greedy_shared_data.messages[i].clear();
+  }
   updateNeighborDeduplicator();
   _local_moves_since_sync = 0;
   _greedy_shared_data.hold_barrier.release();
-}
-
-void KWayGreedy::syncAllLocalNodes(PartitionedHypergraph &phg) {
-
-  for (const auto v : _greedy_shared_data.refinement_nodes[_task_id]) {
-    if (!sharedData.nodeTracker.isLocked(v)) {
-      fm_strategy.updateGainFromOtherSearch(phg, v);
-    }
-  }
-  fm_strategy.updatePQs(phg);
 }
 
 void KWayGreedy::memoryConsumption(utils::MemoryTreeNode *parent) const {
@@ -251,10 +233,6 @@ void KWayGreedy::memoryConsumption(utils::MemoryTreeNode *parent) const {
       localized_fm_node->addChild("edgesWithGainChanges");
   edges_to_activate_node->updateSize(edgesWithGainChanges.capacity() *
                                      sizeof(EdgeGainUpdate));
-
-  utils::MemoryTreeNode *local_moves_node = parent->addChild("Local FM Moves");
-  local_moves_node->updateSize(localMoves.capacity() *
-                               sizeof(std::pair<Move, MoveID>));
 
   fm_strategy.memoryConsumption(localized_fm_node);
   // TODO fm_strategy.memoryConsumptiom(..)

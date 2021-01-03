@@ -51,7 +51,6 @@ public:
 
   void reset() {
     thisSearch = 0;
-    localMoves.clear();
     edgesWithGainChanges.clear();
     _gain = 0;
     _local_moves_since_sync = 0;
@@ -60,7 +59,6 @@ public:
 private:
   void internalFindMoves(PartitionedHypergraph &phg);
   void syncMessageQueues(PartitionedHypergraph &phg);
-  void syncAllLocalNodes(PartitionedHypergraph &phg);
 
   void updateNeighborDeduplicator() {
     if (++deduplicationTime == 0) {
@@ -77,10 +75,6 @@ private:
 
   // ! Unique search id associated with the current local search
   SearchID thisSearch;
-
-  // ! Local data members required for one localized search run
-  // FMLocalData localData;
-  vec<std::pair<Move, MoveID>> localMoves;
 
   // ! Used after a move. Stores whether a neighbor of the just moved vertex has
   // already been updated.

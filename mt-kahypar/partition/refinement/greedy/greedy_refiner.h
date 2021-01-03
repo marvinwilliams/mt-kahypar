@@ -50,6 +50,13 @@ public:
     if (context.refinement.greedy.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
     }
+    if (context.refinement.greedy.sync_with_mq) {
+      size_t num_threads = context.shared_memory.num_threads;
+      _greedy_shared_data.messages = HypernodeIDMessageMatrix(num_threads * num_threads, vec<HypernodeID>());
+      tbb::parallel_for(0UL, num_threads * num_threads, [&](const size_t i){
+          _greedy_shared_data.messages[i].reserve(1 << 10);
+          });
+    }
   }
 
   bool
@@ -59,8 +66,7 @@ public:
 
   void initializeImpl(PartitionedHypergraph &phg) final;
 
-  void roundInitialization(PartitionedHypergraph &phg,
-                           GreedyAssignmentStrategy assignment_strategy);
+  void roundInitialization(PartitionedHypergraph &phg);
 
   void staticAssignment(PartitionedHypergraph &phg);
   void partitionAssignment(PartitionedHypergraph &phg);
