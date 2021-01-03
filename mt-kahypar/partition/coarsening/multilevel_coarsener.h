@@ -375,11 +375,57 @@ class MultilevelCoarsener : public ICoarsener,
           uint8_t match_in_progress = STATE(MatchingState::MATCHING_IN_PROGRESS);
           int bucket_begin = edge_bounds[index];
           int bucket_size = edge_bounds[index+1] - bucket_begin;
-          std::vector<size_t> min_hash = {0};
+          std::map<size_t, std::vector<int>> min_hash_map;
+          //std::vector<size_t> min_hash = {0};
           for (int i = 0; i < bucket_size; i++) {
-            min_hash.push_back(minhash(current_hg.incidentEdges(edge_targets[bucket_begin + i].second)));
+            //min_hash.push_back(minhash(current_hg.incidentEdges(edge_targets[bucket_begin + i].second)));
+            size_t hash = minhash(current_hg.incidentEdges(edge_targets[bucket_begin + i].second));
+            if (min_hash_map.find(hash) == min_hash_map.end()){
+              min_hash_map.insert(std::make_pair(hash,std::vector<int>()));
+            }
+            min_hash_map[hash].push_back(i);
           }
-          for (int i = 0; i < bucket_size; i++) {
+          for (std::pair<size_t, std::vector<int>> e : min_hash_map) {
+            int u = edge_targets[bucket_begin + e.second[0]].second;
+            if (_matching_state[u] == STATE(MatchingState::UNMATCHED)) {
+              for (int x : e.second) {
+                int v = edge_targets[bucket_begin + x].second;
+                if (v == u) {
+                  continue;
+                }
+                if (_matching_state[v] == STATE(MatchingState::UNMATCHED)) {
+                  const HypernodeWeight weight_u = current_hg.nodeWeight(u);
+                  HypernodeWeight weight_v = current_hg.nodeWeight(v);
+                  if (weight_u + weight_v <= _max_allowed_node_weight) {
+                    if (_matching_state[u].compare_exchange_strong(unmatched, match_in_progress)) {
+                      _matching_partner[v] = u;
+                      // Current thread gets "ownership" for vertex u. Only threads with "ownership"
+                      // can change the cluster id of a vertex.
+                      if (_matching_state[v].compare_exchange_strong(unmatched, match_in_progress)) {
+                        // Current thread has the "ownership" for u and v and can change the cluster id
+                        // of both vertices thread-safe.
+                        cluster_ids[v] = u;
+                        _cluster_weight[u] += weight_v;
+                        ++(edge_contracted_nodes.local());
+                        _matching_state[v] = STATE(MatchingState::MATCHED);
+                      }
+                      _rater.markAsMatched(u);
+                      _rater.markAsMatched(v);
+                      _matching_partner[v] = v;
+                      _matching_state[u] = STATE(MatchingState::MATCHED);
+                    } else if (_matching_state[u] == STATE(MatchingState::MATCHED)) {
+                      cluster_ids[v] = u;
+                      _cluster_weight[u] += weight_v;
+                      ++(edge_contracted_nodes.local());
+                      _matching_state[v] = STATE(MatchingState::MATCHED);
+                      _rater.markAsMatched(v);
+                    }
+                  }
+                }
+              }
+            }
+          }
+          /*for (int i = 0; i < bucket_size; i++) {
             int u = edge_targets[bucket_begin + i].second;
             if (_matching_state[u] == STATE(MatchingState::UNMATCHED)) {
               for (int j = i; j < bucket_size; j++) {
@@ -412,7 +458,7 @@ class MultilevelCoarsener : public ICoarsener,
                 }
               }
             }
-          }
+          }*/
         });
         current_num_nodes = num_hns_before_pass -
                             edge_contracted_nodes.combine(std::plus<HypernodeID>());
