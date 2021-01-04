@@ -375,7 +375,7 @@ class MultilevelCoarsener : public ICoarsener,
           uint8_t match_in_progress = STATE(MatchingState::MATCHING_IN_PROGRESS);
           int bucket_begin = edge_bounds[index];
           int bucket_size = edge_bounds[index+1] - bucket_begin;
-          std::map<size_t, std::vector<int>> min_hash_map;
+          std::map<size_t, std::vector<int>> min_hash_map;          // REVIEW why rb tree?
           //std::vector<size_t> min_hash = {0};
           for (int i = 0; i < bucket_size; i++) {
             //min_hash.push_back(minhash(current_hg.incidentEdges(edge_targets[bucket_begin + i].second)));
@@ -383,9 +383,13 @@ class MultilevelCoarsener : public ICoarsener,
             if (min_hash_map.find(hash) == min_hash_map.end()){
               min_hash_map.insert(std::make_pair(hash,std::vector<int>()));
             }
+            // REVIEW this is a second rb tree lookup. operator[] already inserts a default-constructed vector and returns a reference to it. so just this line suffices
             min_hash_map[hash].push_back(i);
-          }
-          for (std::pair<size_t, std::vector<int>> e : min_hash_map) {
+
+           }
+          // REVIEW this seems like the wrong algorithm.
+          // sort by min-hash and then match pair-wise for entries with the same min-hash
+          for (std::pair<size_t, std::vector<int>> e : min_hash_map) {  // REVIEW copies the vector --> allocation (expensive). use auto&
             int u = edge_targets[bucket_begin + e.second[0]].second;
             if (_matching_state[u] == STATE(MatchingState::UNMATCHED)) {
               for (int x : e.second) {
@@ -393,10 +397,11 @@ class MultilevelCoarsener : public ICoarsener,
                 if (v == u) {
                   continue;
                 }
-                if (_matching_state[v] == STATE(MatchingState::UNMATCHED)) {
+                if (_matching_state[v] == STATE(MatchingState::UNMATCHED)) {    // REVIEW this matches only one pair of vertices per min hash value
                   const HypernodeWeight weight_u = current_hg.nodeWeight(u);
                   HypernodeWeight weight_v = current_hg.nodeWeight(v);
                   if (weight_u + weight_v <= _max_allowed_node_weight) {
+                    // REVIEW no CAS / match_in_progress state needed when no parallelism used
                     if (_matching_state[u].compare_exchange_strong(unmatched, match_in_progress)) {
                       _matching_partner[v] = u;
                       // Current thread gets "ownership" for vertex u. Only threads with "ownership"
@@ -676,8 +681,11 @@ class MultilevelCoarsener : public ICoarsener,
   size_t minhash(T edges/*const HypernodeID u*/) {
     size_t min_hash = std::numeric_limits<size_t>::max();
     for (const auto& edge : edges) {
+      // REVIEW std::hash<int32_t> is identity function. probably doesn't matter but you can leave it out
       min_hash = std::min(min_hash, std::hash<int32_t>{}(edge));
     }
+
+    // REVIEW typically min hash fingerprints consist of multiple values from either k different hash functions or taking the k smallest values
     return min_hash;
   }
 
