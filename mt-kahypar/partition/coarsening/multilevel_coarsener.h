@@ -145,6 +145,11 @@ class MultilevelCoarsener : public ICoarsener,
       _progress_bar.enable();
     }
     int pass_nr = 0;
+    std::vector<int> min_hash_seeds(128);
+    tbb::parallel_for(0, (int) min_hash_seeds.size(), [&](const int i) {
+    //for (int i = 0; i< 128; i++) {
+      min_hash_seeds[i] = utils::Randomize::instance().getRandomInt(std::numeric_limits<int>::min(), std::numeric_limits<int>::max(), sched_getcpu());
+    });
     const HypernodeID initial_num_nodes = Base::currentNumNodes();
     while ( Base::currentNumNodes() > _context.coarsening.contraction_limit ) {
       
@@ -196,8 +201,9 @@ class MultilevelCoarsener : public ICoarsener,
       DBG << V(current_hg.initialNumNodes()) << V(hierarchy_contraction_limit);
       HypernodeID current_num_nodes = num_hns_before_pass;
       //tbb::enumerable_thread_specific< std::vector< std::pair < HypernodeID, HypernodeID>>> opt_targets;
+      //TODO replace concurrent vectors
       tbb::concurrent_vector< std::pair < HypernodeID, HypernodeID>> opt_targets;
-      tbb::concurrent_vector< std::pair < HyperedgeID, HypernodeID>> edge_targets;
+      tbb::concurrent_vector< std::pair < int32_t, HypernodeID>> edge_targets;
       tbb::enumerable_thread_specific<HypernodeID> contracted_nodes(0);
       tbb::enumerable_thread_specific<HypernodeID> num_nodes_update_threshold(0);
       tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID id) {
@@ -245,7 +251,7 @@ class MultilevelCoarsener : public ICoarsener,
                   opt_targets.push_back(std::pair<HypernodeID, HypernodeID>(rating.opt_target, u));
                 } else if (rating.state == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
                   //Store edge that was to big too be considered in rating for all nodes that didn't find a contraction target
-                  edge_targets.push_back(std::pair<HyperedgeID, HypernodeID>(rating.opt_target, u));
+                  edge_targets.push_back(std::pair<HyperedgeID, HypernodeID>(minhash(current_hg.incidentEdges(u), min_hash_seeds), u));
                 }
               }
             }
@@ -291,6 +297,7 @@ class MultilevelCoarsener : public ICoarsener,
         static_cast<double>(num_hns_before_pass) /
         static_cast<double>(current_num_nodes);
       if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
+        /* Two-Hop disabled for testing
         //debug
         //std::cout << "Size of opt_targets:" << opt_targets.size() << std::endl;
 
@@ -306,7 +313,7 @@ class MultilevelCoarsener : public ICoarsener,
           //std::string opt = "pair: " + std::to_string(opt_targets[i-1].first) + ", " + std::to_string(opt_targets[i-1].second) + "\n";
           //std::cout << opt;
         }
-        bounds.push_back(opt_targets.size()-1);
+        bounds.push_back(opt_targets.size());
         tbb::enumerable_thread_specific<HypernodeID> two_hop_contracted_nodes(0);
         tbb::parallel_for(0, (int) bounds.size()-1, [&](const int index) {
             uint8_t unmatched = STATE(MatchingState::UNMATCHED);
@@ -350,7 +357,7 @@ class MultilevelCoarsener : public ICoarsener,
         //debug
         std::string two_hop = "Two hop contractions: " + std::to_string(two_hop_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
         std::cout << two_hop;
-
+        */
         //debug
         //std::cout << "Size of edge_targets:" << edge_targets.size() << std::endl;
         // Contract vertices that don't have a contraction target, but are both pins of the same edge that is too big
@@ -368,102 +375,29 @@ class MultilevelCoarsener : public ICoarsener,
           //std::string opt = "pair: " + std::to_string(edge_targets[i-1].first) + ", " + std::to_string(edge_targets[i-1].second) + "\n";
           //std::cout << opt;
         }
-        edge_bounds.push_back(edge_targets.size()-1);
+        edge_bounds.push_back(edge_targets.size());
         tbb::enumerable_thread_specific<HypernodeID> edge_contracted_nodes(0);
         tbb::parallel_for(0, (int) edge_bounds.size()-1, [&](const int index) {
-          uint8_t unmatched = STATE(MatchingState::UNMATCHED);
-          uint8_t match_in_progress = STATE(MatchingState::MATCHING_IN_PROGRESS);
           int bucket_begin = edge_bounds[index];
           int bucket_size = edge_bounds[index+1] - bucket_begin;
-          std::map<size_t, std::vector<int>> min_hash_map;          // REVIEW why rb tree?
-          //std::vector<size_t> min_hash = {0};
-          for (int i = 0; i < bucket_size; i++) {
-            //min_hash.push_back(minhash(current_hg.incidentEdges(edge_targets[bucket_begin + i].second)));
-            size_t hash = minhash(current_hg.incidentEdges(edge_targets[bucket_begin + i].second));
-            if (min_hash_map.find(hash) == min_hash_map.end()){
-              min_hash_map.insert(std::make_pair(hash,std::vector<int>()));
-            }
-            // REVIEW this is a second rb tree lookup. operator[] already inserts a default-constructed vector and returns a reference to it. so just this line suffices
-            min_hash_map[hash].push_back(i);
 
-           }
-          // REVIEW this seems like the wrong algorithm.
-          // sort by min-hash and then match pair-wise for entries with the same min-hash
-          for (std::pair<size_t, std::vector<int>> e : min_hash_map) {  // REVIEW copies the vector --> allocation (expensive). use auto&
-            int u = edge_targets[bucket_begin + e.second[0]].second;
-            if (_matching_state[u] == STATE(MatchingState::UNMATCHED)) {
-              for (int x : e.second) {
-                int v = edge_targets[bucket_begin + x].second;
-                if (v == u) {
-                  continue;
-                }
-                if (_matching_state[v] == STATE(MatchingState::UNMATCHED)) {    // REVIEW this matches only one pair of vertices per min hash value
-                  const HypernodeWeight weight_u = current_hg.nodeWeight(u);
-                  HypernodeWeight weight_v = current_hg.nodeWeight(v);
-                  if (weight_u + weight_v <= _max_allowed_node_weight) {
-                    // REVIEW no CAS / match_in_progress state needed when no parallelism used
-                    if (_matching_state[u].compare_exchange_strong(unmatched, match_in_progress)) {
-                      _matching_partner[v] = u;
-                      // Current thread gets "ownership" for vertex u. Only threads with "ownership"
-                      // can change the cluster id of a vertex.
-                      if (_matching_state[v].compare_exchange_strong(unmatched, match_in_progress)) {
-                        // Current thread has the "ownership" for u and v and can change the cluster id
-                        // of both vertices thread-safe.
-                        cluster_ids[v] = u;
-                        _cluster_weight[u] += weight_v;
-                        ++(edge_contracted_nodes.local());
-                        _matching_state[v] = STATE(MatchingState::MATCHED);
-                      }
-                      _rater.markAsMatched(u);
-                      _rater.markAsMatched(v);
-                      _matching_partner[v] = v;
-                      _matching_state[u] = STATE(MatchingState::MATCHED);
-                    } else if (_matching_state[u] == STATE(MatchingState::MATCHED)) {
-                      cluster_ids[v] = u;
-                      _cluster_weight[u] += weight_v;
-                      ++(edge_contracted_nodes.local());
-                      _matching_state[v] = STATE(MatchingState::MATCHED);
-                      _rater.markAsMatched(v);
-                    }
-                  }
-                }
-              }
+          int u = 0;
+          for (int j = 1; j < bucket_size; j++) {
+            if (j == 0) {
+              u = edge_targets[bucket_begin].second;
+              continue;
+            }
+            int v = edge_targets[bucket_begin + j].second;
+            ASSERT( edge_targets[bucket_begin].first == edge_targets[bucket_begin + j].first );
+            const HypernodeWeight weight_u = current_hg.nodeWeight(u);
+            HypernodeWeight weight_v = current_hg.nodeWeight(v);
+            if (weight_u + weight_v <= _max_allowed_node_weight) {
+              _matching_partner[v] = u;
+              cluster_ids[v] = u;
+              _cluster_weight[u] += weight_v;
+              ++(edge_contracted_nodes.local());
             }
           }
-          /*for (int i = 0; i < bucket_size; i++) {
-            int u = edge_targets[bucket_begin + i].second;
-            if (_matching_state[u] == STATE(MatchingState::UNMATCHED)) {
-              for (int j = i; j < bucket_size; j++) {
-                int v = edge_targets[bucket_begin + j].second;
-                if (_matching_state[v] == STATE(MatchingState::UNMATCHED)) {
-                  if (min_hash[u] == min_hash[v]) {
-                    const HypernodeWeight weight_u = current_hg.nodeWeight(u);
-                    HypernodeWeight weight_v = current_hg.nodeWeight(v);
-                    if (weight_u + weight_v <= _max_allowed_node_weight) {
-                      if (_matching_state[u].compare_exchange_strong(unmatched, match_in_progress)) {
-                        _matching_partner[u] = v;
-                        // Current thread gets "ownership" for vertex u. Only threads with "ownership"
-                        // can change the cluster id of a vertex.
-                        if (_matching_state[v].compare_exchange_strong(unmatched, match_in_progress)) {
-                          // Current thread has the "ownership" for u and v and can change the cluster id
-                          // of both vertices thread-safe.
-                          cluster_ids[u] = v;
-                          _cluster_weight[v] += weight_u;
-                          ++(edge_contracted_nodes.local());
-                          _matching_state[v] = STATE(MatchingState::MATCHED);
-                        }
-                        _rater.markAsMatched(u);
-                        _rater.markAsMatched(v);
-                        _matching_partner[u] = u;
-                        _matching_state[u] = STATE(MatchingState::MATCHED);
-                        continue;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }*/
         });
         current_num_nodes = num_hns_before_pass -
                             edge_contracted_nodes.combine(std::plus<HypernodeID>());
@@ -678,15 +612,32 @@ class MultilevelCoarsener : public ICoarsener,
   }
 
   template<class T>
-  size_t minhash(T edges/*const HypernodeID u*/) {
-    size_t min_hash = std::numeric_limits<size_t>::max();
-    for (const auto& edge : edges) {
-      // REVIEW std::hash<int32_t> is identity function. probably doesn't matter but you can leave it out
-      min_hash = std::min(min_hash, std::hash<int32_t>{}(edge));
+  int32_t minhash(T edges, std::vector<int>& seeds) {
+    int32_t min_hash = 0;
+    for (const auto& seed : seeds) {
+      int32_t min_value = std::numeric_limits<int32_t>::max();
+      for (const auto& edge : edges) {
+        int32_t hash_value = hash(edge ^ seed);
+        min_value = std::min(min_value, hash_value);
+      }
+      combine(min_hash, min_value);
     }
-
-    // REVIEW typically min hash fingerprints consist of multiple values from either k different hash functions or taking the k smallest values
     return min_hash;
+  }
+
+  // from parlay
+  inline uint32_t hash(uint32_t a) {
+    uint32_t z = a + 0x9e3779b9;
+    z ^= z >> 15;
+    z *= 0x85ebca6b;
+    z ^= z >> 13;
+    z *= 0xc2b2ae3d;  // 0xc2b2ae35 for murmur3
+    return z ^= z >> 16;
+  }
+
+  // from boost::hash_combine
+  inline uint32_t combine(uint32_t left, uint32_t hashed_right) {
+    return left ^ (hashed_right + 0x9e3779b9 + (left << 6) + (left >> 2));
   }
 
   using Base::_context;
