@@ -200,10 +200,8 @@ class MultilevelCoarsener : public ICoarsener,
       const HypernodeID hierarchy_contraction_limit = hierarchyContractionLimit(current_hg);
       DBG << V(current_hg.initialNumNodes()) << V(hierarchy_contraction_limit);
       HypernodeID current_num_nodes = num_hns_before_pass;
-      //tbb::enumerable_thread_specific< std::vector< std::pair < HypernodeID, HypernodeID>>> opt_targets;
-      //TODO replace concurrent vectors
-      tbb::concurrent_vector< std::pair < HypernodeID, HypernodeID>> opt_targets;
-      tbb::concurrent_vector< std::pair < int32_t, HypernodeID>> edge_targets;
+      tbb::enumerable_thread_specific< std::vector< std::pair < uint32_t, HypernodeID>>> thread_edge_targets;
+      tbb::enumerable_thread_specific< std::vector< std::pair < HypernodeID, HypernodeID>>> thread_opt_targets;
       tbb::enumerable_thread_specific<HypernodeID> contracted_nodes(0);
       tbb::enumerable_thread_specific<HypernodeID> num_nodes_update_threshold(0);
       tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID id) {
@@ -247,11 +245,10 @@ class MultilevelCoarsener : public ICoarsener,
               } else {
                 if (rating.state == STATE(Rater::RatingState::VERTEX_TOO_BIG)) {
                   //Store preferred cluster for all nodes that don't get matched so they can be used for two hop matching
-                  //opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(u, rating.opt_target));
-                  opt_targets.push_back(std::pair<HypernodeID, HypernodeID>(rating.opt_target, u));
+                  thread_opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(u, rating.opt_target));
                 } else if (rating.state == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
-                  //Store edge that was to big too be considered in rating for all nodes that didn't find a contraction target
-                  edge_targets.push_back(std::pair<HyperedgeID, HypernodeID>(minhash(current_hg.incidentEdges(u), min_hash_seeds), u));
+                  //Store nodes that didn't find a contraction target, because they had an edge that was too big, and their minhash fingerprint
+                  thread_edge_targets.local().push_back(std::pair<uint32_t , HypernodeID>(minhash(current_hg.incidentEdges(u), min_hash_seeds), u));
                 }
               }
             }
@@ -262,6 +259,22 @@ class MultilevelCoarsener : public ICoarsener,
         utils::Timer::instance().stop_timer("clustering_level_" + std::to_string(pass_nr));
       }
       utils::Timer::instance().stop_timer("parallel_clustering");
+      std::vector< std::pair < uint32_t, HypernodeID>> opt_targets = thread_opt_targets.combine(
+          [&](std::vector<std::pair < HypernodeID, HypernodeID>> a, std::vector<std::pair < uint32_t, HypernodeID>> b) {
+              std::vector<std::pair < HypernodeID, HypernodeID>> ab;
+              ab.reserve(a.size() + b.size());
+              ab.insert(ab.end(), a.begin(), a.end());
+              ab.insert(ab.end(), b.begin(), b.end());
+              return ab;
+          });
+      std::vector< std::pair < uint32_t, HypernodeID>> edge_targets = thread_edge_targets.combine(
+          [&](std::vector<std::pair < uint32_t, HypernodeID>> a, std::vector<std::pair < uint32_t, HypernodeID>> b) {
+              std::vector<std::pair < uint32_t, HypernodeID>> ab;
+              ab.reserve(a.size() + b.size());
+              ab.insert(ab.end(), a.begin(), a.end());
+              ab.insert(ab.end(), b.begin(), b.end());
+              return ab;
+          });
       current_num_nodes = num_hns_before_pass -
         contracted_nodes.combine(std::plus<HypernodeID>());
       DBG << V(current_num_nodes);
@@ -381,14 +394,10 @@ class MultilevelCoarsener : public ICoarsener,
           int bucket_begin = edge_bounds[index];
           int bucket_size = edge_bounds[index+1] - bucket_begin;
 
-          int u = 0;
-          for (int j = 1; j < bucket_size; j++) {
-            if (j == 0) {
-              u = edge_targets[bucket_begin].second;
-              continue;
-            }
-            int v = edge_targets[bucket_begin + j].second;
-            ASSERT( edge_targets[bucket_begin].first == edge_targets[bucket_begin + j].first );
+          for (int i = 0; i < bucket_size; i += 2) {
+            HypernodeID u = edge_targets[bucket_begin + i].second;
+            HypernodeID v = edge_targets[bucket_begin + i + 1].second;
+            ASSERT( edge_targets[bucket_begin + i].first == edge_targets[bucket_begin + i + 1].first );
             const HypernodeWeight weight_u = current_hg.nodeWeight(u);
             HypernodeWeight weight_v = current_hg.nodeWeight(v);
             if (weight_u + weight_v <= _max_allowed_node_weight) {
@@ -612,12 +621,12 @@ class MultilevelCoarsener : public ICoarsener,
   }
 
   template<class T>
-  int32_t minhash(T edges, std::vector<int>& seeds) {
-    int32_t min_hash = 0;
+  uint32_t minhash(T edges, std::vector<int>& seeds) {
+    uint32_t min_hash = 0;
     for (const auto& seed : seeds) {
-      int32_t min_value = std::numeric_limits<int32_t>::max();
+      uint32_t min_value = std::numeric_limits<int32_t>::max();
       for (const auto& edge : edges) {
-        int32_t hash_value = hash(edge ^ seed);
+        uint32_t hash_value = hash(edge ^ seed);
         min_value = std::min(min_value, hash_value);
       }
       combine(min_hash, min_value);

@@ -55,14 +55,12 @@ class MultilevelVertexPairRater {
     VertexPairRating(HypernodeID trgt, RatingType val, bool is_valid) :
       target(trgt),
       opt_target(trgt),
-      edge_target(std::numeric_limits<HyperedgeID>::max()),
       value(val),
       state(5/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
 
     VertexPairRating() :
       target(std::numeric_limits<HypernodeID>::max()),
       opt_target(std::numeric_limits<HypernodeID>::max()),
-      edge_target(std::numeric_limits<HyperedgeID>::max()),
       value(std::numeric_limits<RatingType>::min()),
       state(5/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
 
@@ -74,7 +72,6 @@ class MultilevelVertexPairRater {
 
     HypernodeID target;
     HypernodeID opt_target;
-    HyperedgeID edge_target;
     RatingType value;
     u_int8_t state;
   };
@@ -245,9 +242,6 @@ class MultilevelVertexPairRater {
     if (opt_max_rating != std::numeric_limits<RatingType>::min()) {
       ASSERT(opt_target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
       ret.opt_target = opt_target;
-    }
-    if (state == STATE(RatingState::EDGE_TOO_BIG)) {
-      ret.edge_target = *(hypergraph.incidentEdges(u).begin());
     }
     ret.state = state;
     tmp_ratings.clear();
