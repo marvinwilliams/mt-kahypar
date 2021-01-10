@@ -396,6 +396,9 @@ class MultilevelCoarsener : public ICoarsener,
 
           for (int i = 0; i < bucket_size; i += 2) {
             HypernodeID u = edge_targets[bucket_begin + i].second;
+            if (i + 1 >= bucket_size) {
+              continue;;
+            }
             HypernodeID v = edge_targets[bucket_begin + i + 1].second;
             ASSERT( edge_targets[bucket_begin + i].first == edge_targets[bucket_begin + i + 1].first );
             const HypernodeWeight weight_u = current_hg.nodeWeight(u);
