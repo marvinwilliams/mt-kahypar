@@ -416,8 +416,7 @@ class MultilevelCoarsener : public ICoarsener,
             }
           }
         });
-        current_num_nodes = num_hns_before_pass -
-                            edge_contracted_nodes.combine(std::plus<HypernodeID>());
+        current_num_nodes -= edge_contracted_nodes.combine(std::plus<HypernodeID>());
         //debug
         std::string edge = "Edge contractions: " + std::to_string(edge_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
         std::cout << edge;
@@ -466,7 +465,7 @@ class MultilevelCoarsener : public ICoarsener,
       }
       ++pass_nr;
     }
-    
+
     _progress_bar += (initial_num_nodes - _progress_bar.count());
     _progress_bar.disable();
     Base::finalize();
