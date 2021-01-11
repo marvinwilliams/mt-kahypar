@@ -394,17 +394,16 @@ class MultilevelCoarsener : public ICoarsener,
           //std::string opt = "pair: " + std::to_string(edge_targets[i-1].first) + ", " + std::to_string(edge_targets[i-1].second) + "\n";
           //std::cout << opt;
         }
+
         edge_bounds.push_back(edge_targets.size());
+
         tbb::enumerable_thread_specific<HypernodeID> edge_contracted_nodes(0);
         tbb::parallel_for(0, (int) edge_bounds.size()-1, [&](const int index) {
           int bucket_begin = edge_bounds[index];
           int bucket_size = edge_bounds[index+1] - bucket_begin;
 
-          for (int i = 0; i < bucket_size; i += 2) {
+          for (int i = 0; i < bucket_size - 1; i += 2) {
             HypernodeID u = edge_targets[bucket_begin + i].second;
-            if (i + 1 >= bucket_size) {
-              continue;;
-            }
             HypernodeID v = edge_targets[bucket_begin + i + 1].second;
             ASSERT( edge_targets[bucket_begin + i].first == edge_targets[bucket_begin + i + 1].first );
             const HypernodeWeight weight_u = current_hg.nodeWeight(u);
@@ -467,6 +466,7 @@ class MultilevelCoarsener : public ICoarsener,
       }
       ++pass_nr;
     }
+    
     _progress_bar += (initial_num_nodes - _progress_bar.count());
     _progress_bar.disable();
     Base::finalize();
@@ -638,7 +638,7 @@ class MultilevelCoarsener : public ICoarsener,
         uint32_t hash_value = hash(edge ^ seed);
         min_value = std::min(min_value, hash_value);
       }
-      combine(min_hash, min_value);
+      min_hash = combine(min_hash, min_value);
     }
     return min_hash;
   }
