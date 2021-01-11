@@ -260,22 +260,7 @@ class MultilevelCoarsener : public ICoarsener,
         utils::Timer::instance().stop_timer("clustering_level_" + std::to_string(pass_nr));
       }
       utils::Timer::instance().stop_timer("parallel_clustering");
-      std::vector< std::pair < uint32_t, HypernodeID>> opt_targets = thread_opt_targets.combine(
-          [&](std::vector<std::pair < HypernodeID, HypernodeID>> a, std::vector<std::pair < uint32_t, HypernodeID>> b) {
-              std::vector<std::pair < HypernodeID, HypernodeID>> ab;
-              ab.reserve(a.size() + b.size());
-              ab.insert(ab.end(), a.begin(), a.end());
-              ab.insert(ab.end(), b.begin(), b.end());
-              return ab;
-          });
-      std::vector< std::pair < uint32_t, HypernodeID>> edge_targets = thread_edge_targets.combine(
-          [&](std::vector<std::pair < uint32_t, HypernodeID>> a, std::vector<std::pair < uint32_t, HypernodeID>> b) {
-              std::vector<std::pair < uint32_t, HypernodeID>> ab;
-              ab.reserve(a.size() + b.size());
-              ab.insert(ab.end(), a.begin(), a.end());
-              ab.insert(ab.end(), b.begin(), b.end());
-              return ab;
-          });
+
       current_num_nodes = num_hns_before_pass -
         contracted_nodes.combine(std::plus<HypernodeID>());
       DBG << V(current_num_nodes);
@@ -313,6 +298,15 @@ class MultilevelCoarsener : public ICoarsener,
       if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
         /* Two-Hop disabled for testing
         //debug
+        std::vector< std::pair < uint32_t, HypernodeID>> opt_targets = thread_opt_targets.combine(
+                [&](std::vector<std::pair < HypernodeID, HypernodeID>> a, std::vector<std::pair < uint32_t, HypernodeID>> b) {
+                  std::vector<std::pair < HypernodeID, HypernodeID>> ab;
+                  ab.reserve(a.size() + b.size());
+                  ab.insert(ab.end(), a.begin(), a.end());
+                  ab.insert(ab.end(), b.begin(), b.end());
+                  return ab;
+                });
+
         //std::cout << "Size of opt_targets:" << opt_targets.size() << std::endl;
 
         //Contract vertices which want to join a cluster that is to big with vertices that wan to join the same cluster
@@ -377,6 +371,17 @@ class MultilevelCoarsener : public ICoarsener,
         // Contract vertices that don't have a contraction target, but are both pins of the same edge that is too big
         // too be considered during rating
         //TODO rewrite to use counting sort
+
+        // TODO this can be done without copies
+        std::vector< std::pair < uint32_t, HypernodeID>> edge_targets = thread_edge_targets.combine(
+                [&](std::vector<std::pair < uint32_t, HypernodeID>> a, std::vector<std::pair < uint32_t, HypernodeID>> b) {
+                  std::vector<std::pair < uint32_t, HypernodeID>> ab;
+                  ab.reserve(a.size() + b.size());
+                  ab.insert(ab.end(), a.begin(), a.end());
+                  ab.insert(ab.end(), b.begin(), b.end());
+                  return ab;
+                });
+
         tbb::parallel_sort(edge_targets.begin(), edge_targets.end());
         std::vector<int> edge_bounds = {0};
         for (int i = 1; i < (int) edge_targets.size(); i++) {
