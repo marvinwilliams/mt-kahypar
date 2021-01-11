@@ -144,12 +144,13 @@ class MultilevelCoarsener : public ICoarsener,
     if ( _context.partition.verbose_output && _context.partition.enable_progress_bar ) {
       _progress_bar.enable();
     }
+
     int pass_nr = 0;
     std::vector<int> min_hash_seeds(128);
-    tbb::parallel_for(0, (int) min_hash_seeds.size(), [&](const int i) {
-    //for (int i = 0; i< 128; i++) {
-      min_hash_seeds[i] = utils::Randomize::instance().getRandomInt(std::numeric_limits<int>::min(), std::numeric_limits<int>::max(), sched_getcpu());
-    });
+    std::mt19937 rng(_context.partition.seed);
+    for (int i = 0; i < 128; i++) {
+      min_hash_seeds[i] = rng();
+    }
     const HypernodeID initial_num_nodes = Base::currentNumNodes();
     while ( Base::currentNumNodes() > _context.coarsening.contraction_limit ) {
       
@@ -166,7 +167,7 @@ class MultilevelCoarsener : public ICoarsener,
       // Random shuffle vertices of current hypergraph
       utils::Timer::instance().start_timer("shuffle_vertices", "Shuffle Vertices");
       _current_vertices.resize(current_hg.initialNumNodes());
-      parallel::scalable_vector<HypernodeID> cluster_ids(current_hg.initialNumNodes());
+      vec<HypernodeID> cluster_ids(current_hg.initialNumNodes());
       tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID hn) {
         ASSERT(hn < _current_vertices.size());
         // Reset clustering
