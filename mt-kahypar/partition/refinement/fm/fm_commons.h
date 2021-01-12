@@ -29,6 +29,7 @@
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 
 #include <tbb/parallel_for.h>
+#include <mt-kahypar/parallel/queue.h>
 
 namespace mt_kahypar {
 
@@ -145,6 +146,7 @@ struct NodeTracker {
   }
 };
 
+using HypernodeIDMessageMatrix = vec<parallel::queue<HypernodeID>>;
 
 struct FMSharedData {
 
@@ -177,13 +179,20 @@ struct FMSharedData {
   bool release_nodes = true;
   bool perform_moves_global = true;
 
+  HypernodeIDMessageMatrix messages;
+  vec<size_t> mqToSearchMap;
+  std::mutex mutex;
+  size_t numThreads;
+
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
           vertexPQHandles(), //numPQHandles, invalid_position),
           numParts(numParts),
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
-          targetPart()
+          targetPart(),
+          mqToSearchMap(numThreads, 0),
+          numThreads(numThreads)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 
@@ -220,6 +229,35 @@ struct FMSharedData {
     } else {
       return numNodes;
     }
+  }
+
+  std::optional<size_t> getMQFromSearchID(SearchID searchID) {
+    const auto mq_index = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), searchID);
+    if (mq_index != mqToSearchMap.end()) {
+      return std::distance(mqToSearchMap.begin(), mq_index);
+    } else {
+      return {};
+    }
+  }
+
+  void aquireMQ(SearchID searchID) {
+    // maybe spinlock
+    mutex.lock();
+    auto first_free = std::find(mqToSearchMap.begin(), mqToSearchMap.end(), 0);
+    ASSERT(first_free != mqToSearchMap.end());
+    *first_free = searchID;
+    mutex.unlock();
+    size_t index = std::distance(mqToSearchMap.begin(), first_free);
+    for (size_t i = 0; i < numThreads; ++i) {
+      messages[index * numThreads + i].clear();
+    }
+  }
+
+  void releaseMQ(SearchID searchID) {
+    size_t index = getMQFromSearchID(searchID).value();
+    mutex.lock();
+    mqToSearchMap[index] = 0;
+    mutex.unlock();
   }
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const {

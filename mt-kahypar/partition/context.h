@@ -137,6 +137,8 @@ struct FMParameters {
   double min_improvement = -1.0;
   bool release_nodes = true;
   double time_limit_factor = std::numeric_limits<double>::max();
+  bool sync_with_mq = false;
+  size_t num_moves_before_sync = 100;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);

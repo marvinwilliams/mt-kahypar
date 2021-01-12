@@ -27,6 +27,10 @@ namespace mt_kahypar {
     localMoves.clear();
     thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
+    if (context.refinement.fm.sync_with_mq) {
+      sharedData.aquireMQ(thisSearch);
+    }
+
     HypernodeID seedNode;
     while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
       SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
@@ -53,8 +57,14 @@ namespace mt_kahypar {
         deltaPhg.setPartitionedHypergraph(&phg);
         internalFindMoves<true>(phg);
       }
+      if (context.refinement.fm.sync_with_mq) {
+        sharedData.releaseMQ(thisSearch);
+      }
       return true;
     } else {
+      if (context.refinement.fm.sync_with_mq) {
+        sharedData.releaseMQ(thisSearch);
+      }
       return false;
     }
   }
@@ -90,6 +100,18 @@ namespace mt_kahypar {
               fm_strategy.updateGain(phg, v, move);
             } else if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
               fm_strategy.insertIntoPQ(phg, v, searchOfV);
+            } else if (context.refinement.fm.sync_with_mq && searchOfV != 0) {
+              auto indexOfV = sharedData.getMQFromSearchID(searchOfV);
+              if (indexOfV.has_value()) {
+                // send hypernode id to responsible threads message queue
+                SearchID v_index = indexOfV.value();
+                SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
+                SearchID num_threads = context.shared_memory.num_threads;
+                ASSERT(v_index * num_threads + this_index <
+                    static_cast<SearchID>(sharedData.messages.size()));
+                sharedData.messages[v_index * num_threads + this_index]
+                  .write(v);
+              }
             }
             neighborDeduplicator[v] = deduplicationTime;
           }
@@ -98,10 +120,7 @@ namespace mt_kahypar {
     }
     edgesWithGainChanges.clear();
 
-    if (++deduplicationTime == 0) {
-      neighborDeduplicator.assign(neighborDeduplicator.size(), 0);
-      deduplicationTime = 1;
-    }
+    updateNeighborDeduplicator();
   }
 
 
@@ -147,6 +166,15 @@ namespace mt_kahypar {
     while (!stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
 
+      if (context.refinement.fm.sync_with_mq && _local_moves_since_sync >=
+          context.refinement.fm.num_moves_before_sync) {
+        if constexpr (use_delta) {
+          syncMessageQueues(deltaPhg);
+        } else {
+          syncMessageQueues(phg);
+        }
+      }
+
       if constexpr (use_delta) {
         if (!fm_strategy.findNextMove(deltaPhg, move)) break;
       } else {
@@ -177,6 +205,7 @@ namespace mt_kahypar {
         runStats.moves++;
         estimatedImprovement += move.gain;
         localMoves.emplace_back(move, move_id);
+        _local_moves_since_sync++;
         stopRule.update(move.gain);
         const bool improved_km1 = estimatedImprovement > bestImprovement;
         const bool improved_balance_less_equal_km1 = estimatedImprovement >= bestImprovement
@@ -307,6 +336,33 @@ namespace mt_kahypar {
       localMoves.pop_back();
     }
   }
+
+  template<typename FMStrategy>
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    void LocalizedKWayFM<FMStrategy>::syncMessageQueues(PHG &phg) {
+      SearchID this_index = sharedData.getMQFromSearchID(thisSearch).value();
+      size_t num_threads = context.shared_memory.num_threads;
+      size_t mq_begin = this_index * num_threads;
+      size_t mq_end = mq_begin + num_threads;
+      Move m;
+      for (size_t i = mq_begin; i < mq_end; ++i) {
+        HypernodeID v;
+        while (sharedData.messages[i].read(v)) {
+          // use deduplicator to prevent uneeded pq updates
+          if (neighborDeduplicator[v] != deduplicationTime && !sharedData.nodeTracker.isLocked(v)) {
+            // this forces gain recalculation as we do not want to put moves into the mq
+            m.from = sharedData.targetPart[v];
+            fm_strategy.updateGain(phg, v, m);
+            neighborDeduplicator[v] = deduplicationTime;
+          }
+        }
+        fm_strategy.updatePQs(phg);
+        sharedData.messages[i].clear();
+      }
+      updateNeighborDeduplicator();
+      _local_moves_since_sync = 0;
+    }
 
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::memoryConsumption(utils::MemoryTreeNode *parent) const {
