@@ -56,13 +56,13 @@ class MultilevelVertexPairRater {
       target(trgt),
       opt_target(trgt),
       value(val),
-      state(5/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
+      state(19/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
 
     VertexPairRating() :
       target(std::numeric_limits<HypernodeID>::max()),
       opt_target(std::numeric_limits<HypernodeID>::max()),
       value(std::numeric_limits<RatingType>::min()),
-      state(5/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
+      state(19/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
 
     VertexPairRating(const VertexPairRating&) = delete;
     VertexPairRating & operator= (const VertexPairRating &) = delete;
@@ -104,12 +104,13 @@ class MultilevelVertexPairRater {
     _already_matched(hypergraph.initialNumNodes()) { }
 
   enum class RatingState : uint8_t {
-    TARGET_FOUND = 0,
-    VERTEX_TOO_BIG = 1,
-    EDGE_TOO_BIG = 2,
-    NO_NEIGHBOURS = 3,
-    MAP_ENTRY_FOUND = 4,
-    INITIAL_VALUE = 5
+    TARGET_FOUND = 10,
+    VERTEX_TOO_BIG = 11,
+    EDGE_TOO_BIG = 12,
+    NO_NEIGHBOURS = 13,
+    MAP_ENTRY_FOUND = 14,
+    DIFFERENT_COMMUNITY = 15,
+    INITIAL_VALUE = 19
   };
 
   #define STATE(X) static_cast<uint8_t>(X)
@@ -174,9 +175,6 @@ class MultilevelVertexPairRater {
       state = fillRatingMap(hypergraph, u, tmp_ratings, cluster_ids);
     }
 
-    //debug
-    //int validFound = 0;
-
     int cpu_id = sched_getcpu();
     const HypernodeWeight weight_u = cluster_weight[u];
     const PartitionID community_u_id = hypergraph.communityID(u);
@@ -190,12 +188,6 @@ class MultilevelVertexPairRater {
       const HypernodeID tmp_target_id = it->key;
       const HypernodeID tmp_target = tmp_target_id;
       const HypernodeWeight target_weight = cluster_weight[tmp_target_id];
-
-      //debug
-      /*if (validFound == 0) {
-        validFound = 1;
-      }*/
-
       if ( tmp_target != u && weight_u + target_weight <= max_allowed_node_weight ) {
         HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
         penalty = penalty == 0 ? std::max(std::max(weight_u, target_weight), 1) : penalty;
@@ -210,8 +202,10 @@ class MultilevelVertexPairRater {
           target_id = tmp_target_id;
           target = tmp_target;
           state = STATE(RatingState::TARGET_FOUND);
+        } else if ( community_u_id != hypergraph.communityID(tmp_target) ) {
+          state = STATE(RatingState::DIFFERENT_COMMUNITY);
         }
-      } else if (tmp_target != u) {
+      } else if ( tmp_target != u ) {
         HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
         penalty = penalty == 0 ? std::max(std::max(weight_u, target_weight), 1) : penalty;
         const RatingType tmp_rating = it->value / static_cast<double>(penalty);
@@ -224,12 +218,9 @@ class MultilevelVertexPairRater {
           opt_target_id = tmp_target_id;
           opt_target = tmp_target;
           state = STATE(RatingState::VERTEX_TOO_BIG);
-          //debug
-          //validFound = 2;
-        } /*else {
-          //debug
-          validFound = 3;
-        }*/
+        } else if ( community_u_id != hypergraph.communityID(tmp_target) ) {
+          state = STATE(RatingState::DIFFERENT_COMMUNITY);
+        }
       }
     }
 
@@ -245,23 +236,6 @@ class MultilevelVertexPairRater {
     }
     ret.state = state;
     tmp_ratings.clear();
-
-    //debug
-    /*if (!ret.valid) {
-      switch (validFound) {
-        case 0:
-          std::cout << "No valid Neighbour\n";
-          break;
-        case 2:
-          std::cout << "Size too big\n";
-          break;
-        case 3:
-          std::cout << "Not Accepted size too big\n";
-          break;
-        default:
-          std::cout << "What the fuck\n";
-      }
-    }*/
 
     return ret;
   }
