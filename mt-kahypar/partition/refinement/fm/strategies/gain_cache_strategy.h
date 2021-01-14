@@ -127,17 +127,17 @@ public:
     const bool release = sharedData.release_nodes
                          && runStats.moves > 0;
 
-    if (release) {
-      // Release all nodes contained in PQ
-      for (PartitionID i = 0; i < context.partition.k; ++i) {
-        for (PosT j = 0; j < vertexPQs[i].size(); ++j) {
-          const HypernodeID v = vertexPQs[i].at(j);
+    for (PartitionID i = 0; i < context.partition.k; ++i) {
+      for (PosT j = 0; j < vertexPQs[i].size(); ++j) {
+        const HypernodeID v = vertexPQs[i].at(j);
+        // Release all nodes contained in PQ and set searchOfNode appropriately
+        if (release) {
           sharedData.nodeTracker.releaseNode(v);
+          sharedData.nodeTracker.searchOfNode[v].store(sharedData.nodeTracker.releasedMarker, std::memory_order_relaxed);
+        } else {
+          sharedData.nodeTracker.searchOfNode[v].store(sharedData.nodeTracker.deactivatedNodeMarker, std::memory_order_relaxed);
         }
       }
-    }
-
-    for (PartitionID i = 0; i < context.partition.k; ++i) {
       vertexPQs[i].clear();
     }
     blockPQ.clear();
