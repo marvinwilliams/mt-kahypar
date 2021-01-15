@@ -67,8 +67,10 @@ bool queue<T>::write(T data) {
   bool deact = deactivated.load(std::memory_order_acq_rel);
 
   // if writer is locked or queue is deactivated, do not write to queue
-  /* TODO: maybe separate to allow write retry if writer is locked <15-01-21, @noahares> */
-  if (w_top || deact) {
+  if (w_top) {
+    return false;
+  }
+  if (deact) {
     writer_lock.store(w_top, std::memory_order_release);
     return false;
   }
@@ -103,7 +105,10 @@ bool queue<T>::read(T &data) {
   // if reader has nothing to read, try to acquire writer queue
   if (reader_queue.empty()) {
     bool w_top = writer_lock.exchange(true, std::memory_order_acq_rel);
-    if (w_top || writer_queue.empty()) {
+    if (w_top) {
+      return false;
+    }
+    if (writer_queue.empty()) {
       writer_lock.store(w_top, std::memory_order_release);
       return false;
     } else {
