@@ -1,13 +1,23 @@
-/**
- * Lock free queue for 1 writer and 1 reader threads.
+/*******************************************************************************
+ * This file is part of MT-KaHyPar.
  *
- * Writer and reader are working with a separate queues.
- * When writer writes to its own queue it checks if reader has anything to read.
- * If not then writer pass its queue to reader and starts new one for itself.
+ * Copyright (C) 2021 Noah Wahl <noah.wahl@student.kit.edu>
  *
- * The only place were reader and writer touch each other is when writer gives
- * its queue to reader via readerTop.
- */
+ * KaHyPar is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * KaHyPar is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with KaHyPar.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ ******************************************************************************/
+
 #include <atomic>
 #include <queue>
 
@@ -26,99 +36,87 @@ class queue {
 
     void clear();
 
+    bool deactivate();
+
   private:
-    std::atomic<T*> writer_ptr;
-    std::atomic<T*> reader_ptr;
+    std::atomic<bool> writer_lock; // manages access to the writer queue
+    std::atomic<bool> deactivated; // if the queue is deactivated, do not write to it
     std::vector<T> writer_queue;
     std::vector<T> reader_queue;
-    size_t max_size;
+    size_t max_size; // max size of reader and writer queue to prevent reallocation
 };
 
 template<class T>
 queue<T>::queue(size_t max_size) : max_size(max_size) {
   writer_queue.reserve(max_size);
   reader_queue.reserve(max_size);
-  writer_ptr = &writer_queue.front();
-  reader_ptr = &reader_queue.front();
+  writer_lock = false;
 }
 
 template<class T>
 queue<T>::queue(const queue& q) {
   writer_queue = q.writer_queue;
   reader_queue = q.reader_queue;
-  writer_ptr = &writer_queue.front();
-  reader_ptr = &reader_queue.front();
+  writer_lock = false;
 }
 
-/*
- * Write data to the queue.
- * Algorithm:
- * 1. Retrieve writer top using atomic::exchange(null).
- *    This prevents reader from trying to take ownership of writers subqueue.
- * 2. If it is null then create new item.
- * 3. Otherwise add data to the end.
- * 4. Retrieve reader top using atomic::load(null).
- *    Using load instead of exchange prevents blocking of reader's subqueue.
- * 5. If it is null then set it to the writer top.
- * 6. Otherwise restore writer's top.
- */
 template<class T>
 bool queue<T>::write(T data) {
 
-  T* w_top = writer_ptr.exchange(nullptr, std::memory_order_acq_rel);
+  bool w_top = writer_lock.exchange(true, std::memory_order_acq_rel);
+  bool deact = deactivated.load(std::memory_order_acq_rel);
 
-  if (w_top == nullptr) {
+  // if writer is locked or queue is deactivated, do not write to queue
+  /* TODO: maybe separate to allow write retry if writer is locked <15-01-21, @noahares> */
+  if (w_top || deact) {
+    writer_lock.store(w_top, std::memory_order_release);
     return false;
-
   }
+
+  // if writer queue is not full, append message to it
   if (writer_queue.size() < max_size) {
-    writer_queue.push_back(data); // append to queue
-    writer_ptr.store(w_top, std::memory_order_release); // restore writer's top
+    writer_queue.push_back(data);
+    writer_lock.store(w_top, std::memory_order_release);
     return true;
-  } else if (reader_queue.empty()) { // reader don't have anything to read
+
+    /* TODO: ideally writer should be able to give reader its queue if it is full to start a new one,
+       but then we would need a reader lock because the check for empty can occur while moving the writer to the reader queue.
+       In this case acquiring locks in the same order should be kept in mind <15-01-21, @noahares> */
+    /*
+  } else if (reader_queue.empty()) {
     reader_queue = std::move(writer_queue);
+
     writer_queue = std::vector<T>();
     writer_queue.reserve(max_size);
-    reader_ptr.store(w_top, std::memory_order_release); // give reader writer's queue
-
     writer_queue.push_back(data); // append to queue
-    writer_ptr.store(w_top, std::memory_order_release); // restore writer's top
+    writer_lock.store(w_top, std::memory_order_release);
     return true;
+*/
   }
+  writer_lock.store(w_top, std::memory_order_release); // restore writer's top
   return false;
 }
 
-/*
- * Read data from the queue.
- * Algorithm:
- * 1. Retrieve reader top using atomic::load().
- *    Using load instead of exchange prevets writer queue from overwriting readers one while reader is working with it.
- * 2. If it is null then:
- * 2.1. Retrieve writer top using atomic::exchange(null).
- *      Using exchange garantees that only writer or reader is owning writer's queue at each moment of time.
- * 2.2. If it is not null then assign it to the reader top otherwise exit.
- * 3. Shift reader's top to the next and return original top data.
- */
 template<class T>
-bool queue<T>::read(T &data)
-{
-  T* r_top = reader_ptr.load(std::memory_order_acquire);
+bool queue<T>::read(T &data) {
+
+  // if reader has nothing to read, try to acquire writer queue
   if (reader_queue.empty()) {
-    T* w_top = writer_ptr.exchange(nullptr, std::memory_order_acq_rel);
-    if (w_top == nullptr || writer_queue.empty()) {
+    bool w_top = writer_lock.exchange(true, std::memory_order_acq_rel);
+    if (w_top || writer_queue.empty()) {
+      writer_lock.store(w_top, std::memory_order_release);
       return false;
     } else {
       reader_queue = std::move(writer_queue);
-      reader_ptr.store(w_top, std::memory_order_release);
+
       writer_queue = std::vector<T>();
       writer_queue.reserve(max_size);
-      w_top = &writer_queue.front();
-      writer_ptr.store(w_top, std::memory_order_release);
+      writer_lock.store(w_top, std::memory_order_release);
     }
 
   }
-  reader_ptr.store(++r_top, std::memory_order_release);
-  data = *r_top;
+  data = reader_queue.back();
+  reader_queue.pop_back();
   return true;
 }
 
@@ -127,8 +125,19 @@ void queue<T>::clear() {
   // clean queues
   reader_queue.clear();
   writer_queue.clear();
-  reader_ptr = &reader_queue.front();
-  writer_ptr = &writer_queue.front();
+  writer_lock.store(false, std::memory_order_acq_rel);
+}
+
+template<class T>
+bool queue<T>::deactivate() {
+  // deactivate the queue to prevent writes to it
+  bool w_top = writer_lock.exchange(true, std::memory_order_acq_rel);
+  if (w_top) {
+    return false;
+  }
+  deactivated.store(true, std::memory_order_acq_rel);
+  clear();
+  return true;
 }
 
 

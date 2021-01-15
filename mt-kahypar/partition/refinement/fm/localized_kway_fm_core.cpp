@@ -57,8 +57,14 @@ namespace mt_kahypar {
         deltaPhg.setPartitionedHypergraph(&phg);
         internalFindMoves<true>(phg);
       }
+      if (context.refinement.fm.sync_with_mq) {
+        deactivateMessageQueue();
+      }
       return true;
     } else {
+      if (context.refinement.fm.sync_with_mq) {
+        deactivateMessageQueue();
+      }
       return false;
     }
   }

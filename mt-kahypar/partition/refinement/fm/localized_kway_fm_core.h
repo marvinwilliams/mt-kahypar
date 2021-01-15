@@ -54,6 +54,16 @@ public:
     thisSearch = 0;
   }
 
+  void deactivateMessageQueue() {
+    SearchID this_index = thisSearch - sharedData.nodeTracker.deactivatedNodeMarker - 1;
+    size_t num_threads = context.shared_memory.num_threads;
+    size_t mq_begin = this_index * num_threads;
+    size_t mq_end = mq_begin + num_threads;
+    for (size_t i = mq_begin; i < mq_end; ++i) {
+      while(!sharedData.messages[i].deactivate()) {};
+    }
+  }
+
   FMStats stats;
 
 private:
