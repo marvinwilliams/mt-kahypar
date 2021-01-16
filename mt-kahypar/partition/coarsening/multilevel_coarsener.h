@@ -397,24 +397,11 @@ class MultilevelCoarsener : public ICoarsener,
             }
         });
         tbb::parallel_sort(edge_targets.begin(), edge_targets.end());
-        //TODO bounds not necessary just test if minhash is the same
-        std::vector<int> edge_bounds = {0};
-        for (int i = 1; i < (int) edge_targets.size(); i++) {
-          if(edge_targets[i].first != edge_targets[i-1].first) {
-            edge_bounds.push_back(i);
-          }
-        }
-        edge_bounds.push_back(edge_targets.size());
-
         tbb::enumerable_thread_specific<HypernodeID> edge_contracted_nodes(0);
-        tbb::parallel_for(0, (int) edge_bounds.size()-1, [&](const int index) {
-          int bucket_begin = edge_bounds[index];
-          int bucket_size = edge_bounds[index+1] - bucket_begin;
-
-          for (int i = 0; i < bucket_size - 1; i += 2) {
-            HypernodeID u = edge_targets[bucket_begin + i].second;
-            HypernodeID v = edge_targets[bucket_begin + i + 1].second;
-            ASSERT( edge_targets[bucket_begin + i].first == edge_targets[bucket_begin + i + 1].first );
+        tbb::parallel_for(0, (int) edge_targets.size()-1, 2, [&](const int index) {
+          HypernodeID u = edge_targets[index].second;
+          HypernodeID v = edge_targets[index + 1].second;
+          if (edge_targets[index].first == edge_targets[index + 1].first) {
             const HypernodeWeight weight_u = current_hg.nodeWeight(u);
             HypernodeWeight weight_v = current_hg.nodeWeight(v);
             if (weight_u + weight_v <= _max_allowed_node_weight) {
