@@ -49,7 +49,6 @@ class queue {
 template<class T>
 queue<T>::queue(size_t max_size) : max_size(max_size) {
   writer_queue.reserve(max_size);
-  reader_queue.reserve(max_size);
   writer_lock = false;
 }
 

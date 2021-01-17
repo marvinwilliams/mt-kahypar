@@ -133,9 +133,8 @@ public:
         // Release all nodes contained in PQ and set searchOfNode appropriately
         if (release) {
           sharedData.nodeTracker.releaseNode(v);
-          sharedData.nodeTracker.searchOfNode[v].store(sharedData.nodeTracker.releasedMarker, std::memory_order_relaxed);
         } else {
-          sharedData.nodeTracker.searchOfNode[v].store(sharedData.nodeTracker.deactivatedNodeMarker, std::memory_order_relaxed);
+          sharedData.nodeTracker.searchOfNode[v].store(sharedData.nodeTracker.deactivatedNodeMarker, std::memory_order_acq_rel);
         }
       }
       vertexPQs[i].clear();

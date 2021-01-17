@@ -203,7 +203,9 @@ namespace mt_kahypar {
         runStats.moves++;
         estimatedImprovement += move.gain;
         localMoves.emplace_back(move, move_id);
-        _local_moves_since_sync++;
+        if (context.refinement.fm.sync_with_mq) {
+          _local_moves_since_sync++;
+        }
         stopRule.update(move.gain);
         const bool improved_km1 = estimatedImprovement > bestImprovement;
         const bool improved_balance_less_equal_km1 = estimatedImprovement >= bestImprovement
@@ -356,7 +358,7 @@ namespace mt_kahypar {
           }
         }
         fm_strategy.updatePQs(phg);
-        sharedData.messages[i].clear();
+        /*sharedData.messages[i].clear();*/
       }
       updateNeighborDeduplicator();
       _local_moves_since_sync = 0;
