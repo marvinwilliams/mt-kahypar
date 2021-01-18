@@ -27,7 +27,7 @@ namespace parallel {
 template<class T>
 class queue {
   public:
-    queue(size_t max_size);
+    queue();
     queue(const queue& q);
 
     bool write(T data);
@@ -43,12 +43,10 @@ class queue {
     std::atomic<bool> deactivated; // if the queue is deactivated, do not write to it
     std::vector<T> writer_queue;
     std::vector<T> reader_queue;
-    size_t max_size; // max size of reader and writer queue to prevent reallocation
 };
 
 template<class T>
-queue<T>::queue(size_t max_size) : max_size(max_size) {
-  writer_queue.reserve(max_size);
+queue<T>::queue() {
   writer_lock = false;
 }
 
@@ -74,28 +72,9 @@ bool queue<T>::write(T data) {
     return false;
   }
 
-  // if writer queue is not full, append message to it
-  if (writer_queue.size() < max_size) {
-    writer_queue.push_back(data);
-    writer_lock.store(w_top, std::memory_order_release);
-    return true;
-
-    /* TODO: ideally writer should be able to give reader its queue if it is full to start a new one,
-       but then we would need a reader lock because the check for empty can occur while moving the writer to the reader queue.
-       In this case acquiring locks in the same order should be kept in mind <15-01-21, @noahares> */
-    /*
-  } else if (reader_queue.empty()) {
-    reader_queue = std::move(writer_queue);
-
-    writer_queue = std::vector<T>();
-    writer_queue.reserve(max_size);
-    writer_queue.push_back(data); // append to queue
-    writer_lock.store(w_top, std::memory_order_release);
-    return true;
-*/
-  }
-  writer_lock.store(w_top, std::memory_order_release); // restore writer's top
-  return false;
+  writer_queue.push_back(data);
+  writer_lock.store(w_top, std::memory_order_release);
+  return true;
 }
 
 template<class T>
@@ -114,7 +93,6 @@ bool queue<T>::read(T &data) {
       reader_queue = std::move(writer_queue);
 
       writer_queue = std::vector<T>();
-      writer_queue.reserve(max_size);
       writer_lock.store(w_top, std::memory_order_release);
     }
 
