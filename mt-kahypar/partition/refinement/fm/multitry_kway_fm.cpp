@@ -155,7 +155,7 @@ namespace mt_kahypar {
     // clear message queues
     if (context.refinement.fm.sync_with_mq) {
       for (auto &mq : sharedData.messages) {
-        mq.clear();
+        mq.unsafe_clear();
       }
     }
 

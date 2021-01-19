@@ -29,7 +29,7 @@
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 
 #include <tbb/parallel_for.h>
-#include <mt-kahypar/parallel/queue.h>
+#include <mt-kahypar/parallel/message_queue.h>
 
 namespace mt_kahypar {
 
@@ -146,7 +146,7 @@ struct NodeTracker {
   }
 };
 
-using HypernodeIDMessageMatrix = vec<parallel::queue<HypernodeID>>;
+using HypernodeIDMessageMatrix = vec<parallel::message_queue<HypernodeID>>;
 
 struct FMSharedData {
 

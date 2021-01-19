@@ -55,7 +55,7 @@ public:
     }
     if (context.refinement.fm.sync_with_mq) {
       size_t num_threads = context.shared_memory.num_threads;
-      sharedData.messages = HypernodeIDMessageMatrix(num_threads * num_threads, parallel::queue<HypernodeID>());
+      sharedData.messages = HypernodeIDMessageMatrix(num_threads * num_threads, parallel::message_queue<HypernodeID>());
     }
   }
 
