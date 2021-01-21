@@ -23,6 +23,7 @@
 #include "mt-kahypar/utils/timer.h"
 #include "kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/memory_tree.h"
+#include "tbb/parallel_sort.h"
 
 namespace mt_kahypar {
 
@@ -160,6 +161,9 @@ namespace mt_kahypar {
     }
 
     if ( refinement_nodes.empty() ) {
+      if (context.refinement.fm.random_assignment) {
+        randomAssignment(phg);
+      } else {
       // log(n) level case
       // iterate over all nodes and insert border nodes into task queue
       tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
@@ -172,6 +176,7 @@ namespace mt_kahypar {
             }
           }
         });
+      }
     } else {
       // n-level case
       tbb::parallel_for(0UL, refinement_nodes.size(), [&](const size_t i) {
@@ -194,6 +199,61 @@ namespace mt_kahypar {
     sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
   }
 
+  template<typename FMStrategy>
+    void MultiTryKWayFM<FMStrategy>::randomAssignment(PartitionedHypergraph &phg) {
+
+      tbb::enumerable_thread_specific<vec<std::pair<int, HypernodeID>>> ets_border_nodes;
+
+      // thread local border node calculation
+      tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()), [&](const tbb::blocked_range<HypernodeID> &r) {
+        auto &tl_border_nodes = ets_border_nodes.local();
+        for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+          if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+            /* TODO: swap rand() for better randomness <19-01-21, @noahares> */
+            int random = std::rand();
+            tl_border_nodes.push_back(std::make_pair(random, u));
+          }
+        }
+      });
+      // combine thread local border nodes
+      vec<std::pair<int, HypernodeID>> border_node_to_shuffle;
+      for (const auto &tl_border_nodes : ets_border_nodes) {
+        border_node_to_shuffle.insert(border_node_to_shuffle.end(), tl_border_nodes.begin(), tl_border_nodes.end());
+      }
+
+      // random shuffle
+      tbb::parallel_sort(border_node_to_shuffle.begin(), border_node_to_shuffle.end());
+
+      vec<HypernodeID> border_nodes;
+      border_nodes.reserve(border_node_to_shuffle.size());
+
+      std::transform(border_node_to_shuffle.begin(), border_node_to_shuffle.end(), std::back_inserter(border_nodes), [&](const std::pair<int, HypernodeID> &p) {
+          return p.second;
+          });
+
+      tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, border_nodes.size()), [&](const tbb::blocked_range<HypernodeID> &r) {
+        for (size_t i = r.begin(); i < r.end(); ++i) {
+          size_t swap = r.begin() + (std::rand() % static_cast<size_t>(r.end() - r.begin()));
+          ASSERT(swap >= r.begin() && swap < r.end());
+          std::swap(border_nodes[i], border_nodes[swap]);
+        }
+        });
+
+      size_t nodes_per_thread =
+        (border_nodes.size() / context.shared_memory.num_threads) + 1;
+      tbb::task_group tg;
+      // distribute border nodes to threads
+      auto task = [&](const auto thread_id) {
+        auto begin = border_nodes.begin() + thread_id * nodes_per_thread;
+        auto end = std::min(begin + nodes_per_thread, border_nodes.end());
+        sharedData.refinementNodes.tls_queues[thread_id].elements.insert(
+            sharedData.refinementNodes.tls_queues[thread_id].elements.end(), begin, end);
+      };
+      for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {
+        tg.run(std::bind(task, i));
+      }
+      tg.wait();
+    }
 
   template<typename FMStrategy>
   void MultiTryKWayFM<FMStrategy>::initializeImpl(PartitionedHypergraph& phg) {

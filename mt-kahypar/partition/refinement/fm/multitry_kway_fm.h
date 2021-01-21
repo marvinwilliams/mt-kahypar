@@ -83,6 +83,10 @@ public:
 
   void printMemoryConsumption();
 
+private:
+  void randomAssignment(PartitionedHypergraph &phg);
+
+public:
   bool is_initialized = false;
   bool enable_light_fm = false;
   const HypernodeID initial_num_nodes;
