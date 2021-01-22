@@ -31,11 +31,23 @@ namespace mt_kahypar {
     }
     ASSERT(thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
 
-    HypernodeID seedNode;
-    while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
-      SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
-      if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
-        fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+    if (context.refinement.fm.random_assignment) {
+      vec<HypernodeID> seeds;
+      if (sharedData.shared_refinement_nodes.try_pop(seeds, numSeeds)) {
+        for (auto u : seeds) {
+          SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
+          if (sharedData.nodeTracker.tryAcquireNode(u, thisSearch)) {
+            fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
+          }
+        }
+      }
+    } else {
+      HypernodeID seedNode;
+      while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
+        SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
+        if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
+          fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+        }
       }
     }
     fm_strategy.updatePQs(phg);

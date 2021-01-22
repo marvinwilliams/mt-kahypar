@@ -30,6 +30,7 @@
 
 #include <tbb/parallel_for.h>
 #include <mt-kahypar/parallel/message_queue.h>
+#include <mt-kahypar/datastructures/shared_work_queue.h>
 
 namespace mt_kahypar {
 
@@ -181,13 +182,16 @@ struct FMSharedData {
 
   HypernodeIDMessageMatrix messages;
 
+  SharedWorkQueue<HypernodeID> shared_refinement_nodes;
+
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
           vertexPQHandles(), //numPQHandles, invalid_position),
           numParts(numParts),
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
-          targetPart()
+          targetPart(),
+          shared_refinement_nodes()
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 
