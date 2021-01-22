@@ -56,6 +56,13 @@ class MultilevelCoarsener : public ICoarsener,
                                           AcceptancePolicy>;
   using Rating = typename Rater::Rating;
 
+  struct CornerCaseCounter {
+      int edgeTooBig;
+      int vertexTooBig;
+      int notInCommunity;
+      int degreeZero;
+  };
+
   enum class MatchingState : uint8_t {
     UNMATCHED = 0,
     MATCHING_IN_PROGRESS = 1,
@@ -203,6 +210,7 @@ class MultilevelCoarsener : public ICoarsener,
       HypernodeID current_num_nodes = num_hns_before_pass;
       tbb::enumerable_thread_specific<HypernodeID> contracted_nodes(0);
       tbb::enumerable_thread_specific<HypernodeID> num_nodes_update_threshold(0);
+      tbb::enumerable_thread_specific<CornerCaseCounter> counter;
       tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID id) {
         ASSERT(id < _current_vertices.size());
         const HypernodeID hn = _current_vertices[id];
@@ -242,28 +250,32 @@ class MultilevelCoarsener : public ICoarsener,
                     _context.shared_memory.num_threads;
                 }
               } else {
-                /*std::string out = "";
+                CornerCaseCounter& c = counter.local();
+                //std::string out = "";
                 switch (rating.state) {
                   case 11:
-                    out += "Vertex too big\n";
-                    std::cout << out;
+                    //out += "Vertex too big\n";
+                    //std::cout << out;
+                    c.vertexTooBig++;
                     break;
                   case 12:
-                    out += "Edge too big\n";
-                    std::cout << out;
+                    //out += "Edge too big\n";
+                    //std::cout << out;
+                    c.edgeTooBig++;
                     break;
                   case 13:
-                    out += "Degree zero\n";
-                    std::cout << out;
+                    //out += "Degree zero\n";
+                    //std::cout << out;
+                    c.degreeZero++;
                     break;
                   case 15:
-                    out += "Not in the same community\n";
-                    std::cout << out;
+                    //out += "Not in the same community\n";
+                    //std::cout << out;
+                    c.notInCommunity++;
                     break;
                   default:
                     break;
-                }*/
-                //TODO Only set Matching state here IN PROGRESS
+                }
                 _matching_state[u] = rating.state;
                 if ( rating.state == STATE(Rater::RatingState::VERTEX_TOO_BIG) ) {
                   //Store preferred cluster for all nodes that don't get matched, because their target was too big,
@@ -315,6 +327,16 @@ class MultilevelCoarsener : public ICoarsener,
         static_cast<double>(num_hns_before_pass) /
         static_cast<double>(current_num_nodes);
       if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
+        CornerCaseCounter corner_cases = counter.combine(
+          [&](CornerCaseCounter a, CornerCaseCounter b) {
+            CornerCaseCounter sum;
+            sum.vertexTooBig = a.vertexTooBig + b.vertexTooBig;
+            sum.edgeTooBig = a.edgeTooBig + b.edgeTooBig;
+            sum.notInCommunity = a.notInCommunity + b.notInCommunity;
+            sum.degreeZero = a.degreeZero + b.degreeZero;
+            return sum;
+          });
+
         tbb::enumerable_thread_specific< std::vector< std::pair < uint32_t, HypernodeID>>> thread_edge_targets;
         tbb::enumerable_thread_specific< std::vector< std::pair < HypernodeID, HypernodeID>>> thread_opt_targets;
         tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID hn) {
@@ -336,15 +358,15 @@ class MultilevelCoarsener : public ICoarsener,
           sizes.push_back(size_total);
         }
         std::vector<std::pair<HypernodeID, HypernodeID>> opt_targets;
-        opt_targets.resize(sizes.back());
+        opt_targets.resize(corner_cases.vertexTooBig);
         tbb::parallel_for(0, (int)thread_opt_targets.size(), [&](int i) {
-            auto iter = thread_opt_targets.begin();
-            iter += i;
+            auto iter = thread_opt_targets.begin() + i;
             int offset = sizes[i];
             for (size_t j = 0; j < iter->size(); j++) {
               opt_targets[offset + j] = (*iter)[j];
             }
         });
+
         //TODO rewrite to use counting sort
         tbb::parallel_sort(opt_targets.begin(), opt_targets.end());
         std::vector<int> bounds = {0};
@@ -359,17 +381,27 @@ class MultilevelCoarsener : public ICoarsener,
           int bucket_begin = bounds[index];
           int bucket_size = bounds[index+1] - bucket_begin;
 
-          for (int i = 0; i < bucket_size - 1; i += 2) {
-            HypernodeID u = opt_targets[bucket_begin + i].second;
-            HypernodeID v = opt_targets[bucket_begin + i + 1].second;
+          for (int i = 0; i < bucket_size; i ++) {
+            opt_targets[bucket_begin+i].first = current_hg.nodeWeight(opt_targets[bucket_begin+i].second);
+          }
+          tbb::parallel_sort(opt_targets.begin() + bucket_begin, opt_targets.begin() + bucket_begin + bucket_size);
+          int l = 0;
+          int r = bucket_size-1;
+          while ( l < r ) {
+            HypernodeID u = opt_targets[bucket_begin + r].second;
+            HypernodeID v = opt_targets[bucket_begin + l].second;
             ASSERT( opt_targets[bucket_begin + i].first == opt_targets[bucket_begin + i + 1].first );
             const HypernodeWeight weight_u = current_hg.nodeWeight(u);
             HypernodeWeight weight_v = current_hg.nodeWeight(v);
-            if (weight_u + weight_v <= _max_allowed_node_weight) {
+            if (weight_u + weight_v >= _max_allowed_node_weight /*/ 2*/) {
+              r--;
+            } else {
               _matching_partner[v] = u;
               cluster_ids[v] = u;
               _cluster_weight[u] += weight_v;
               ++(two_hop_contracted_nodes.local());
+              l++;
+              r--;
             }
           }
         });
@@ -387,15 +419,15 @@ class MultilevelCoarsener : public ICoarsener,
           sizes.push_back(size_total);
         }
         std::vector<std::pair<uint32_t , HypernodeID>> edge_targets;
-        edge_targets.resize(sizes.back());
+        edge_targets.resize(corner_cases.edgeTooBig);
         tbb::parallel_for(0, (int)thread_edge_targets.size(), [&](int i) {
-            auto iter = thread_edge_targets.begin();
-            iter += i;
+            auto iter = thread_edge_targets.begin() + i;
             int offset = sizes[i];
             for (size_t j = 0; j < iter->size(); j++) {
               edge_targets[offset + j] = (*iter)[j];
             }
         });
+
         tbb::parallel_sort(edge_targets.begin(), edge_targets.end());
         tbb::enumerable_thread_specific<HypernodeID> edge_contracted_nodes(0);
         tbb::parallel_for(0, (int) edge_targets.size()-1, 2, [&](const int index) {
