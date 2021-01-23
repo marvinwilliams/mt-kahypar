@@ -87,15 +87,14 @@ template <class T> struct SharedWorkQueue {
   };
 */
 
-  void shuffle() {
+  void shuffle(size_t seed) {
 /*
     vec<int> randoms;
     vec<int> indices;
     randoms.resize(work_queue.size());
     indices.resize(work_queue.size());
 */
-    std::random_device rd;
-    std::mt19937 g(rd());
+    std::mt19937 g(seed);
 /*
     std::uniform_int_distribution<> distrib(0, std::numeric_limits<int>::max());
     auto get_rand = [&]() { return distrib(g); };

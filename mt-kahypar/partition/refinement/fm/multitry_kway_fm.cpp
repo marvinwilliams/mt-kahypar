@@ -217,7 +217,7 @@ namespace mt_kahypar {
         sharedData.shared_refinement_nodes.append(tl_border_nodes);
       });
 
-      sharedData.shared_refinement_nodes.shuffle();
+      sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
     }
 
   template<typename FMStrategy>
