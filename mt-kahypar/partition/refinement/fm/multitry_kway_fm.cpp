@@ -206,22 +206,16 @@ namespace mt_kahypar {
   template<typename FMStrategy>
     void MultiTryKWayFM<FMStrategy>::randomAssignment(PartitionedHypergraph &phg) {
 
-      tbb::enumerable_thread_specific<vec<HypernodeID>> ets_border_nodes;
-
       // thread local border node calculation
       tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()), [&](const tbb::blocked_range<HypernodeID> &r) {
-        auto &tl_border_nodes = ets_border_nodes.local();
+        vec<HypernodeID> tl_border_nodes;
         for (HypernodeID u = r.begin(); u < r.end(); ++u) {
           if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
             tl_border_nodes.push_back(u);
           }
         }
-      });
-      // combine thread local border nodes
-      vec<std::pair<int, HypernodeID>> border_node_to_shuffle;
-      for (auto &tl_border_nodes : ets_border_nodes) {
         sharedData.shared_refinement_nodes.append(tl_border_nodes);
-      }
+      });
 
       sharedData.shared_refinement_nodes.shuffle();
     }

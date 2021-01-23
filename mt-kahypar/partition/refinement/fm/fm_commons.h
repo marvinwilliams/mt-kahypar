@@ -191,7 +191,7 @@ struct FMSharedData {
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
           targetPart(),
-          shared_refinement_nodes()
+          shared_refinement_nodes(numNodes)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 

@@ -22,33 +22,34 @@
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/parallel/atomic_wrapper.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
+#include "mt-kahypar/utils/range.h"
 #include <algorithm>
+#include <random>
 #include <tbb/parallel_sort.h>
 namespace mt_kahypar {
-
-struct Comparator {
-  const vec<int> &value_vector;
-
-  Comparator(const vec<int> &val_vec) : value_vector(val_vec) {}
-
-  bool operator()(int i1, int i2) {
-    return value_vector[i1] < value_vector[i2];
-  }
-};
 
 template <class T> struct SharedWorkQueue {
   vec<T> work_queue;
   CAtomic<size_t> front;
+  CAtomic<size_t> back;
 
-  SharedWorkQueue() { front.store(0); }
+  SharedWorkQueue(size_t size) {
+    work_queue.resize(size);
+    front.store(0);
+    back.store(0);
+  }
 
   void clear() {
     work_queue.clear();
     front.store(0);
+    back.store(0);
   }
 
   void append(vec<T> &elements) {
-    work_queue.insert(work_queue.end(), elements.begin(), elements.end());
+    size_t pos = back.fetch_add(elements.size(), std::memory_order_acq_rel);
+    for (size_t i = 0; i < elements.size(); ++i) {
+      work_queue[pos + i] = elements[i];
+    }
   }
 
   bool try_pop(T &dest) {
@@ -60,29 +61,51 @@ template <class T> struct SharedWorkQueue {
     return false;
   }
 
-  bool try_pop(vec<T> &dest, size_t num_seeds) {
+  std::optional<IteratorRange<typename vec<T>::iterator>> try_pop(size_t num_seeds) {
     size_t pos = front.fetch_add(num_seeds, std::memory_order_acq_rel);
     if (pos < work_queue.size()) {
-      for (size_t i = 0; (i < num_seeds) && (pos + i < work_queue.size());
-           ++i) {
-        dest.push_back(work_queue[pos + i]);
-      }
-      return true;
+      const auto begin = work_queue.begin() + pos;
+      const auto end = std::min(begin + num_seeds, work_queue.end());
+      return IteratorRange(begin, end);
     }
-    return false;
+    return {};
   }
 
   size_t unsafe_size() const {
     return work_queue.size() - front.load(std::memory_order_relaxed);
   }
 
+/*
+  struct Comparator {
+    const vec<int> &value_vector;
+
+    Comparator(const vec<int> &val_vec) : value_vector(val_vec) {}
+
+    bool operator()(const T& i1, const T& i2) {
+      return value_vector[i1] < value_vector[i2];
+    }
+  };
+*/
+
   void shuffle() {
+/*
     vec<int> randoms;
-    randoms.reserve(work_queue.size());
-    std::srand(time(0));
-    std::generate(randoms.begin(), randoms.end(), std::rand);
-    tbb::parallel_sort(work_queue.begin(), work_queue.end(),
+    vec<int> indices;
+    randoms.resize(work_queue.size());
+    indices.resize(work_queue.size());
+*/
+    std::random_device rd;
+    std::mt19937 g(rd());
+/*
+    std::uniform_int_distribution<> distrib(0, std::numeric_limits<int>::max());
+    auto get_rand = [&]() { return distrib(g); };
+    std::generate(randoms.begin(), randoms.end(), get_rand);
+    std::iota(indices.begin(), indices.end(), 0);
+    tbb::parallel_sort(indices.begin(), indices.end(),
                        Comparator(randoms));
+*/
+    std::shuffle(work_queue.begin(), work_queue.end(), g);
+/*
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, work_queue.size()),
                       [&](const tbb::blocked_range<HypernodeID> &r) {
                         for (size_t i = r.begin(); i < r.end(); ++i) {
@@ -94,6 +117,7 @@ template <class T> struct SharedWorkQueue {
                           std::swap(work_queue[i], work_queue[swap]);
                         }
                       });
+*/
   }
 };
 
