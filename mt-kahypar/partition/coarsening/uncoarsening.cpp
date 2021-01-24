@@ -11,6 +11,8 @@
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/io/partitioning_output.h"
 
+#include "tbb/parallel_sort.h"
+
 namespace mt_kahypar {
 
   void MultilevelCoarsenerBase::finalize() {
@@ -81,14 +83,18 @@ namespace mt_kahypar {
 
   void MultilevelCoarsenerBase::performMultilevelContraction(
           parallel::scalable_vector<HypernodeID>&& communities,
+          parallel::scalable_vector<HypernodeID>&& degree_zero_hns,
           const HighResClockTimepoint& round_start) {
     ASSERT(!_is_finalized);
-    Hypergraph& current_hg = currentHypergraph();
+    Hypergraph &current_hg = currentHypergraph();
+    for ( const HypernodeID& hn : degree_zero_hns ) {
+      current_hg.removeDegreeZeroHypernode(hn);
+    }
     ASSERT(current_hg.initialNumNodes() == communities.size());
     Hypergraph contracted_hg = current_hg.contract(communities, _task_group_id);
     const HighResClockTimepoint round_end = std::chrono::high_resolution_clock::now();
     const double elapsed_time = std::chrono::duration<double>(round_end - round_start).count();
-    _hierarchy.emplace_back(std::move(contracted_hg), std::move(communities), elapsed_time);
+    _hierarchy.emplace_back(std::move(contracted_hg), std::move(communities), std::move(degree_zero_hns), elapsed_time);
   }
 
   PartitionedHypergraph&& MultilevelCoarsenerBase::doUncoarsen(
@@ -136,6 +142,32 @@ namespace mt_kahypar {
       // Refinement
       time_limit = refinementTimeLimit(_context, _hierarchy[i].coarseningTime());
       refine(representative_hg, label_propagation, fm, current_metrics, time_limit);
+
+      // Restore removed degree zero Hypernodes
+      parallel::scalable_vector<HypernodeID> removed_hns = _hierarchy[i].removedHypernodes();
+      tbb::parallel_sort(removed_hns.begin(), removed_hns.end(),
+                         [&](const HypernodeID& lhs, const HypernodeID& rhs) {
+                           return representative_hg.nodeWeight(lhs) > representative_hg.nodeWeight(rhs);
+                         });
+      // Sort blocks of partition in increasing order of their weight
+      parallel::scalable_vector<PartitionID> blocks(_context.partition.k, 0);
+      std::iota(blocks.begin(), blocks.end(), 0);
+      std::sort(blocks.begin(), blocks.end(),
+                [&](const PartitionID& lhs, const PartitionID& rhs) {
+                  return representative_hg.partWeight(lhs) < representative_hg.partWeight(rhs);
+                });
+
+      // Perform Bin-Packing
+      for ( const HypernodeID& hn : removed_hns ) {
+        PartitionID to = blocks.front();
+        representative_hg.restoreDegreeZeroHypernode(hn, to);
+        PartitionID p = 0;
+        while ( p + 1 < _context.partition.k &&
+                representative_hg.partWeight(blocks[p]) > representative_hg.partWeight(blocks[p + 1]) ) {
+          std::swap(blocks[p], blocks[p + 1]);
+          ++p;
+        }
+      }
 
       // Update Progress Bar
       uncontraction_progress.setObjective(

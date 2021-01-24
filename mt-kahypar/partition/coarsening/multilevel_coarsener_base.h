@@ -37,11 +37,13 @@ class MultilevelCoarsenerBase {
    public:
     explicit Level(Hypergraph&& contracted_hypergraph,
                    parallel::scalable_vector<HypernodeID>&& communities,
+                   parallel::scalable_vector<HypernodeID>&& removed_hns,
                    double coarsening_time) :
       _representative_hypergraph(nullptr),
       _contracted_hypergraph(std::move(contracted_hypergraph)),
       _contracted_partitioned_hypergraph(),
       _communities(std::move(communities)),
+      _removed_hns(std::move(removed_hns)),
       _coarsening_time(coarsening_time) { }
 
     void setRepresentativeHypergraph(PartitionedHypergraph* representative_hypergraph) {
@@ -65,6 +67,10 @@ class MultilevelCoarsenerBase {
       return _contracted_hypergraph;
     }
 
+    parallel::scalable_vector<HypernodeID>& removedHypernodes(){
+      return _removed_hns;
+    }
+
     // ! Maps a global vertex id of the representative hypergraph
     // ! to its global vertex id in the contracted hypergraph
     HypernodeID mapToContractedHypergraph(const HypernodeID hn) const {
@@ -83,6 +89,8 @@ class MultilevelCoarsenerBase {
         _contracted_partitioned_hypergraph.freeInternalData();
       }, [&] {
         parallel::free(_communities);
+      }, [&] {
+        parallel::free(_removed_hns);
       });
     }
 
@@ -94,8 +102,11 @@ class MultilevelCoarsenerBase {
     // ! Partitioned Hypergraph
     PartitionedHypergraph _contracted_partitioned_hypergraph;
     // ! Defines the communities that are contracted
-    // ! in the coarse hypergraph
+    // ! in the coarse Hypergraph
     parallel::scalable_vector<HypernodeID> _communities;
+    // ! Hypernoders removed from the coarse Hypergraph because they
+    // ! have degree zero
+    parallel::scalable_vector<HypernodeID> _removed_hns;
     // ! Time to create the coarsened hypergraph
     // ! (includes coarsening + contraction time)
     double _coarsening_time;
@@ -165,6 +176,7 @@ class MultilevelCoarsenerBase {
 
   void performMultilevelContraction(
           parallel::scalable_vector<HypernodeID>&& communities,
+          parallel::scalable_vector<HypernodeID>&& degree_zero_hns,
           const HighResClockTimepoint& round_start);
 
   PartitionedHypergraph&& doUncoarsen(
