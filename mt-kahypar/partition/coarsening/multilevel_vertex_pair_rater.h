@@ -55,14 +55,16 @@ class MultilevelVertexPairRater {
     VertexPairRating(HypernodeID trgt, RatingType val, bool is_valid) :
       target(trgt),
       opt_target(trgt),
+      community_target(trgt),
       value(val),
-      state(19/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
+      state((uint8_t) RatingState::INITIAL_VALUE) { }
 
     VertexPairRating() :
       target(std::numeric_limits<HypernodeID>::max()),
       opt_target(std::numeric_limits<HypernodeID>::max()),
+      community_target(std::numeric_limits<HypernodeID>::max()),
       value(std::numeric_limits<RatingType>::min()),
-      state(19/*MultilevelVertexPairRater::STATE(RatingState::INITIAL_VALUE)*/) { }
+      state((uint8_t) RatingState::INITIAL_VALUE) { }
 
     VertexPairRating(const VertexPairRating&) = delete;
     VertexPairRating & operator= (const VertexPairRating &) = delete;
@@ -72,8 +74,9 @@ class MultilevelVertexPairRater {
 
     HypernodeID target;
     HypernodeID opt_target;
+    HypernodeID community_target;
     RatingType value;
-    u_int8_t state;
+    uint8_t state;
   };
 
   enum class RatingMapType {
@@ -184,6 +187,9 @@ class MultilevelVertexPairRater {
     RatingType opt_max_rating = std::numeric_limits<RatingType>::min();
     HypernodeID opt_target = std::numeric_limits<HypernodeID>::max();
     HypernodeID opt_target_id = std::numeric_limits<HypernodeID>::max();
+    RatingType community_max_rating = std::numeric_limits<RatingType>::min();
+    HypernodeID community_target = std::numeric_limits<HypernodeID>::max();
+    HypernodeID community_target_id = std::numeric_limits<HypernodeID>::max();
     for (auto it = tmp_ratings.end() - 1; it >= tmp_ratings.begin(); --it) {
       const HypernodeID tmp_target_id = it->key;
       const HypernodeID tmp_target = tmp_target_id;
@@ -203,7 +209,14 @@ class MultilevelVertexPairRater {
           target = tmp_target;
           state = STATE(RatingState::TARGET_FOUND);
         } else if ( community_u_id != hypergraph.communityID(tmp_target) ) {
-          state = STATE(RatingState::DIFFERENT_COMMUNITY);
+          if ( AcceptancePolicy::acceptRating(tmp_rating, community_max_rating,
+                                              community_target_id, tmp_target_id,
+                                              cpu_id, _already_matched) ) {
+            community_max_rating = tmp_rating;
+            community_target_id = tmp_target_id;
+            community_target = tmp_target;
+            state = STATE(RatingState::DIFFERENT_COMMUNITY);
+          }
         }
       } else if ( tmp_target != u ) {
         HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
@@ -218,8 +231,6 @@ class MultilevelVertexPairRater {
           opt_target_id = tmp_target_id;
           opt_target = tmp_target;
           state = STATE(RatingState::VERTEX_TOO_BIG);
-        } else if ( community_u_id != hypergraph.communityID(tmp_target) ) {
-          state = STATE(RatingState::DIFFERENT_COMMUNITY);
         }
       }
     }
@@ -233,6 +244,10 @@ class MultilevelVertexPairRater {
     if (opt_max_rating != std::numeric_limits<RatingType>::min()) {
       ASSERT(opt_target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
       ret.opt_target = opt_target;
+    }
+    if (community_max_rating != std::numeric_limits<RatingType>::min()) {
+      ASSERT(community_target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
+      ret.community_target = community_target;
     }
     ret.state = state;
     tmp_ratings.clear();

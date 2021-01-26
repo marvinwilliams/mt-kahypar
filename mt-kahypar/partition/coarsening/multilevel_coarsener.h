@@ -278,9 +278,13 @@ class MultilevelCoarsener : public ICoarsener,
                 }
                 _matching_state[u] = rating.state;
                 if ( rating.state == STATE(Rater::RatingState::VERTEX_TOO_BIG) ) {
-                  //Store preferred cluster for all nodes that don't get matched, because their target was too big,
-                  //so they can be used for two hop matching
+                  // Store preferred cluster for all nodes that don't get matched, because their target is too big,
+                  // so they can be used for two hop matching
                   _matching_partner[u] = rating.opt_target;
+                } else if ( rating.state == STATE(Rater::RatingState::DIFFERENT_COMMUNITY) ) {
+                  // Store preferred cluster for all nodes that don't get matched, because their target is in a different
+                  // community, so they can be matched ignoring the community detection
+                  _matching_partner[u] = rating.community_target;
                 }
               }
             }
@@ -341,23 +345,31 @@ class MultilevelCoarsener : public ICoarsener,
 
         tbb::enumerable_thread_specific < std::vector < std::pair < uint32_t, HypernodeID>>> thread_edge_targets;
         tbb::enumerable_thread_specific < std::vector < std::pair < HypernodeID, HypernodeID>>> thread_opt_targets;
+        tbb::enumerable_thread_specific < std::vector < std::pair < HypernodeID, HypernodeID>>> thread_community_targets;
         tbb::enumerable_thread_specific <std::vector<HypernodeID>> thread_degree_zero_hns;
         tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID hn) {
           if (_matching_state[hn] == STATE(Rater::RatingState::VERTEX_TOO_BIG)) {
-            //Store preferred cluster for all nodes that don't get matched so they can be used for two hop matching
+            // Store preferred cluster for all nodes that don't get matched, because their target is too big,
+            // so they can be used for two hop matching
             thread_opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
             _matching_partner[hn] = hn;
           } else if (_matching_state[hn] == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
-            //Store nodes that didn't find a contraction target, because they had an edge that was too big, and their minhash fingerprint
+            // Store nodes that didn't find a contraction target, because they had an edge that was too big,
+            // and their minhash fingerprint
             thread_edge_targets.local().push_back(
               std::pair<uint32_t, HypernodeID>(minhash(current_hg.incidentEdges(hn), min_hash_seeds), hn));
           } else if (_matching_state[hn] == STATE(Rater::RatingState::NO_NEIGHBOURS)) {
-            //Store nodes that have a degree of zero and thus can't be contracted anymore
+            // Store nodes that have a degree of zero and thus can't be contracted anymore
             thread_degree_zero_hns.local().push_back(hn);
+          } else if (_matching_state[hn] == STATE(Rater::RatingState::DIFFERENT_COMMUNITY)) {
+            // Store preferred cluster for all nodes that don't get matched, because their target is in a different
+            // community, so they can be matched ignoring the community detection
+            thread_community_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
+            _matching_partner[hn] = hn;
           }
         });
 
-        //Contract vertices which want to join a cluster that is to big with vertices that wan to join the same cluster
+        // Contract vertices which want to join a cluster that is to big with vertices that want to join the same cluster
         std::vector<int> sizes = {0};
         int size_total = 0;
         for (auto &item : thread_opt_targets) {
@@ -388,10 +400,10 @@ class MultilevelCoarsener : public ICoarsener,
           int bucket_begin = bounds[index];
           int bucket_size = bounds[index + 1] - bucket_begin;
 
-          for (int i = 0; i < bucket_size; i++) {
-            opt_targets[bucket_begin + i].first = current_hg.nodeWeight(opt_targets[bucket_begin + i].second);
-          }
-          tbb::parallel_sort(opt_targets.begin() + bucket_begin, opt_targets.begin() + bucket_begin + bucket_size);
+          std::sort(opt_targets.begin() + bucket_begin, opt_targets.begin() + bucket_begin + bucket_size,
+                    [&](const std::pair<HypernodeID, HypernodeID>& a, const std::pair<HypernodeID, HypernodeID>& b) {
+                      return current_hg.nodeWeight(a.second) < current_hg.nodeWeight(b.second);
+                  });
           int l = 0;
           int r = bucket_size - 1;
           while (l < r) {
@@ -475,6 +487,40 @@ class MultilevelCoarsener : public ICoarsener,
         //debug
         std::string degree_zero = "Degree zero hns: " + std::to_string(degree_zero_hns.size()) + "\n";
         std::cout << degree_zero;
+
+        // Contract vertices which want to join a cluster that is in a different community
+        sizes = {0};
+        size_total = 0;
+        for (auto &item : thread_community_targets) {
+          size_total += item.size();
+          sizes.push_back(size_total);
+        }
+        std::vector<std::pair<HypernodeID , HypernodeID>> community_targets;
+        community_targets.resize(corner_cases.notInCommunity);
+        tbb::parallel_for(0, (int) thread_community_targets.size(), [&](int i) {
+          auto iter = thread_community_targets.begin() + i;
+          int offset = sizes[i];
+          for (size_t j = 0; j < iter->size(); j++) {
+            community_targets[offset + j] = (*iter)[j];
+          }
+        });
+        tbb::enumerable_thread_specific <HypernodeID> community_contracted_nodes(0);
+        tbb::parallel_for(0, (int) community_targets.size(), [&](const int index) {
+          const HypernodeID u = community_targets[index].second;
+          const HypernodeID v = community_targets[index].first;
+          if (_matching_state[u].load() != STATE(MatchingState::MATCHED)
+              && _matching_state[v].load() != STATE(MatchingState::MATCHED)) {
+            _matching_state[u].store(STATE(MatchingState::UNMATCHED));
+            if (v != kInvalidHypernode) {
+              HypernodeID &local_contracted_nodes = community_contracted_nodes.local();
+              matchVertices(current_hg, u, v, cluster_ids, local_contracted_nodes);
+            }
+          }
+        });
+        current_num_nodes -= community_contracted_nodes.combine(std::plus<HypernodeID>());
+        //debug
+        std::string community = "Contractions with different Communities: " + std::to_string(community_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
+        std::cout << community;
 
         const double reduction_vertices_percentage =
             static_cast<double>(num_hns_before_pass) /
@@ -568,7 +614,7 @@ class MultilevelCoarsener : public ICoarsener,
         // If vertex v hasn't found a matching target, but we have a vertex u that wants to match with v,
         // then we don't need the cornercase handling for vertex v.
         if (matching_state_v >= 10) {
-          matching_state_v = unmatched;
+          _matching_state[v].store(unmatched);
         }
         if ( matching_state_v == STATE(MatchingState::MATCHED) ) {
           // Vertex v is already matched and will not change it cluster id any more.
