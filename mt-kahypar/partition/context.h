@@ -139,6 +139,7 @@ struct FMParameters {
   double time_limit_factor = std::numeric_limits<double>::max();
   bool sync_with_mq = false;
   size_t num_moves_before_sync = 100;
+  bool random_assignment = false;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);

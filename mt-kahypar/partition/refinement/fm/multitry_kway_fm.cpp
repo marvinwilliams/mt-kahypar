@@ -23,6 +23,7 @@
 #include "mt-kahypar/utils/timer.h"
 #include "kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/memory_tree.h"
+#include "tbb/parallel_sort.h"
 
 namespace mt_kahypar {
 
@@ -150,16 +151,23 @@ namespace mt_kahypar {
   void MultiTryKWayFM<FMStrategy>::roundInitialization(PartitionedHypergraph& phg,
                                                        const parallel::scalable_vector<HypernodeID>& refinement_nodes) {
     // clear border nodes
-    sharedData.refinementNodes.clear();
+    if (context.refinement.fm.random_assignment) {
+      sharedData.shared_refinement_nodes.clear();
+    } else {
+      sharedData.refinementNodes.clear();
+    }
 
     // clear message queues
     if (context.refinement.fm.sync_with_mq) {
       for (auto &mq : sharedData.messages) {
-        mq.clear();
+        mq.unsafe_clear();
       }
     }
 
     if ( refinement_nodes.empty() ) {
+      if (context.refinement.fm.random_assignment) {
+        randomAssignment(phg);
+      } else {
       // log(n) level case
       // iterate over all nodes and insert border nodes into task queue
       tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
@@ -172,6 +180,7 @@ namespace mt_kahypar {
             }
           }
         });
+      }
     } else {
       // n-level case
       tbb::parallel_for(0UL, refinement_nodes.size(), [&](const size_t i) {
@@ -185,7 +194,7 @@ namespace mt_kahypar {
     }
 
     // shuffle task queue if requested
-    if (context.refinement.fm.shuffle) {
+    if (!context.refinement.fm.random_assignment && context.refinement.fm.shuffle) {
       sharedData.refinementNodes.shuffle();
     }
 
@@ -194,6 +203,22 @@ namespace mt_kahypar {
     sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
   }
 
+  template<typename FMStrategy>
+    void MultiTryKWayFM<FMStrategy>::randomAssignment(PartitionedHypergraph &phg) {
+
+      // thread local border node calculation
+      tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()), [&](const tbb::blocked_range<HypernodeID> &r) {
+        vec<HypernodeID> tl_border_nodes;
+        for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+          if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+            tl_border_nodes.push_back(u);
+          }
+        }
+        sharedData.shared_refinement_nodes.append(tl_border_nodes);
+      });
+
+      sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
+    }
 
   template<typename FMStrategy>
   void MultiTryKWayFM<FMStrategy>::initializeImpl(PartitionedHypergraph& phg) {

@@ -29,7 +29,8 @@
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 
 #include <tbb/parallel_for.h>
-#include <mt-kahypar/parallel/queue.h>
+#include <mt-kahypar/parallel/message_queue.h>
+#include <mt-kahypar/datastructures/shared_work_queue.h>
 
 namespace mt_kahypar {
 
@@ -146,7 +147,7 @@ struct NodeTracker {
   }
 };
 
-using HypernodeIDMessageMatrix = vec<parallel::queue<HypernodeID>>;
+using HypernodeIDMessageMatrix = vec<parallel::message_queue<HypernodeID>>;
 
 struct FMSharedData {
 
@@ -181,13 +182,16 @@ struct FMSharedData {
 
   HypernodeIDMessageMatrix messages;
 
+  SharedWorkQueue<HypernodeID> shared_refinement_nodes;
+
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
           vertexPQHandles(), //numPQHandles, invalid_position),
           numParts(numParts),
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
-          targetPart()
+          targetPart(),
+          shared_refinement_nodes(numNodes)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 

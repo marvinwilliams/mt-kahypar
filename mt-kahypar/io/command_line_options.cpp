@@ -342,6 +342,10 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.sync_with_mq :
                  &context.refinement.fm.sync_with_mq))->value_name("<bool>")->default_value(false),
              "If true, use message queues for synchronizing gain updates.")
+            ((initial_partitioning ? "i-r-fm-random-assignment" : "r-fm-random-assignment"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.random_assignment :
+                 &context.refinement.fm.random_assignment))->value_name("<bool>")->default_value(false),
+             "If true, use randomized assignment for border nodes.")
             #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :

@@ -117,7 +117,8 @@ namespace mt_kahypar {
       out << "    Release Nodes:                    " << std::boolalpha << params.release_nodes << std::endl;
       out << "    Time Limit Factor:                " << params.time_limit_factor << std::endl;
       out << "    Sync with Message Queues:         " << std::boolalpha << params.sync_with_mq << std::endl;
-      out << "    Number of Moves before Sync       " << params.num_moves_before_sync << std::endl;
+      out << "    Number of Moves before Sync:      " << params.num_moves_before_sync << std::endl;
+      out << "    Random Assignment:                " << std::boolalpha << params.random_assignment << std::endl;
     }
     out << std::flush;
     return out;

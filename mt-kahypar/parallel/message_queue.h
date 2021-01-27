@@ -25,50 +25,44 @@ namespace mt_kahypar {
 namespace parallel {
 
 template<class T>
-class queue {
+class message_queue {
   public:
-    queue();
-    queue(const queue& q);
+    message_queue();
+    message_queue(const message_queue& q);
 
-    bool write(T data);
+    bool try_write(T data);
 
     bool read(T &data);
 
-    void clear();
+    void unsafe_clear();
 
-    bool deactivate();
+    bool try_clear();
 
   private:
     std::atomic<bool> writer_lock; // manages access to the writer queue
-    std::atomic<bool> deactivated; // if the queue is deactivated, do not write to it
     std::vector<T> writer_queue;
     std::vector<T> reader_queue;
 };
 
 template<class T>
-queue<T>::queue() {
+message_queue<T>::message_queue() {
   writer_lock = false;
 }
 
 template<class T>
-queue<T>::queue(const queue& q) {
+message_queue<T>::message_queue(const message_queue& q) {
   writer_queue = q.writer_queue;
   reader_queue = q.reader_queue;
   writer_lock = false;
 }
 
 template<class T>
-bool queue<T>::write(T data) {
+bool message_queue<T>::try_write(T data) {
 
   bool w_top = writer_lock.exchange(true, std::memory_order_acq_rel);
-  bool deact = deactivated.load(std::memory_order_acq_rel);
 
   // if writer is locked or queue is deactivated, do not write to queue
   if (w_top) {
-    return false;
-  }
-  if (deact) {
-    writer_lock.store(w_top, std::memory_order_release);
     return false;
   }
 
@@ -78,7 +72,7 @@ bool queue<T>::write(T data) {
 }
 
 template<class T>
-bool queue<T>::read(T &data) {
+bool message_queue<T>::read(T &data) {
 
   // if reader has nothing to read, try to acquire writer queue
   if (reader_queue.empty()) {
@@ -90,9 +84,7 @@ bool queue<T>::read(T &data) {
       writer_lock.store(w_top, std::memory_order_release);
       return false;
     } else {
-      reader_queue = std::move(writer_queue);
-
-      writer_queue = std::vector<T>();
+      reader_queue.swap(writer_queue);
       writer_lock.store(w_top, std::memory_order_release);
     }
 
@@ -103,25 +95,23 @@ bool queue<T>::read(T &data) {
 }
 
 template<class T>
-void queue<T>::clear() {
+void message_queue<T>::unsafe_clear() {
   // clean queues
   reader_queue.clear();
   writer_queue.clear();
-  writer_lock.store(false, std::memory_order_acq_rel);
 }
 
 template<class T>
-bool queue<T>::deactivate() {
+bool message_queue<T>::try_clear() {
   // deactivate the queue to prevent writes to it
-  bool w_top = writer_lock.exchange(true, std::memory_order_acq_rel);
+  bool w_top = writer_lock.exchange(true, std::memory_order_acquire);
   if (w_top) {
     return false;
   }
-  deactivated.store(true, std::memory_order_acq_rel);
-  clear();
+  unsafe_clear();
+  writer_lock.store(w_top, std::memory_order_release);
   return true;
 }
-
 
 } //namespace parallel
 } //namespace kahypar

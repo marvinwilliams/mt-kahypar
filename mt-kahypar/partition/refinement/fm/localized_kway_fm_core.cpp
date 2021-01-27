@@ -31,11 +31,23 @@ namespace mt_kahypar {
     }
     ASSERT(thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
 
-    HypernodeID seedNode;
-    while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
-      SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
-      if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
-        fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+    if (context.refinement.fm.random_assignment) {
+      auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
+      if (seeds) {
+        for (HypernodeID u : *seeds) {
+          SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
+          if (sharedData.nodeTracker.tryAcquireNode(u, thisSearch)) {
+            fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
+          }
+        }
+      }
+    } else {
+      HypernodeID seedNode;
+      while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
+        SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
+        if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
+          fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+        }
       }
     }
     fm_strategy.updatePQs(phg);
@@ -58,12 +70,12 @@ namespace mt_kahypar {
         internalFindMoves<true>(phg);
       }
       if (context.refinement.fm.sync_with_mq) {
-        deactivateMessageQueue();
+        clearMessageQueues();
       }
       return true;
     } else {
       if (context.refinement.fm.sync_with_mq) {
-        deactivateMessageQueue();
+        clearMessageQueues();
       }
       return false;
     }
@@ -108,8 +120,8 @@ namespace mt_kahypar {
               SearchID num_threads = context.shared_memory.num_threads;
               ASSERT(v_index * num_threads + this_index <
                   static_cast<SearchID>(sharedData.messages.size()));
-              sharedData.messages[v_index * num_threads + this_index]
-                .write(v);
+              while(!sharedData.messages[v_index * num_threads + this_index]
+                .try_write(v)) {};
             }
             neighborDeduplicator[v] = deduplicationTime;
           }
@@ -350,7 +362,8 @@ namespace mt_kahypar {
         HypernodeID v;
         while (sharedData.messages[i].read(v)) {
           // use deduplicator to prevent uneeded pq updates
-          if (neighborDeduplicator[v] != deduplicationTime && !sharedData.nodeTracker.isLocked(v)) {
+          if (neighborDeduplicator[v] != deduplicationTime && !sharedData.nodeTracker.isLocked(v)
+              && sharedData.nodeTracker.searchOfNode[v] == thisSearch) {
             // this forces gain recalculation as we do not want to put moves into the mq
             m.from = sharedData.targetPart[v];
             fm_strategy.updateGain(phg, v, m);
