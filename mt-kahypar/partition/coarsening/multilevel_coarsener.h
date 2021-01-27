@@ -90,7 +90,12 @@ class MultilevelCoarsener : public ICoarsener,
     _matching_partner(),
     _max_allowed_node_weight(context.coarsening.max_allowed_node_weight),
     _progress_bar(hypergraph.initialNumNodes(), 0, false),
-    _enable_randomization(true) {
+    _enable_randomization(true),
+    _use_two_hop_matching(false),
+    _use_large_edge_matching(false),
+    _remove_degree_zero_hns(false),
+    _use_matching_without_community_detection(false),
+    _min_hash_seeds(std::vector<int>(128)) {
     _progress_bar += hypergraph.numRemovedHypernodes();
 
     // Initialize internal data structures parallel
@@ -129,6 +134,19 @@ class MultilevelCoarsener : public ICoarsener,
         _max_allowed_node_weight = increaseMaximumAllowedNodeWeight(node_weight_multiplier);
       }
     }
+    // By default all fallback strategies are disabled
+    if ( _context.coarsening.enabled_fallback_stratgies.size() == 4 ) {
+      _use_two_hop_matching = _context.coarsening.enabled_fallback_stratgies[0];
+      _use_large_edge_matching = _context.coarsening.enabled_fallback_stratgies[1];
+      _remove_degree_zero_hns = _context.coarsening.enabled_fallback_stratgies[2];
+      _use_matching_without_community_detection = _context.coarsening.enabled_fallback_stratgies[3];
+    }
+    if (_use_large_edge_matching) {
+      std::mt19937 rng(_context.partition.seed);
+      for (int i = 0; i < 128; i++) {
+        _min_hash_seeds[i] = rng();
+      }
+    }
   }
 
   MultilevelCoarsener(const MultilevelCoarsener&) = delete;
@@ -153,17 +171,8 @@ class MultilevelCoarsener : public ICoarsener,
     }
 
     int pass_nr = 0;
-    std::vector<int> min_hash_seeds(128);
-    std::mt19937 rng(_context.partition.seed);
-    for (int i = 0; i < 128; i++) {
-      min_hash_seeds[i] = rng();
-    }
     const HypernodeID initial_num_nodes = Base::currentNumNodes();
     while ( Base::currentNumNodes() > _context.coarsening.contraction_limit ) {
-      
-      //debug
-      std::cout << "\npass_nr: " << pass_nr << std::endl;
-
       HighResClockTimepoint round_start = std::chrono::high_resolution_clock::now();
       Hypergraph& current_hg = Base::currentHypergraph();
       DBG << V(pass_nr)
@@ -254,23 +263,15 @@ class MultilevelCoarsener : public ICoarsener,
                 //std::string out = "";
                 switch (rating.state) {
                   case 11:
-                    //out += "Vertex too big\n";
-                    //std::cout << out;
                     c.vertexTooBig++;
                     break;
                   case 12:
-                    //out += "Edge too big\n";
-                    //std::cout << out;
                     c.edgeTooBig++;
                     break;
                   case 13:
-                    //out += "Degree zero\n";
-                    //std::cout << out;
                     c.degreeZero++;
                     break;
                   case 15:
-                    //out += "Not in the same community\n";
-                    //std::cout << out;
                     c.notInCommunity++;
                     break;
                   default:
@@ -342,191 +343,13 @@ class MultilevelCoarsener : public ICoarsener,
             sum.degreeZero = a.degreeZero + b.degreeZero;
             return sum;
           });
-
-        tbb::enumerable_thread_specific < std::vector < std::pair < uint32_t, HypernodeID>>> thread_edge_targets;
-        tbb::enumerable_thread_specific < std::vector < std::pair < HypernodeID, HypernodeID>>> thread_opt_targets;
-        tbb::enumerable_thread_specific < std::vector < std::pair < HypernodeID, HypernodeID>>> thread_community_targets;
-        tbb::enumerable_thread_specific <std::vector<HypernodeID>> thread_degree_zero_hns;
-        tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID hn) {
-          if (_matching_state[hn] == STATE(Rater::RatingState::VERTEX_TOO_BIG)) {
-            // Store preferred cluster for all nodes that don't get matched, because their target is too big,
-            // so they can be used for two hop matching
-            thread_opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
-            _matching_partner[hn] = hn;
-          } else if (_matching_state[hn] == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
-            // Store nodes that didn't find a contraction target, because they had an edge that was too big,
-            // and their minhash fingerprint
-            thread_edge_targets.local().push_back(
-              std::pair<uint32_t, HypernodeID>(minhash(current_hg.incidentEdges(hn), min_hash_seeds), hn));
-          } else if (_matching_state[hn] == STATE(Rater::RatingState::NO_NEIGHBOURS)) {
-            // Store nodes that have a degree of zero and thus can't be contracted anymore
-            thread_degree_zero_hns.local().push_back(hn);
-          } else if (_matching_state[hn] == STATE(Rater::RatingState::DIFFERENT_COMMUNITY)) {
-            // Store preferred cluster for all nodes that don't get matched, because their target is in a different
-            // community, so they can be matched ignoring the community detection
-            thread_community_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
-            _matching_partner[hn] = hn;
-          }
-        });
-
-        // Contract vertices which want to join a cluster that is to big with vertices that want to join the same cluster
-        std::vector<int> sizes = {0};
-        int size_total = 0;
-        for (auto &item : thread_opt_targets) {
-          size_total += item.size();
-          sizes.push_back(size_total);
-        }
-        std::vector<std::pair<HypernodeID, HypernodeID>> opt_targets;
-        opt_targets.resize(corner_cases.vertexTooBig);
-        tbb::parallel_for(0, (int) thread_opt_targets.size(), [&](int i) {
-          auto iter = thread_opt_targets.begin() + i;
-          int offset = sizes[i];
-          for (size_t j = 0; j < iter->size(); j++) {
-            opt_targets[offset + j] = (*iter)[j];
-          }
-        });
-
-        //TODO rewrite to use counting sort
-        tbb::parallel_sort(opt_targets.begin(), opt_targets.end());
-        std::vector<int> bounds = {0};
-        for (int i = 1; i < (int) opt_targets.size(); i++) {
-          if (opt_targets[i].first != opt_targets[i - 1].first) {
-            bounds.push_back(i);
-          }
-        }
-        bounds.push_back(opt_targets.size());
-        tbb::enumerable_thread_specific<HypernodeID> two_hop_contracted_nodes(0);
-        tbb::parallel_for(0, (int) bounds.size() - 1, [&](const int index) {
-          int bucket_begin = bounds[index];
-          int bucket_size = bounds[index + 1] - bucket_begin;
-
-          std::sort(opt_targets.begin() + bucket_begin, opt_targets.begin() + bucket_begin + bucket_size,
-                    [&](const std::pair<HypernodeID, HypernodeID>& a, const std::pair<HypernodeID, HypernodeID>& b) {
-                      return current_hg.nodeWeight(a.second) < current_hg.nodeWeight(b.second);
-                  });
-          int l = 0;
-          int r = bucket_size - 1;
-          while (l < r) {
-            HypernodeID u = opt_targets[bucket_begin + r].second;
-            HypernodeID v = opt_targets[bucket_begin + l].second;
-            const HypernodeWeight weight_u = current_hg.nodeWeight(u);
-            HypernodeWeight weight_v = current_hg.nodeWeight(v);
-            if (weight_u + weight_v >= _max_allowed_node_weight /*/ 2*/) {
-              r--;
-            } else {
-              _matching_partner[v] = u;
-              cluster_ids[v] = u;
-              _cluster_weight[u] += weight_v;
-              ++(two_hop_contracted_nodes.local());
-              l++;
-              r--;
-            }
-          }
-        });
-        current_num_nodes -= two_hop_contracted_nodes.combine(std::plus<HypernodeID>());
-        //debug
-        std::string two_hop = "Two hop contractions: " + std::to_string(two_hop_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
-        std::cout << two_hop;
-
-        // Contract vertices that don't have a contraction target, but are both pins of the same edge that is too big
-        // too be considered during rating
-        sizes = {0};
-        size_total = 0;
-        for (auto &item : thread_edge_targets) {
-          size_total += item.size();
-          sizes.push_back(size_total);
-        }
-        std::vector<std::pair<uint32_t, HypernodeID>> edge_targets;
-        edge_targets.resize(corner_cases.edgeTooBig);
-        tbb::parallel_for(0, (int) thread_edge_targets.size(), [&](int i) {
-          auto iter = thread_edge_targets.begin() + i;
-          int offset = sizes[i];
-          for (size_t j = 0; j < iter->size(); j++) {
-            edge_targets[offset + j] = (*iter)[j];
-          }
-        });
-
-        tbb::parallel_sort(edge_targets.begin(), edge_targets.end());
-        tbb::enumerable_thread_specific <HypernodeID> edge_contracted_nodes(0);
-        tbb::parallel_for(0, (int) edge_targets.size() - 1, 2, [&](const int index) {
-          HypernodeID u = edge_targets[index].second;
-          HypernodeID v = edge_targets[index + 1].second;
-          if (edge_targets[index].first == edge_targets[index + 1].first) {
-            const HypernodeWeight weight_u = current_hg.nodeWeight(u);
-            HypernodeWeight weight_v = current_hg.nodeWeight(v);
-            if (weight_u + weight_v <= _max_allowed_node_weight) {
-              _matching_partner[v] = u;
-              cluster_ids[v] = u;
-              _cluster_weight[u] += weight_v;
-              ++(edge_contracted_nodes.local());
-            }
-          }
-        });
-        current_num_nodes -= edge_contracted_nodes.combine(std::plus<HypernodeID>());
-        //debug
-        std::string edge =
-          "Edge contractions: " + std::to_string(edge_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
-        std::cout << edge;
-
-        //Prepare to remove degree zero vertices
-        sizes = {0};
-        size_total = 0;
-        for (auto &item : thread_degree_zero_hns) {
-          size_total += item.size();
-          sizes.push_back(size_total);
-        }
-        degree_zero_hns.resize(corner_cases.degreeZero);
-        tbb::parallel_for(0, (int) thread_degree_zero_hns.size(), [&](int i) {
-          auto iter = thread_degree_zero_hns.begin() + i;
-          int offset = sizes[i];
-          for (size_t j = 0; j < iter->size(); j++) {
-            degree_zero_hns[offset + j] = (*iter)[j];
-          }
-        });
-        current_num_nodes -= degree_zero_hns.size();
-        //debug
-        std::string degree_zero = "Degree zero hns: " + std::to_string(degree_zero_hns.size()) + "\n";
-        std::cout << degree_zero;
-
-        // Contract vertices which want to join a cluster that is in a different community
-        sizes = {0};
-        size_total = 0;
-        for (auto &item : thread_community_targets) {
-          size_total += item.size();
-          sizes.push_back(size_total);
-        }
-        std::vector<std::pair<HypernodeID , HypernodeID>> community_targets;
-        community_targets.resize(corner_cases.notInCommunity);
-        tbb::parallel_for(0, (int) thread_community_targets.size(), [&](int i) {
-          auto iter = thread_community_targets.begin() + i;
-          int offset = sizes[i];
-          for (size_t j = 0; j < iter->size(); j++) {
-            community_targets[offset + j] = (*iter)[j];
-          }
-        });
-        tbb::enumerable_thread_specific <HypernodeID> community_contracted_nodes(0);
-        tbb::parallel_for(0, (int) community_targets.size(), [&](const int index) {
-          const HypernodeID u = community_targets[index].second;
-          const HypernodeID v = community_targets[index].first;
-          if (_matching_state[u].load() != STATE(MatchingState::MATCHED)
-              && _matching_state[v].load() != STATE(MatchingState::MATCHED)) {
-            _matching_state[u].store(STATE(MatchingState::UNMATCHED));
-            if (v != kInvalidHypernode) {
-              HypernodeID &local_contracted_nodes = community_contracted_nodes.local();
-              matchVertices(current_hg, u, v, cluster_ids, local_contracted_nodes);
-            }
-          }
-        });
-        current_num_nodes -= community_contracted_nodes.combine(std::plus<HypernodeID>());
-        //debug
-        std::string community = "Contractions with different Communities: " + std::to_string(community_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
-        std::cout << community;
+        current_num_nodes -= executeFallbackStrategies(corner_cases, degree_zero_hns, cluster_ids, current_hg);
 
         const double reduction_vertices_percentage =
             static_cast<double>(num_hns_before_pass) /
             static_cast<double>(current_num_nodes);
         if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
-          //debug
+          //TODO remove debug output
           std::cout << "Contraction limit not reached" << std::endl;
           std::cout << "num_hns_before_pass: " << num_hns_before_pass << std::endl;
           std::cout << "current_num_nodes: " << current_num_nodes << std::endl;
@@ -612,7 +435,7 @@ class MultilevelCoarsener : public ICoarsener,
 
         uint8_t matching_state_v = _matching_state[v].load();
         // If vertex v hasn't found a matching target, but we have a vertex u that wants to match with v,
-        // then we don't need the cornercase handling for vertex v.
+        // then we don't need the corner case handling for vertex v.
         if (matching_state_v >= 10) {
           _matching_state[v].store(unmatched);
         }
@@ -696,9 +519,6 @@ class MultilevelCoarsener : public ICoarsener,
         _matching_partner[u] = u;
         _matching_state[u] = STATE(MatchingState::MATCHED);
       }
-    } else {
-      //debug
-      //std::cout << "Valid rejected due to size\n";
     }
 
     return success;
@@ -734,10 +554,214 @@ class MultilevelCoarsener : public ICoarsener,
         static_cast<double>(_context.coarsening.max_allowed_node_weight ) ) );
   }
 
+  HypernodeID executeFallbackStrategies(
+        CornerCaseCounter& corner_cases,
+        parallel::scalable_vector<HypernodeID>& degree_zero_hns,
+        parallel::scalable_vector<HypernodeID>& cluster_ids,
+        Hypergraph& current_hg) {
+
+    //TODO remove debug output
+    HypernodeID contracted_hns = 0;
+
+    tbb::enumerable_thread_specific < std::vector < std::pair < uint32_t, HypernodeID>>> thread_edge_targets;
+    tbb::enumerable_thread_specific < std::vector < std::pair < HypernodeID, HypernodeID>>> thread_opt_targets;
+    tbb::enumerable_thread_specific < std::vector < std::pair < HypernodeID, HypernodeID>>> thread_community_targets;
+    tbb::enumerable_thread_specific <std::vector<HypernodeID>> thread_degree_zero_hns;
+    tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID hn) {
+      if (_use_two_hop_matching && _matching_state[hn] == STATE(Rater::RatingState::VERTEX_TOO_BIG)) {
+        // Store preferred cluster for all nodes that don't get matched, because their target is too big,
+        // so they can be used for two hop matching
+        thread_opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
+        _matching_partner[hn] = hn;
+      } else if (_use_large_edge_matching &&_matching_state[hn] == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
+        // Store nodes that didn't find a contraction target, because they had an edge that was too big,
+        // and their minhash fingerprint
+        thread_edge_targets.local().push_back(
+          std::pair<uint32_t, HypernodeID>(minhash(current_hg.incidentEdges(hn)), hn));
+      } else if (_remove_degree_zero_hns &&_matching_state[hn] == STATE(Rater::RatingState::NO_NEIGHBOURS)) {
+        // Store nodes that have a degree of zero and thus can't be contracted anymore
+        thread_degree_zero_hns.local().push_back(hn);
+      } else if (_use_matching_without_community_detection &&_matching_state[hn] == STATE(Rater::RatingState::DIFFERENT_COMMUNITY)) {
+        // Store preferred cluster for all nodes that don't get matched, because their target is in a different
+        // community, so they can be matched ignoring the community detection
+        thread_community_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
+        _matching_partner[hn] = hn;
+      }
+    });
+    std::vector<int> sizes;
+    int size_total;
+    // Contract vertices which want to join a cluster that is to big with vertices that want to join the same cluster
+    if (_use_two_hop_matching) {
+      sizes = {0};
+      size_total = 0;
+      for (auto &item : thread_opt_targets) {
+        size_total += item.size();
+        sizes.push_back(size_total);
+      }
+      std::vector<std::pair<HypernodeID, HypernodeID>> opt_targets;
+      opt_targets.resize(corner_cases.vertexTooBig);
+      tbb::parallel_for(0, (int) thread_opt_targets.size(), [&](int i) {
+        auto iter = thread_opt_targets.begin() + i;
+        int offset = sizes[i];
+        for (size_t j = 0; j < iter->size(); j++) {
+          opt_targets[offset + j] = (*iter)[j];
+        }
+      });
+
+      tbb::parallel_sort(opt_targets.begin(), opt_targets.end());
+      std::vector<int> bounds = {0};
+      for (int i = 1; i < (int) opt_targets.size(); i++) {
+        if (opt_targets[i].first != opt_targets[i - 1].first) {
+          bounds.push_back(i);
+        }
+      }
+      bounds.push_back(opt_targets.size());
+      tbb::enumerable_thread_specific<HypernodeID> two_hop_contracted_nodes(0);
+      tbb::parallel_for(0, (int) bounds.size() - 1, [&](const int index) {
+        int bucket_begin = bounds[index];
+        int bucket_size = bounds[index + 1] - bucket_begin;
+
+        std::sort(opt_targets.begin() + bucket_begin, opt_targets.begin() + bucket_begin + bucket_size,
+                  [&](const std::pair<HypernodeID, HypernodeID> &a, const std::pair<HypernodeID, HypernodeID> &b) {
+                    return current_hg.nodeWeight(a.second) < current_hg.nodeWeight(b.second);
+                  });
+        int l = 0;
+        int r = bucket_size - 1;
+        while (l < r) {
+          HypernodeID u = opt_targets[bucket_begin + r].second;
+          HypernodeID v = opt_targets[bucket_begin + l].second;
+          const HypernodeWeight weight_u = current_hg.nodeWeight(u);
+          HypernodeWeight weight_v = current_hg.nodeWeight(v);
+          if (weight_u + weight_v >= _max_allowed_node_weight /*/ 2*/) {
+            r--;
+          } else {
+            _matching_partner[v] = u;
+            cluster_ids[v] = u;
+            _cluster_weight[u] += weight_v;
+            _matching_state[u].store(STATE(MatchingState::MATCHED));
+            _matching_state[v].store(STATE(MatchingState::MATCHED));
+            ++(two_hop_contracted_nodes.local());
+            l++;
+            r--;
+          }
+        }
+      });
+      contracted_hns += two_hop_contracted_nodes.combine(std::plus<HypernodeID>());
+      //debug
+      std::string two_hop =
+        "Two hop contractions: " + std::to_string(two_hop_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
+      std::cout << two_hop;
+    }
+
+    // Contract vertices that don't have a contraction target, but are both pins of the same edge that is too big
+    // too be considered during rating
+    if (_use_large_edge_matching) {
+      sizes = {0};
+      size_total = 0;
+      for (auto &item : thread_edge_targets) {
+        size_total += item.size();
+        sizes.push_back(size_total);
+      }
+      std::vector<std::pair<uint32_t, HypernodeID>> edge_targets;
+      edge_targets.resize(corner_cases.edgeTooBig);
+      tbb::parallel_for(0, (int) thread_edge_targets.size(), [&](int i) {
+        auto iter = thread_edge_targets.begin() + i;
+        int offset = sizes[i];
+        for (size_t j = 0; j < iter->size(); j++) {
+          edge_targets[offset + j] = (*iter)[j];
+        }
+      });
+
+      tbb::parallel_sort(edge_targets.begin(), edge_targets.end());
+      tbb::enumerable_thread_specific<HypernodeID> edge_contracted_nodes(0);
+      tbb::parallel_for(0, (int) edge_targets.size() - 1, 2, [&](const int index) {
+        HypernodeID u = edge_targets[index].second;
+        HypernodeID v = edge_targets[index + 1].second;
+        if (edge_targets[index].first == edge_targets[index + 1].first) {
+          const HypernodeWeight weight_u = current_hg.nodeWeight(u);
+          HypernodeWeight weight_v = current_hg.nodeWeight(v);
+          if (weight_u + weight_v <= _max_allowed_node_weight) {
+            _matching_partner[v] = u;
+            cluster_ids[v] = u;
+            _cluster_weight[u] += weight_v;
+            _matching_state[u].store(STATE(MatchingState::MATCHED));
+            _matching_state[v].store(STATE(MatchingState::MATCHED));
+            ++(edge_contracted_nodes.local());
+          }
+        }
+      });
+      contracted_hns += edge_contracted_nodes.combine(std::plus<HypernodeID>());
+      //debug
+      std::string edge =
+        "Edge contractions: " + std::to_string(edge_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
+      std::cout << edge;
+    }
+
+    //Prepare to remove degree zero vertices
+    if (_remove_degree_zero_hns) {
+      sizes = {0};
+      size_total = 0;
+      for (auto &item : thread_degree_zero_hns) {
+        size_total += item.size();
+        sizes.push_back(size_total);
+      }
+      degree_zero_hns.resize(corner_cases.degreeZero);
+      tbb::parallel_for(0, (int) thread_degree_zero_hns.size(), [&](int i) {
+        auto iter = thread_degree_zero_hns.begin() + i;
+        int offset = sizes[i];
+        for (size_t j = 0; j < iter->size(); j++) {
+          degree_zero_hns[offset + j] = (*iter)[j];
+        }
+      });
+      contracted_hns += degree_zero_hns.size();
+      //debug
+      std::string degree_zero = "Degree zero hns: " + std::to_string(degree_zero_hns.size()) + "\n";
+      std::cout << degree_zero;
+    }
+
+    // Contract vertices which want to join a cluster that is in a different community
+    if (_use_matching_without_community_detection) {
+      sizes = {0};
+      size_total = 0;
+      for (auto &item : thread_community_targets) {
+        size_total += item.size();
+        sizes.push_back(size_total);
+      }
+      std::vector<std::pair<HypernodeID, HypernodeID>> community_targets;
+      community_targets.resize(corner_cases.notInCommunity);
+      tbb::parallel_for(0, (int) thread_community_targets.size(), [&](int i) {
+        auto iter = thread_community_targets.begin() + i;
+        int offset = sizes[i];
+        for (size_t j = 0; j < iter->size(); j++) {
+          community_targets[offset + j] = (*iter)[j];
+        }
+      });
+      tbb::enumerable_thread_specific<HypernodeID> community_contracted_nodes(0);
+      tbb::parallel_for(0, (int) community_targets.size(), [&](const int index) {
+        const HypernodeID u = community_targets[index].second;
+        const HypernodeID v = community_targets[index].first;
+        if (_matching_state[u].load() != STATE(MatchingState::MATCHED)
+            && _matching_state[v].load() != STATE(MatchingState::MATCHED)) {
+          _matching_state[u].store(STATE(MatchingState::UNMATCHED));
+          if (v != kInvalidHypernode) {
+            HypernodeID &local_contracted_nodes = community_contracted_nodes.local();
+            matchVertices(current_hg, u, v, cluster_ids, local_contracted_nodes);
+          }
+        }
+      });
+      contracted_hns += community_contracted_nodes.combine(std::plus<HypernodeID>());
+      //debug
+      std::string community = "Contractions with different Communities: " +
+                              std::to_string(community_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
+      std::cout << community;
+    }
+    return contracted_hns;
+  }
+
   template<class T>
-  uint32_t minhash(T edges, std::vector<int>& seeds) {
+  uint32_t minhash(T edges) {
     uint32_t min_hash = 0;
-    for (const auto& seed : seeds) {
+    for (const auto& seed : _min_hash_seeds) {
       uint32_t min_value = std::numeric_limits<int32_t>::max();
       for (const auto& edge : edges) {
         uint32_t hash_value = hash(edge ^ seed);
@@ -773,6 +797,11 @@ class MultilevelCoarsener : public ICoarsener,
   HypernodeWeight _max_allowed_node_weight;
   utils::ProgressBar _progress_bar;
   bool _enable_randomization;
+  bool _use_two_hop_matching;
+  bool _use_large_edge_matching;
+  bool _remove_degree_zero_hns;
+  bool _use_matching_without_community_detection;
+  std::vector<int> _min_hash_seeds;
 };
 
 }  // namespace mt_kahypar

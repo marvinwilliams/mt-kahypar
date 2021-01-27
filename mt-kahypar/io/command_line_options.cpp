@@ -220,7 +220,16 @@ namespace mt_kahypar {
             ("c-vertex-degree-sampling-threshold",
              po::value<size_t>(&context.coarsening.vertex_degree_sampling_threshold)->value_name(
                      "<size_t>")->default_value(std::numeric_limits<size_t>::max()),
-             "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.");
+             "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.")
+            ("c-enabled-fallback-strategies",
+            po::value<std::vector<bool> >(&context.coarsening.enabled_fallback_stratgies)->multitoken(),
+             "Indicate which fallback strategies should be executed if the coarsening fails to reach the coarsening limit. E.g. c-enabled-fallback-strategies=1 1 0 1\n"
+            "indicates that\n"
+            "  1.) two-hop matching over heavy nodes      (is executed)\n"
+            "  2.) matching by minhash in large edges     (is executed)\n"
+            "  3.) removal of degree zero vertices        (is NOT executed)\n"
+            "  4.) matching without community detection   (is executed)\n"
+            "Note that if the vector contains any number of elements other than 4 all fallback strategies will be disabled by default");
     return options;
   }
 
