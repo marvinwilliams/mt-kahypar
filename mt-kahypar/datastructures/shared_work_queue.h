@@ -32,8 +32,9 @@ template <class T> struct SharedWorkQueue {
   vec<T> work_queue;
   CAtomic<size_t> front;
   CAtomic<size_t> back;
+  size_t size;
 
-  SharedWorkQueue(size_t size) {
+  SharedWorkQueue(size_t size) :size(size) {
     work_queue.resize(size);
     front.store(0);
     back.store(0);
@@ -41,6 +42,7 @@ template <class T> struct SharedWorkQueue {
 
   void clear() {
     work_queue.clear();
+    work_queue.resize(size);
     front.store(0);
     back.store(0);
   }
