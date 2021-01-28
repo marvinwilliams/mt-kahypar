@@ -56,7 +56,7 @@ namespace mt_kahypar {
       roundInitialization(phg, refinement_nodes);
       timer.stop_timer("collect_border_nodes");
 
-      size_t num_border_nodes = sharedData.refinementNodes.unsafe_size();
+      size_t num_border_nodes = context.refinement.fm.random_assignment ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
       if (num_border_nodes == 0) {
         break;
       }
@@ -200,7 +200,8 @@ namespace mt_kahypar {
 
     // requesting new searches activates all nodes by raising the deactivated node marker
     // also clears the array tracking search IDs in case of overflow
-    sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
+    size_t num_border_nodes = context.refinement.fm.random_assignment ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
+    sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(num_border_nodes));
   }
 
   template<typename FMStrategy>
