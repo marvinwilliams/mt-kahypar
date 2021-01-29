@@ -215,7 +215,9 @@ namespace mt_kahypar {
             tl_border_nodes.push_back(u);
           }
         }
-        sharedData.shared_refinement_nodes.append(tl_border_nodes);
+        if (!tl_border_nodes.empty()) {
+          sharedData.shared_refinement_nodes.append(tl_border_nodes);
+        }
       });
 
       sharedData.shared_refinement_nodes.shuffle(context.partition.seed);

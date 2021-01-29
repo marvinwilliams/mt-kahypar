@@ -41,8 +41,7 @@ template <class T> struct SharedWorkQueue {
   }
 
   void clear() {
-    work_queue.clear();
-    work_queue.resize(size);
+    work_queue.assign(size, 0);
     front.store(0);
     back.store(0);
   }
@@ -56,7 +55,7 @@ template <class T> struct SharedWorkQueue {
 
   bool try_pop(T &dest) {
     size_t pos = front.fetch_add(1, std::memory_order_acq_rel);
-    if (pos < work_queue.size()) {
+    if (pos < size) {
       dest = work_queue[pos];
       return true;
     }
@@ -65,7 +64,7 @@ template <class T> struct SharedWorkQueue {
 
   std::optional<IteratorRange<typename vec<T>::iterator>> try_pop(size_t num_seeds) {
     size_t pos = front.fetch_add(num_seeds, std::memory_order_acq_rel);
-    if (pos < work_queue.size()) {
+    if (pos < size) {
       const auto begin = work_queue.begin() + pos;
       const auto end = std::min(begin + num_seeds, work_queue.end());
       return IteratorRange(begin, end);
@@ -74,7 +73,7 @@ template <class T> struct SharedWorkQueue {
   }
 
   size_t unsafe_size() const {
-    return work_queue.size() - front.load(std::memory_order_relaxed);
+    return back.load(std::memory_order_relaxed) - front.load(std::memory_order_relaxed);
   }
 
 /*
