@@ -55,7 +55,7 @@ template <class T> struct SharedWorkQueue {
 
   bool try_pop(T &dest) {
     size_t pos = front.fetch_add(1, std::memory_order_acq_rel);
-    if (pos < size) {
+    if (pos < back) {
       dest = work_queue[pos];
       return true;
     }
@@ -64,9 +64,9 @@ template <class T> struct SharedWorkQueue {
 
   std::optional<IteratorRange<typename vec<T>::iterator>> try_pop(size_t num_seeds) {
     size_t pos = front.fetch_add(num_seeds, std::memory_order_acq_rel);
-    if (pos < size) {
+    if (pos < back) {
       const auto begin = work_queue.begin() + pos;
-      const auto end = std::min(begin + num_seeds, work_queue.end());
+      const auto end = std::min(begin + num_seeds, work_queue.begin() + back);
       return IteratorRange(begin, end);
     }
     return {};
@@ -104,7 +104,7 @@ template <class T> struct SharedWorkQueue {
     tbb::parallel_sort(indices.begin(), indices.end(),
                        Comparator(randoms));
 */
-    std::shuffle(work_queue.begin(), work_queue.end(), g);
+    std::shuffle(work_queue.begin() + front, work_queue.begin() + back, g);
 /*
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, work_queue.size()),
                       [&](const tbb::blocked_range<HypernodeID> &r) {
