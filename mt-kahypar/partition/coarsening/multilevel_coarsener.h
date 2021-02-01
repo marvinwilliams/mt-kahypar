@@ -572,7 +572,6 @@ class MultilevelCoarsener : public ICoarsener,
         // Store preferred cluster for all nodes that don't get matched, because their target is too big,
         // so they can be used for two hop matching
         thread_opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
-        _matching_partner[hn] = hn;
       } else if (_use_large_edge_matching &&_matching_state[hn] == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
         // Store nodes that didn't find a contraction target, because they had an edge that was too big,
         // and their minhash fingerprint
@@ -585,8 +584,8 @@ class MultilevelCoarsener : public ICoarsener,
         // Store preferred cluster for all nodes that don't get matched, because their target is in a different
         // community, so they can be matched ignoring the community detection
         thread_community_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
-        _matching_partner[hn] = hn;
       }
+      _matching_partner[hn] = hn;
     });
     std::vector<int> sizes;
     int size_total;
@@ -740,10 +739,10 @@ class MultilevelCoarsener : public ICoarsener,
       tbb::parallel_for(0, (int) community_targets.size(), [&](const int index) {
         const HypernodeID u = community_targets[index].second;
         const HypernodeID v = community_targets[index].first;
-        if (_matching_state[u].load() != STATE(MatchingState::MATCHED)
-            && _matching_state[v].load() != STATE(MatchingState::MATCHED)) {
-          _matching_state[u].store(STATE(MatchingState::UNMATCHED));
-          if (v != kInvalidHypernode) {
+        if (v != kInvalidHypernode || u != kInvalidHypernode) {
+          if (_matching_state[u].load() != STATE(MatchingState::MATCHED)
+              && _matching_state[v].load() != STATE(MatchingState::MATCHED)) {
+            _matching_state[u].store(STATE(MatchingState::UNMATCHED));
             HypernodeID &local_contracted_nodes = community_contracted_nodes.local();
             matchVertices(current_hg, u, v, cluster_ids, local_contracted_nodes);
           }
