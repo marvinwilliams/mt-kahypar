@@ -140,6 +140,8 @@ struct FMParameters {
   bool sync_with_mq = false;
   size_t num_moves_before_sync = 100;
   bool random_assignment = false;
+  bool prevent_expensive_gain_updates = false;
+  size_t large_he_threshold = 1000;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);

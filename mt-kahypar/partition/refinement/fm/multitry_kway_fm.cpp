@@ -47,6 +47,9 @@ namespace mt_kahypar {
     HighResClockTimepoint fm_start = std::chrono::high_resolution_clock::now();
     utils::Timer& timer = utils::Timer::instance();
 
+    if (context.refinement.fm.prevent_expensive_gain_updates) {
+      sharedData.constructLargeEdgeIDMapping(phg, context);
+    }
     for (size_t round = 0; round < context.refinement.fm.multitry_rounds; ++round) { // global multi try rounds
       for (PartitionID i = 0; i < sharedData.numParts; ++i) {
         initialPartWeights[i] = phg.partWeight(i);
