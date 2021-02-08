@@ -35,6 +35,17 @@
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/context.h"
 
+
+enum class RatingState : uint8_t {
+  GOOD_TARGET = 10,
+  VERTEX_TOO_BIG = 11,
+  EDGE_TOO_BIG = 12,
+  NO_NEIGHBOURS = 13,
+  MAP_ENTRY_FOUND = 14,
+  DIFFERENT_COMMUNITY = 15,
+  NO_TARGET = 19
+};
+
 namespace mt_kahypar {
 template <typename ScorePolicy = Mandatory,
           typename HeavyNodePenaltyPolicy = Mandatory,
@@ -50,34 +61,8 @@ class MultilevelVertexPairRater {
  private:
   static constexpr bool debug = false;
 
-  class VertexPairRating {
-   public:
-    VertexPairRating(HypernodeID trgt, RatingType val, bool is_valid) :
-      target(trgt),
-      opt_target(trgt),
-      community_target(trgt),
-      value(val),
-      state((uint8_t) RatingState::INITIAL_VALUE) { }
 
-    VertexPairRating() :
-      target(std::numeric_limits<HypernodeID>::max()),
-      opt_target(std::numeric_limits<HypernodeID>::max()),
-      community_target(std::numeric_limits<HypernodeID>::max()),
-      value(std::numeric_limits<RatingType>::min()),
-      state((uint8_t) RatingState::INITIAL_VALUE) { }
 
-    VertexPairRating(const VertexPairRating&) = delete;
-    VertexPairRating & operator= (const VertexPairRating &) = delete;
-
-    VertexPairRating(VertexPairRating&&) = default;
-    VertexPairRating & operator= (VertexPairRating &&) = delete;
-
-    HypernodeID target;
-    HypernodeID opt_target;
-    HypernodeID community_target;
-    RatingType value;
-    uint8_t state;
-  };
 
   enum class RatingMapType {
     CACHE_EFFICIENT_RATING_MAP,
@@ -88,6 +73,13 @@ class MultilevelVertexPairRater {
   using AtomicWeight = parallel::IntegralAtomicWrapper<HypernodeWeight>;
 
  public:
+
+  struct VertexPairRating {
+    HypernodeID target = std::numeric_limits<HypernodeID>::max();
+    RatingType value = std::numeric_limits<RatingType>::min();
+    RatingState state = RatingState::NO_TARGET;
+  };
+
   using Rating = VertexPairRating;
 
   MultilevelVertexPairRater(Hypergraph& hypergraph,
@@ -106,15 +98,7 @@ class MultilevelVertexPairRater {
     _local_bloom_filter(_bloom_filter_mask + 1),
     _already_matched(hypergraph.initialNumNodes()) { }
 
-  enum class RatingState : uint8_t {
-    TARGET_FOUND = 10,
-    VERTEX_TOO_BIG = 11,
-    EDGE_TOO_BIG = 12,
-    NO_NEIGHBOURS = 13,
-    MAP_ENTRY_FOUND = 14,
-    DIFFERENT_COMMUNITY = 15,
-    INITIAL_VALUE = 19
-  };
+
 
   #define STATE(X) static_cast<uint8_t>(X)
 
@@ -126,8 +110,8 @@ class MultilevelVertexPairRater {
 
   VertexPairRating rate(const Hypergraph& hypergraph,
                         const HypernodeID u,
-                        const parallel::scalable_vector<HypernodeID>& cluster_ids,
-                        const parallel::scalable_vector<AtomicWeight>& cluster_weight,
+                        const vec<HypernodeID>& cluster_ids,
+                        const vec<AtomicWeight>& cluster_weight,
                         const HypernodeWeight max_allowed_node_weight) {
 
     const RatingMapType rating_map_type = getRatingMapTypeForRatingOfHypernode(hypergraph, u);
@@ -165,108 +149,75 @@ class MultilevelVertexPairRater {
   template<typename RatingMap>
   VertexPairRating rate(const Hypergraph& hypergraph,
                         const HypernodeID u,
-                        RatingMap& tmp_ratings,
-                        const parallel::scalable_vector<HypernodeID>& cluster_ids,
-                        const parallel::scalable_vector<AtomicWeight>& cluster_weight,
+                        RatingMap& cluster_ratings,
+                        const vec<HypernodeID>& cluster_ids,
+                        const vec<AtomicWeight>& cluster_weight,
                         const HypernodeWeight max_allowed_node_weight,
                         const bool use_vertex_degree_sampling) {
 
-    u_int8_t state;
     if ( use_vertex_degree_sampling ) {
-      state = fillRatingMapWithSampling(hypergraph, u, tmp_ratings, cluster_ids);
+      fillRatingMapWithSampling(hypergraph, u, cluster_ratings, cluster_ids);
     } else {
-      state = fillRatingMap(hypergraph, u, tmp_ratings, cluster_ids);
+      fillRatingMap(hypergraph, u, cluster_ratings, cluster_ids);
+    }
+
+    VertexPairRating ret;
+    if (cluster_ratings.size() == 0) {
+      ret.state = hypergraph.nodeDegree(u) == 0 ? RatingState::NO_NEIGHBOURS : RatingState::EDGE_TOO_BIG;
+      return ret;
     }
 
     int cpu_id = sched_getcpu();
     const HypernodeWeight weight_u = cluster_weight[u];
-    const PartitionID community_u_id = hypergraph.communityID(u);
-    RatingType max_rating = std::numeric_limits<RatingType>::min();
-    HypernodeID target = std::numeric_limits<HypernodeID>::max();
-    HypernodeID target_id = std::numeric_limits<HypernodeID>::max();
-    RatingType opt_max_rating = std::numeric_limits<RatingType>::min();
-    HypernodeID opt_target = std::numeric_limits<HypernodeID>::max();
-    HypernodeID opt_target_id = std::numeric_limits<HypernodeID>::max();
-    RatingType community_max_rating = std::numeric_limits<RatingType>::min();
-    HypernodeID community_target = std::numeric_limits<HypernodeID>::max();
-    HypernodeID community_target_id = std::numeric_limits<HypernodeID>::max();
-    for (auto it = tmp_ratings.end() - 1; it >= tmp_ratings.begin(); --it) {
-      const HypernodeID tmp_target_id = it->key;
-      const HypernodeID tmp_target = tmp_target_id;
-      const HypernodeWeight target_weight = cluster_weight[tmp_target_id];
-      if ( tmp_target != u && weight_u + target_weight <= max_allowed_node_weight ) {
-        HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
-        penalty = penalty == 0 ? std::max(std::max(weight_u, target_weight), 1) : penalty;
-        const RatingType tmp_rating = it->value / static_cast<double>(penalty);
+    const PartitionID comm_u = hypergraph.communityID(u);
 
-        DBG << "r(" << u << "," << tmp_target << ")=" << tmp_rating;
-        if ( community_u_id == hypergraph.communityID(tmp_target) &&
-            AcceptancePolicy::acceptRating(tmp_rating, max_rating,
-                                           target_id, tmp_target_id,
-                                           cpu_id, _already_matched) ) {
-          max_rating = tmp_rating;
-          target_id = tmp_target_id;
-          target = tmp_target;
-          state = STATE(RatingState::TARGET_FOUND);
-        } else if ( community_u_id != hypergraph.communityID(tmp_target) ) {
-          if ( AcceptancePolicy::acceptRating(tmp_rating, community_max_rating,
-                                              community_target_id, tmp_target_id,
-                                              cpu_id, _already_matched) ) {
-            community_max_rating = tmp_rating;
-            community_target_id = tmp_target_id;
-            community_target = tmp_target;
-            state = STATE(RatingState::DIFFERENT_COMMUNITY);
-          }
-        }
-      } else if ( tmp_target != u ) {
-        HypernodeWeight penalty = HeavyNodePenaltyPolicy::penalty(weight_u, target_weight);
-        penalty = penalty == 0 ? std::max(std::max(weight_u, target_weight), 1) : penalty;
-        const RatingType tmp_rating = it->value / static_cast<double>(penalty);
-
-        if ( community_u_id == hypergraph.communityID(tmp_target) &&
-             AcceptancePolicy::acceptRating(tmp_rating, opt_max_rating,
-                                            opt_target_id, tmp_target_id,
-                                            cpu_id, _already_matched) ) {
-          opt_max_rating = tmp_rating;
-          opt_target_id = tmp_target_id;
-          opt_target = tmp_target;
-          state = STATE(RatingState::VERTEX_TOO_BIG);
-        }
+    for (auto it = cluster_ratings.end() - 1; it >= cluster_ratings.begin(); --it) {
+      const HypernodeID target = it->key;
+      if (target == u) {
+        continue;
+      }
+      const HypernodeWeight target_weight = cluster_weight[target];
+      RatingState state = classifyState(weight_u + target_weight <= max_allowed_node_weight,
+                                        comm_u == hypergraph.communityID(target));
+      const RatingType rating = it->value/static_cast<double>(HeavyNodePenaltyPolicy::penalty(weight_u, target_weight));
+      if (state < ret.state || (state == ret.state &&
+            AcceptancePolicy::acceptRating(rating, ret.value, ret.target, target, cpu_id, _already_matched))) {
+        ret = { target, rating, state };
       }
     }
 
-    VertexPairRating ret;
-    if (max_rating != std::numeric_limits<RatingType>::min()) {
-      ASSERT(target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
-      ret.value = max_rating;
-      ret.target = target;
-    }
-    if (opt_max_rating != std::numeric_limits<RatingType>::min()) {
-      ASSERT(opt_target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
-      ret.opt_target = opt_target;
-    }
-    if (community_max_rating != std::numeric_limits<RatingType>::min()) {
-      ASSERT(community_target != std::numeric_limits<HypernodeID>::max(), "invalid contraction target");
-      ret.community_target = community_target;
-    }
-    ret.state = state;
-    tmp_ratings.clear();
-
+    cluster_ratings.clear();
     return ret;
   }
 
+  RatingState classifyState(bool not_too_heavy, bool same_community) {
+    // TODO would be faster with int bitset as state
+    // return uint8_t(not_too_heavy) << 7 | uint8_t(same_community) << 6;
+
+
+    // good target > cluster too big > different comm > no target
+    if (not_too_heavy && same_community) {
+      return RatingState::GOOD_TARGET;
+    }
+    if (same_community) {
+      return RatingState::VERTEX_TOO_BIG;
+    }
+    if (not_too_heavy) {
+      return RatingState::DIFFERENT_COMMUNITY;
+    }
+    return RatingState::NO_TARGET;
+  }
+
   template<typename RatingMap>
-  u_int8_t fillRatingMap(const Hypergraph& hypergraph,
+  void fillRatingMap(const Hypergraph& hypergraph,
                      const HypernodeID u,
                      RatingMap& tmp_ratings,
-                     const parallel::scalable_vector<HypernodeID>& cluster_ids) {
-    u_int8_t ret = STATE(RatingState::NO_NEIGHBOURS);
+                     const vec<HypernodeID>& cluster_ids) {
     kahypar::ds::FastResetFlagArray<>& bloom_filter = _local_bloom_filter.local();
     for ( const HyperedgeID& he : hypergraph.incidentEdges(u) ) {
       HypernodeID edge_size = hypergraph.edgeSize(he);
       ASSERT(edge_size > 1, V(he));
       if ( edge_size < _context.partition.ignore_hyperedge_size_threshold ) {
-        ret = STATE(RatingState::MAP_ENTRY_FOUND);
         edge_size = _context.coarsening.use_adaptive_edge_size ?
           std::max(adaptiveEdgeSize(hypergraph, he, bloom_filter, cluster_ids), ID(2)) : edge_size;
         const RatingType score = ScorePolicy::score(
@@ -281,25 +232,20 @@ class MultilevelVertexPairRater {
           }
         }
         bloom_filter.reset();
-      } else if (ret == STATE(RatingState::NO_NEIGHBOURS)) {
-        ret = STATE(RatingState::EDGE_TOO_BIG);
       }
     }
-    return ret;
   }
 
   template<typename RatingMap>
-  u_int8_t fillRatingMapWithSampling(const Hypergraph& hypergraph,
+  void fillRatingMapWithSampling(const Hypergraph& hypergraph,
                                  const HypernodeID u,
                                  RatingMap& tmp_ratings,
-                                 const parallel::scalable_vector<HypernodeID>& cluster_ids) {
-    u_int8_t ret = STATE(RatingState::NO_NEIGHBOURS);
+                                 const vec<HypernodeID>& cluster_ids) {
     kahypar::ds::FastResetFlagArray<>& bloom_filter = _local_bloom_filter.local();
     size_t num_tmp_rating_map_accesses = 0;
     for ( const HyperedgeID& he : hypergraph.incidentEdges(u) ) {
       HypernodeID edge_size = hypergraph.edgeSize(he);
       if ( edge_size < _context.partition.ignore_hyperedge_size_threshold ) {
-        ret = STATE(RatingState::MAP_ENTRY_FOUND);
         edge_size = _context.coarsening.use_adaptive_edge_size ?
           std::max(adaptiveEdgeSize(hypergraph, he, bloom_filter, cluster_ids), ID(2)) : edge_size;
         // Break if number of accesses to the tmp rating map would exceed
@@ -320,17 +266,14 @@ class MultilevelVertexPairRater {
           }
         }
         bloom_filter.reset();
-      } else if (ret == STATE(RatingState::NO_NEIGHBOURS)) {
-          ret = STATE(RatingState::EDGE_TOO_BIG);
       }
     }
-    return ret;
   }
 
   inline HypernodeID adaptiveEdgeSize(const Hypergraph& hypergraph,
                                       const HyperedgeID he,
                                       kahypar::ds::FastResetFlagArray<>& bloom_filter,
-                                      const parallel::scalable_vector<HypernodeID>& cluster_ids) {
+                                      const vec<HypernodeID>& cluster_ids) {
     HypernodeID edge_size = 0;
     for ( const HypernodeID& v : hypergraph.pins(he) ) {
       const HypernodeID representative = cluster_ids[v];

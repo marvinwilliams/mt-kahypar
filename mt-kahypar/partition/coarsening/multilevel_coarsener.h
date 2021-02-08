@@ -95,7 +95,7 @@ class MultilevelCoarsener : public ICoarsener,
     _use_large_edge_matching(false),
     _remove_degree_zero_hns(false),
     _use_matching_without_community_detection(false),
-    _min_hash_seeds(std::vector<int>(128)) {
+    _min_hash_seeds(128) {
     _progress_bar += hypergraph.numRemovedHypernodes();
 
     // Initialize internal data structures parallel
@@ -259,33 +259,33 @@ class MultilevelCoarsener : public ICoarsener,
                     _context.shared_memory.num_threads;
                 }
               } else {
+                // TODO check again if we're still unmatched! only set _matching_partner with spinlock
+
                 CornerCaseCounter& c = counter.local();
                 //std::string out = "";
                 switch (rating.state) {
-                  case 11:
+                  case RatingState::VERTEX_TOO_BIG:
                     c.vertexTooBig++;
                     break;
-                  case 12:
+                  case RatingState::EDGE_TOO_BIG:
                     c.edgeTooBig++;
                     break;
-                  case 13:
+                  case RatingState::NO_NEIGHBOURS:
                     c.degreeZero++;
                     break;
-                  case 15:
+                  case RatingState::DIFFERENT_COMMUNITY:
                     c.notInCommunity++;
                     break;
                   default:
                     break;
                 }
-                _matching_state[u] = rating.state;
-                if ( rating.state == STATE(Rater::RatingState::VERTEX_TOO_BIG) ) {
+                _matching_state[u] = STATE(rating.state);
+                if ( rating.state == RatingState::VERTEX_TOO_BIG
+                      || rating.state == RatingState::DIFFERENT_COMMUNITY ) {
                   // Store preferred cluster for all nodes that don't get matched, because their target is too big,
                   // so they can be used for two hop matching
-                  _matching_partner[u] = rating.opt_target;
-                } else if ( rating.state == STATE(Rater::RatingState::DIFFERENT_COMMUNITY) ) {
-                  // Store preferred cluster for all nodes that don't get matched, because their target is in a different
-                  // community, so they can be matched ignoring the community detection
-                  _matching_partner[u] = rating.community_target;
+                  // or in a different community, so they can be matched ignoring the community detection
+                  _matching_partner[u] = rating.target;
                 }
               }
             }
@@ -436,7 +436,7 @@ class MultilevelCoarsener : public ICoarsener,
         uint8_t matching_state_v = _matching_state[v].load();
         // If vertex v hasn't found a matching target, but we have a vertex u that wants to match with v,
         // then we don't need the corner case handling for vertex v.
-        if (matching_state_v >= 10) {
+        if (matching_state_v >= 10) {   // TODO give this thing a name
           _matching_state[v].store(unmatched);
         }
         if ( matching_state_v == STATE(MatchingState::MATCHED) ) {
@@ -471,9 +471,9 @@ class MultilevelCoarsener : public ICoarsener,
           _matching_state[v] = STATE(MatchingState::MATCHED);
           success = true;
         } else {
-          // State of v must be either MATCHING_IN_PROGRESS or an other thread changed the state
+          // State of v must be either MATCHING_IN_PROGRESS or another thread changed the state
           // in the meantime to MATCHED. We have to wait until the state of v changed to
-          // MATCHED or resolve the conflict if u is matched within a cyclic matching dependency
+          // MATCHED or resolve the conflict if u is in a cyclic matching dependency
 
           // Conflict Resolution
           while ( _matching_state[v] == STATE(MatchingState::MATCHING_IN_PROGRESS) ) {
@@ -500,7 +500,7 @@ class MultilevelCoarsener : public ICoarsener,
           }
 
           // If u is still in state MATCHING_IN_PROGRESS its matching partner v
-          // must be matched in the meantime with an other vertex. Therefore,
+          // must be matched in the meantime with another vertex. Therefore,
           // we try to match u with the representative v's cluster.
           if ( _matching_state[u] == STATE(MatchingState::MATCHING_IN_PROGRESS) ) {
             ASSERT( _matching_state[v] == STATE(MatchingState::MATCHED) );
@@ -568,19 +568,19 @@ class MultilevelCoarsener : public ICoarsener,
     tbb::enumerable_thread_specific < std::vector < std::pair < HypernodeID, HypernodeID>>> thread_community_targets;
     tbb::enumerable_thread_specific <std::vector<HypernodeID>> thread_degree_zero_hns;
     tbb::parallel_for(ID(0), current_hg.initialNumNodes(), [&](const HypernodeID hn) {
-      if (_use_two_hop_matching && _matching_state[hn] == STATE(Rater::RatingState::VERTEX_TOO_BIG)) {
+      if (_use_two_hop_matching && _matching_state[hn] == STATE(RatingState::VERTEX_TOO_BIG)) {
         // Store preferred cluster for all nodes that don't get matched, because their target is too big,
         // so they can be used for two hop matching
         thread_opt_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
-      } else if (_use_large_edge_matching &&_matching_state[hn] == STATE(Rater::RatingState::EDGE_TOO_BIG)) {
+      } else if (_use_large_edge_matching &&_matching_state[hn] == STATE(RatingState::EDGE_TOO_BIG)) {
         // Store nodes that didn't find a contraction target, because they had an edge that was too big,
         // and their minhash fingerprint
         thread_edge_targets.local().push_back(
           std::pair<uint32_t, HypernodeID>(minhash(current_hg.incidentEdges(hn)), hn));
-      } else if (_remove_degree_zero_hns &&_matching_state[hn] == STATE(Rater::RatingState::NO_NEIGHBOURS)) {
+      } else if (_remove_degree_zero_hns &&_matching_state[hn] == STATE(RatingState::NO_NEIGHBOURS)) {
         // Store nodes that have a degree of zero and thus can't be contracted anymore
         thread_degree_zero_hns.local().push_back(hn);
-      } else if (_use_matching_without_community_detection &&_matching_state[hn] == STATE(Rater::RatingState::DIFFERENT_COMMUNITY)) {
+      } else if (_use_matching_without_community_detection &&_matching_state[hn] == STATE(RatingState::DIFFERENT_COMMUNITY)) {
         // Store preferred cluster for all nodes that don't get matched, because their target is in a different
         // community, so they can be matched ignoring the community detection
         thread_community_targets.local().push_back(std::pair<HypernodeID, HypernodeID>(_matching_partner[hn], hn));
