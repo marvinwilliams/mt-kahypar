@@ -233,7 +233,7 @@ class MultilevelCoarsener : public ICoarsener,
               ASSERT(current_hg.nodeIsEnabled(hn));
               const Rating rating = _rater.rate(current_hg, hn,
                 cluster_ids, _cluster_weight, _max_allowed_node_weight);
-              if ( rating.target != kInvalidHypernode ) {
+              if ( rating.state == RatingState::GOOD_TARGET ) {
                 const HypernodeID v = rating.target;
                 HypernodeID& local_contracted_nodes = contracted_nodes.local();
                 matchVertices(current_hg, u, v, cluster_ids, local_contracted_nodes);
@@ -591,6 +591,7 @@ class MultilevelCoarsener : public ICoarsener,
     int size_total;
     // Contract vertices which want to join a cluster that is to big with vertices that want to join the same cluster
     if (_use_two_hop_matching) {
+      auto t1 = tbb::tick_count::now();
       sizes = {0};
       size_total = 0;
       for (auto &item : thread_opt_targets) {
@@ -606,8 +607,10 @@ class MultilevelCoarsener : public ICoarsener,
           opt_targets[offset + j] = (*iter)[j];
         }
       });
+      auto t2 = tbb::tick_count::now();
 
       tbb::parallel_sort(opt_targets.begin(), opt_targets.end());
+      auto t3 = tbb::tick_count::now();
       std::vector<int> bounds = {0};
       for (int i = 1; i < (int) opt_targets.size(); i++) {
         if (opt_targets[i].first != opt_targets[i - 1].first) {
@@ -615,6 +618,7 @@ class MultilevelCoarsener : public ICoarsener,
         }
       }
       bounds.push_back(opt_targets.size());
+      auto t4 = tbb::tick_count::now();
       tbb::enumerable_thread_specific<HypernodeID> two_hop_contracted_nodes(0);
       tbb::parallel_for(0, (int) bounds.size() - 1, [&](const int index) {
         int bucket_begin = bounds[index];
@@ -645,10 +649,16 @@ class MultilevelCoarsener : public ICoarsener,
           }
         }
       });
+      auto t5 = tbb::tick_count::now();
       contracted_hns += two_hop_contracted_nodes.combine(std::plus<HypernodeID>());
       //debug
       std::string two_hop =
-        "Two hop contractions: " + std::to_string(two_hop_contracted_nodes.combine(std::plus<HypernodeID>())) + "\n";
+        "Two hop contractions: " + std::to_string(two_hop_contracted_nodes.combine(std::plus<HypernodeID>())) +
+        "\nTime building vector: " + std::to_string((t2-t1).seconds()) +
+        "\nTime sorting: " + std::to_string((t3-t2).seconds()) +
+        "\nTime building bounds: " + std::to_string((t4-t3).seconds()) +
+        "\nTime contracting: " + std::to_string((t5-t4).seconds()) +
+        "\n";
       std::cout << two_hop;
     }
 
