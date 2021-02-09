@@ -81,6 +81,8 @@ private:
   // ! directly on the global partitioned hypergraph.
   void revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex);
 
+  void updateExpensiveMoveRevertCounter(size_t bestGainIndex);
+
   template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   void syncMessageQueues(PHG& phg);
@@ -134,6 +136,8 @@ private:
   FMSharedData& sharedData;
 
   size_t _local_moves_since_sync = 0;
+
+  vec<std::pair<MoveID, vec<HyperedgeID>>> touched_edges_per_move;
 };
 
 }

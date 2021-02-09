@@ -188,7 +188,7 @@ struct FMSharedData {
 
   size_t num_large_he;
 
-  vec<size_t> forbidden_move_counter;
+  vec<CAtomic<size_t>> forbidden_move_counter;
 
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
@@ -248,7 +248,7 @@ struct FMSharedData {
     scan_graph_edges.setData(num_edges_up_to);
     tbb::parallel_scan(tbb::blocked_range<size_t>(0, num_hyper_edges + 1), scan_graph_edges);
     num_large_he = scan_graph_edges.total_sum();
-    forbidden_move_counter.assign(num_large_he * c.partition.k, 0);
+    forbidden_move_counter.assign(num_large_he * c.partition.k, CAtomic<size_t>(0));
   }
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const {

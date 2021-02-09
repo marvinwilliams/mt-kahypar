@@ -104,6 +104,14 @@ namespace mt_kahypar {
     // Vertices that already were boundary vertices, can still be considered later since they are in the task queue
     // --> actually not that bad
     for (HyperedgeID e : edgesWithGainChanges) {
+      if (context.refinement.fm.prevent_expensive_gain_updates &&
+          phg.edgeSize(e) >= context.refinement.fm.large_he_threshold) {
+        if (touched_edges_per_move.back().first == localMoves.back().second) {
+          touched_edges_per_move.back().second.push_back(e);
+        } else {
+          touched_edges_per_move.push_back({localMoves.back().second, {e}});
+        }
+      }
       if (phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
         for (HypernodeID v : phg.pins(e)) {
           if (neighborDeduplicator[v] != deduplicationTime) {
@@ -191,6 +199,20 @@ namespace mt_kahypar {
         if (!fm_strategy.findNextMove(phg, move)) break;
       }
 
+      if (context.refinement.fm.prevent_expensive_gain_updates) {
+        bool move_invalid = false;
+        for (auto e : phg.incidentEdges(move.node)) {
+          size_t edge_id = sharedData.scan_graph_edges[e];
+          if (sharedData.forbidden_move_counter[edge_id * context.partition.k + move.to].load(std::memory_order_relaxed) >= 5) {
+            move_invalid = true;
+            break;
+          }
+        }
+        if (move_invalid) {
+          continue;
+        }
+      }
+
       sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
       MoveID move_id = std::numeric_limits<MoveID>::max();
       bool moved = false;
@@ -243,6 +265,10 @@ namespace mt_kahypar {
         fm_strategy.updatePQs(phg);
       }
 
+    }
+
+    if (context.refinement.fm.prevent_expensive_gain_updates && !touched_edges_per_move.empty()) {
+      updateExpensiveMoveRevertCounter(bestImprovementIndex);
     }
 
     if constexpr (use_delta) {
@@ -347,6 +373,28 @@ namespace mt_kahypar {
       sharedData.moveTracker.invalidateMove(m);
       localMoves.pop_back();
     }
+  }
+
+  template<typename FMStrategy>
+  void LocalizedKWayFM<FMStrategy>::updateExpensiveMoveRevertCounter(size_t bestGainIndex) {
+    auto next_large_move = touched_edges_per_move.begin();
+    auto first_move_to_revert = localMoves.begin() + bestGainIndex + 1;
+    while (next_large_move->first < first_move_to_revert->second) {
+      next_large_move++;
+    }
+    for (auto i = first_move_to_revert; i < localMoves.end(); ++i) {
+      Move& m = sharedData.moveTracker.getMove(i->second);
+      if (next_large_move->first == i->second) {
+        for (auto e : next_large_move->second) {
+          size_t index = sharedData.scan_graph_edges[e];
+          sharedData.forbidden_move_counter[index * context.partition.k + m.to]++;
+        }
+        if (next_large_move < touched_edges_per_move.end()) {
+          next_large_move++;
+        }
+      }
+    }
+    touched_edges_per_move.clear();
   }
 
   template<typename FMStrategy>
