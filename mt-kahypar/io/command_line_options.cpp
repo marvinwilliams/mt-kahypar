@@ -346,6 +346,14 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.random_assignment :
                  &context.refinement.fm.random_assignment))->value_name("<bool>")->default_value(false),
              "If true, use randomized assignment for border nodes.")
+            ((initial_partitioning ? "i-r-fm-prevent-expensive-gain-updates" : "r-fm-prevent-expensive-gain-updates"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.prevent_expensive_gain_updates :
+                 &context.refinement.fm.prevent_expensive_gain_updates))->value_name("<bool>")->default_value(false),
+             "If true, prevent reoccuring expensive moves that were reverted.")
+            ((initial_partitioning ? "i-r-fm-large-he-threshold" : "r-fm-large_he_threshold"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.large_he_threshold :
+                 &context.refinement.fm.large_he_threshold))->value_name("<size_t>")->default_value(1000),
+             "Size threshold of hyperedges to watch for expensive gain updates.")
             #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :

@@ -109,9 +109,6 @@ template<typename T,
 class TBBPrefixSum {
 
  public:
-  TBBPrefixSum() :
-    _sum(0) { }
-
   TBBPrefixSum(V<T>& data) :
     _sum(0),
     _data(data) { }
@@ -164,10 +161,6 @@ class TBBPrefixSum {
 
   void assign(TBBPrefixSum& prefix_sum) {
     _sum = prefix_sum._sum;
-  }
-
-  void setData(V<T>& data) {
-    _data = data;
   }
 
  private:

@@ -119,6 +119,8 @@ namespace mt_kahypar {
       out << "    Sync with Message Queues:         " << std::boolalpha << params.sync_with_mq << std::endl;
       out << "    Number of Moves before Sync:      " << params.num_moves_before_sync << std::endl;
       out << "    Random Assignment:                " << std::boolalpha << params.random_assignment << std::endl;
+      out << "    Prevent Expensive Gain Updates:   " << std::boolalpha << params.prevent_expensive_gain_updates << std::endl;
+      out << "    Large Hyperedge Threshold:        " << params.large_he_threshold << std::endl;
     }
     out << std::flush;
     return out;
