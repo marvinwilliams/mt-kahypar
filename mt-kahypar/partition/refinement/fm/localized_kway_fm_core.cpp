@@ -199,10 +199,10 @@ namespace mt_kahypar {
         if (!fm_strategy.findNextMove(phg, move)) break;
       }
 
-      if (context.refinement.fm.prevent_expensive_gain_updates) {
+      if (context.refinement.fm.prevent_expensive_gain_updates && !sharedData.forbidden_move_counter.empty()) {
         bool move_invalid = false;
         for (auto e : phg.incidentEdges(move.node)) {
-          size_t edge_id = sharedData.scan_graph_edges[e];
+          size_t edge_id = sharedData.num_edges_up_to[e];
           if (sharedData.forbidden_move_counter[edge_id * context.partition.k + move.to].load(std::memory_order_relaxed) >= 5) {
             move_invalid = true;
             break;
@@ -386,7 +386,7 @@ namespace mt_kahypar {
       Move& m = sharedData.moveTracker.getMove(i->second);
       if (next_large_move->first == i->second) {
         for (auto e : next_large_move->second) {
-          size_t index = sharedData.scan_graph_edges[e];
+          size_t index = sharedData.num_edges_up_to[e];
           sharedData.forbidden_move_counter[index * context.partition.k + m.to]++;
         }
         if (next_large_move < touched_edges_per_move.end()) {
