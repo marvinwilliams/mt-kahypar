@@ -166,6 +166,9 @@ namespace mt_kahypar {
         mq.unsafe_clear();
       }
     }
+    if (context.refinement.fm.prevent_expensive_gain_updates) {
+      sharedData.forbidden_move_counter.assign(sharedData.num_large_he * (context.partition.k - 1), CAtomic<size_t>(0));
+    }
 
     if ( refinement_nodes.empty() ) {
       if (context.refinement.fm.random_assignment) {

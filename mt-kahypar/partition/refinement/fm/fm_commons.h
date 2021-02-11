@@ -237,10 +237,10 @@ struct FMSharedData {
   }
 
   void constructLargeEdgeIDMapping(const PartitionedHypergraph& phg, const Context& c) {
-    size_t num_hyper_edges = phg.numGraphEdges();
+    size_t num_hyper_edges = phg.initialNumEdges();
     num_edges_up_to.resize(num_hyper_edges + 1);
     tbb::parallel_for(0UL, num_hyper_edges, [&](const HyperedgeID e) {
-      const size_t edge_size = phg.edgeSize(e);
+      const size_t edge_size = phg.edgeIsEnabled(e) ? phg.edgeSize(e) : 0;
       num_edges_up_to[e+1] = static_cast<HyperedgeID>(edge_size >= c.refinement.fm.large_he_threshold);
     }, tbb::static_partitioner());
     num_edges_up_to[0] = 0;
@@ -248,7 +248,6 @@ struct FMSharedData {
     parallel::TBBPrefixSum<HyperedgeID, vec> scan_graph_edges(num_edges_up_to);
     tbb::parallel_scan(tbb::blocked_range<size_t>(0, num_hyper_edges + 1), scan_graph_edges);
     num_large_he = scan_graph_edges.total_sum();
-    forbidden_move_counter.assign(num_large_he * c.partition.k, CAtomic<size_t>(0));
   }
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const {

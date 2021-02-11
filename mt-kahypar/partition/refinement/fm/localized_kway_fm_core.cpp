@@ -106,10 +106,10 @@ namespace mt_kahypar {
     for (HyperedgeID e : edgesWithGainChanges) {
       if (context.refinement.fm.prevent_expensive_gain_updates &&
           phg.edgeSize(e) >= context.refinement.fm.large_he_threshold) {
-        if (touched_edges_per_move.back().first == localMoves.back().second) {
+        if (!touched_edges_per_move.empty() && touched_edges_per_move.back().first == move.node) {
           touched_edges_per_move.back().second.push_back(e);
         } else {
-          touched_edges_per_move.push_back({localMoves.back().second, {e}});
+          touched_edges_per_move.push_back({move.node, {e}});
         }
       }
       if (phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
@@ -200,15 +200,19 @@ namespace mt_kahypar {
       }
 
       if (context.refinement.fm.prevent_expensive_gain_updates && !sharedData.forbidden_move_counter.empty()) {
-        bool move_invalid = false;
-        for (auto e : phg.incidentEdges(move.node)) {
-          size_t edge_id = sharedData.num_edges_up_to[e];
-          if (sharedData.forbidden_move_counter[edge_id * context.partition.k + move.to].load(std::memory_order_relaxed) >= 5) {
-            move_invalid = true;
-            break;
-          }
+        bool move_forbidden = false;
+        if constexpr (use_delta) {
+          move_forbidden = moveForbidden(deltaPhg, move);
+        } else {
+          move_forbidden = moveForbidden(phg, move);
         }
-        if (move_invalid) {
+        if (move_forbidden) {
+        sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
+          if constexpr (use_delta) {
+            fm_strategy.updatePQs(deltaPhg);
+          } else {
+            fm_strategy.updatePQs(phg);
+          }
           continue;
         }
       }
@@ -377,24 +381,37 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::updateExpensiveMoveRevertCounter(size_t bestGainIndex) {
-    auto next_large_move = touched_edges_per_move.begin();
-    auto first_move_to_revert = localMoves.begin() + bestGainIndex + 1;
-    while (next_large_move->first < first_move_to_revert->second) {
-      next_large_move++;
+    auto next_large_move = touched_edges_per_move.rbegin();
+    auto next_move_to_revert = localMoves.rbegin();
+    auto first_move_to_keep = localMoves.rend() - bestGainIndex - 1;
+    while (next_move_to_revert != localMoves.rend()
+           && next_large_move->first != next_move_to_revert->first.node) {
+      next_move_to_revert++;
     }
-    for (auto i = first_move_to_revert; i < localMoves.end(); ++i) {
-      Move& m = sharedData.moveTracker.getMove(i->second);
-      if (next_large_move->first == i->second) {
+    for (auto i = next_move_to_revert; i < first_move_to_keep; ++i) {
+      Move& m = i->first;
+      if (next_large_move->first == m.node) {
         for (auto e : next_large_move->second) {
           size_t index = sharedData.num_edges_up_to[e];
-          sharedData.forbidden_move_counter[index * context.partition.k + m.to]++;
+          sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to]++;
         }
-        if (next_large_move < touched_edges_per_move.end()) {
-          next_large_move++;
-        }
+        next_large_move++;
       }
     }
     touched_edges_per_move.clear();
+  }
+
+  template<typename FMStrategy>
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  bool LocalizedKWayFM<FMStrategy>::moveForbidden(PHG& phg, Move& move) {
+    for (auto e : phg.incidentEdges(move.node)) {
+      size_t edge_id = sharedData.num_edges_up_to[e];
+      if (sharedData.forbidden_move_counter[edge_id * (context.partition.k - 1) + move.to].load(std::memory_order_relaxed) >= 5) {
+        return true;
+      }
+    }
+    return false;
   }
 
   template<typename FMStrategy>
