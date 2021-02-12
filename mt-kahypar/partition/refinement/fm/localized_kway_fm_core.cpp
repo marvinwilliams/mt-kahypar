@@ -207,7 +207,12 @@ namespace mt_kahypar {
           move_forbidden = moveForbidden(phg, move);
         }
         if (move_forbidden) {
-        sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
+          /* TODO: really deactive node?
+             theoretically the node should still be able to move.
+             The problem is that we would need to reinsert it into the PQ,
+             but most likely it will get the same (forbidden) target block with a potential high gain
+             and therefore will get extracted when searching for the next move <12-02-21, @noahares> */
+          sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
           if constexpr (use_delta) {
             fm_strategy.updatePQs(deltaPhg);
           } else {
@@ -222,12 +227,26 @@ namespace mt_kahypar {
       bool moved = false;
       if (move.to != kInvalidPartition) {
         if constexpr (use_delta) {
+          if (context.refinement.fm.prevent_expensive_gain_updates
+              && !sharedData.forbidden_move_counter.empty()) {
+            for (auto e : deltaPhg.incidentEdges(move.node)) {
+              ASSERT(sharedData.forbidden_move_counter[sharedData.num_edges_up_to[e]
+                     * (context.partition.k - 1) + move.to] < 5);
+            }
+          }
           heaviestPartWeight = heaviestPartAndWeight(deltaPhg).second;
           fromWeight = deltaPhg.partWeight(move.from);
           toWeight = deltaPhg.partWeight(move.to);
           moved = deltaPhg.changeNodePart(move.node, move.from, move.to,
                                           context.partition.max_part_weights[move.to], delta_func);
         } else {
+          if (context.refinement.fm.prevent_expensive_gain_updates
+              && !sharedData.forbidden_move_counter.empty()) {
+            for (auto e : phg.incidentEdges(move.node)) {
+              ASSERT(sharedData.forbidden_move_counter[sharedData.num_edges_up_to[e]
+                     * (context.partition.k - 1) + move.to] < 5);
+            }
+          }
           heaviestPartWeight = heaviestPartAndWeight(phg).second;
           fromWeight = phg.partWeight(move.from);
           toWeight = phg.partWeight(move.to);
@@ -384,7 +403,7 @@ namespace mt_kahypar {
     auto next_large_move = touched_edges_per_move.rbegin();
     auto next_move_to_revert = localMoves.rbegin();
     auto first_move_to_keep = localMoves.rend() - bestGainIndex - 1;
-    while (next_move_to_revert != localMoves.rend()
+    while (next_move_to_revert < first_move_to_keep
            && next_large_move->first != next_move_to_revert->first.node) {
       next_move_to_revert++;
     }
