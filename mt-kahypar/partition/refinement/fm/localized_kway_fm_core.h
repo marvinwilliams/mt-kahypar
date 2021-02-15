@@ -87,9 +87,8 @@ private:
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   void syncMessageQueues(PHG& phg);
 
-  template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
-  bool moveForbidden(PHG& phg, Move& move);
+  bool moveForbidden(PartitionedHypergraph& phg, Move& move);
 
   void updateNeighborDeduplicator() {
     if (++deduplicationTime == 0) {

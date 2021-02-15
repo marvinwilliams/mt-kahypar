@@ -200,13 +200,7 @@ namespace mt_kahypar {
       }
 
       if (context.refinement.fm.prevent_expensive_gain_updates && !sharedData.forbidden_move_counter.empty()) {
-        bool move_forbidden = false;
-        if constexpr (use_delta) {
-          move_forbidden = moveForbidden(deltaPhg, move);
-        } else {
-          move_forbidden = moveForbidden(phg, move);
-        }
-        if (move_forbidden) {
+        if (moveForbidden(phg, move)) {
           /* TODO: really deactive node?
              theoretically the node should still be able to move.
              The problem is that we would need to reinsert it into the PQ,
@@ -227,28 +221,12 @@ namespace mt_kahypar {
       bool moved = false;
       if (move.to != kInvalidPartition) {
         if constexpr (use_delta) {
-          // REVIEW put all of this in an assert
-          if (context.refinement.fm.prevent_expensive_gain_updates
-              && !sharedData.forbidden_move_counter.empty()) {
-            for (auto e : deltaPhg.incidentEdges(move.node)) {
-              ASSERT(sharedData.forbidden_move_counter[sharedData.num_edges_up_to[e]
-                     * (context.partition.k - 1) + move.to] < 5);
-            }
-          }
-
           heaviestPartWeight = heaviestPartAndWeight(deltaPhg).second;
           fromWeight = deltaPhg.partWeight(move.from);
           toWeight = deltaPhg.partWeight(move.to);
           moved = deltaPhg.changeNodePart(move.node, move.from, move.to,
                                           context.partition.max_part_weights[move.to], delta_func);
         } else {
-          if (context.refinement.fm.prevent_expensive_gain_updates
-              && !sharedData.forbidden_move_counter.empty()) {
-            for (auto e : phg.incidentEdges(move.node)) {
-              ASSERT(sharedData.forbidden_move_counter[sharedData.num_edges_up_to[e]
-                     * (context.partition.k - 1) + move.to] < 5);
-            }
-          }
           heaviestPartWeight = heaviestPartAndWeight(phg).second;
           fromWeight = phg.partWeight(move.from);
           toWeight = phg.partWeight(move.to);
@@ -416,22 +394,21 @@ namespace mt_kahypar {
       if (next_large_move->first == m.node) {
         for (auto e : next_large_move->second) {
           size_t index = sharedData.num_edges_up_to[e];
-          sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to]++;  // REVIEW specify mem order
+          sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to].fetch_add(1, std::memory_order_acq_rel);
         }
-        next_large_move++;
+        if (++next_large_move == touched_edges_per_move.rend()) {
+	  break;
+	}
       }
     }
     touched_edges_per_move.clear();
   }
 
   template<typename FMStrategy>
-  template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
-  bool LocalizedKWayFM<FMStrategy>::moveForbidden(PHG& phg, Move& move) {   // REVIEW this PHG doesn't have to be generic
+  bool LocalizedKWayFM<FMStrategy>::moveForbidden(PartitionedHypergraph& phg, Move& move) {
     for (auto e : phg.incidentEdges(move.node)) {
       size_t edge_id = sharedData.num_edges_up_to[e];
-      // REVIEW this value may be a little small since the same to-part can cause two gain updates per local search
-      // and it can appear arbitrarily often if the from-parts cause improvements
       if (sharedData.forbidden_move_counter[edge_id * (context.partition.k - 1) + move.to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
         return true;
       }

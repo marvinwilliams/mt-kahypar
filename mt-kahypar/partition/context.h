@@ -142,7 +142,7 @@ struct FMParameters {
   bool random_assignment = false;
   bool prevent_expensive_gain_updates = false;
   size_t large_he_threshold = 1000;
-  size_t forbidden_move_theshold = 5;
+  size_t forbidden_move_theshold = 10;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);
