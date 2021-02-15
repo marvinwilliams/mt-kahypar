@@ -227,6 +227,7 @@ namespace mt_kahypar {
       bool moved = false;
       if (move.to != kInvalidPartition) {
         if constexpr (use_delta) {
+          // REVIEW put all of this in an assert
           if (context.refinement.fm.prevent_expensive_gain_updates
               && !sharedData.forbidden_move_counter.empty()) {
             for (auto e : deltaPhg.incidentEdges(move.node)) {
@@ -234,6 +235,7 @@ namespace mt_kahypar {
                      * (context.partition.k - 1) + move.to] < 5);
             }
           }
+
           heaviestPartWeight = heaviestPartAndWeight(deltaPhg).second;
           fromWeight = deltaPhg.partWeight(move.from);
           toWeight = deltaPhg.partWeight(move.to);
@@ -290,6 +292,7 @@ namespace mt_kahypar {
 
     }
 
+    // REVIEW this should be after the local rollback!
     if (context.refinement.fm.prevent_expensive_gain_updates && !touched_edges_per_move.empty()) {
       updateExpensiveMoveRevertCounter(bestImprovementIndex);
     }
@@ -400,6 +403,7 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::updateExpensiveMoveRevertCounter(size_t bestGainIndex) {
+    // REVIEW this code is hard to read!
     auto next_large_move = touched_edges_per_move.rbegin();
     auto next_move_to_revert = localMoves.rbegin();
     auto first_move_to_keep = localMoves.rend() - bestGainIndex - 1;
@@ -412,7 +416,7 @@ namespace mt_kahypar {
       if (next_large_move->first == m.node) {
         for (auto e : next_large_move->second) {
           size_t index = sharedData.num_edges_up_to[e];
-          sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to]++;
+          sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to]++;  // REVIEW specify mem order
         }
         next_large_move++;
       }
@@ -423,7 +427,7 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
-  bool LocalizedKWayFM<FMStrategy>::moveForbidden(PHG& phg, Move& move) {
+  bool LocalizedKWayFM<FMStrategy>::moveForbidden(PHG& phg, Move& move) {   // REVIEW this PHG doesn't have to be generic
     for (auto e : phg.incidentEdges(move.node)) {
       size_t edge_id = sharedData.num_edges_up_to[e];
       if (sharedData.forbidden_move_counter[edge_id * (context.partition.k - 1) + move.to].load(std::memory_order_relaxed) >= 5) {
