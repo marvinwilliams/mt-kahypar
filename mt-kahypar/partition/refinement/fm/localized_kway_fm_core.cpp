@@ -104,6 +104,14 @@ namespace mt_kahypar {
     // Vertices that already were boundary vertices, can still be considered later since they are in the task queue
     // --> actually not that bad
     for (HyperedgeID e : edgesWithGainChanges) {
+      if (context.refinement.fm.prevent_expensive_gain_updates &&
+          phg.edgeSize(e) >= context.refinement.fm.large_he_threshold) {
+        if (!touched_edges_per_move.empty() && touched_edges_per_move.back().first == move.node) {
+          touched_edges_per_move.back().second.push_back(e);
+        } else {
+          touched_edges_per_move.push_back({move.node, {e}});
+        }
+      }
       if (phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
         for (HypernodeID v : phg.pins(e)) {
           if (neighborDeduplicator[v] != deduplicationTime) {
@@ -191,17 +199,54 @@ namespace mt_kahypar {
         if (!fm_strategy.findNextMove(phg, move)) break;
       }
 
+      if (context.refinement.fm.prevent_expensive_gain_updates && !sharedData.forbidden_move_counter.empty()) {
+        bool move_forbidden = false;
+        if constexpr (use_delta) {
+          move_forbidden = moveForbidden(deltaPhg, move);
+        } else {
+          move_forbidden = moveForbidden(phg, move);
+        }
+        if (move_forbidden) {
+          /* TODO: really deactive node?
+             theoretically the node should still be able to move.
+             The problem is that we would need to reinsert it into the PQ,
+             but most likely it will get the same (forbidden) target block with a potential high gain
+             and therefore will get extracted when searching for the next move <12-02-21, @noahares> */
+          sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
+          if constexpr (use_delta) {
+            fm_strategy.updatePQs(deltaPhg);
+          } else {
+            fm_strategy.updatePQs(phg);
+          }
+          continue;
+        }
+      }
+
       sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
       MoveID move_id = std::numeric_limits<MoveID>::max();
       bool moved = false;
       if (move.to != kInvalidPartition) {
         if constexpr (use_delta) {
+          if (context.refinement.fm.prevent_expensive_gain_updates
+              && !sharedData.forbidden_move_counter.empty()) {
+            for (auto e : deltaPhg.incidentEdges(move.node)) {
+              ASSERT(sharedData.forbidden_move_counter[sharedData.num_edges_up_to[e]
+                     * (context.partition.k - 1) + move.to] < 5);
+            }
+          }
           heaviestPartWeight = heaviestPartAndWeight(deltaPhg).second;
           fromWeight = deltaPhg.partWeight(move.from);
           toWeight = deltaPhg.partWeight(move.to);
           moved = deltaPhg.changeNodePart(move.node, move.from, move.to,
                                           context.partition.max_part_weights[move.to], delta_func);
         } else {
+          if (context.refinement.fm.prevent_expensive_gain_updates
+              && !sharedData.forbidden_move_counter.empty()) {
+            for (auto e : phg.incidentEdges(move.node)) {
+              ASSERT(sharedData.forbidden_move_counter[sharedData.num_edges_up_to[e]
+                     * (context.partition.k - 1) + move.to] < 5);
+            }
+          }
           heaviestPartWeight = heaviestPartAndWeight(phg).second;
           fromWeight = phg.partWeight(move.from);
           toWeight = phg.partWeight(move.to);
@@ -243,6 +288,10 @@ namespace mt_kahypar {
         fm_strategy.updatePQs(phg);
       }
 
+    }
+
+    if (context.refinement.fm.prevent_expensive_gain_updates && !touched_edges_per_move.empty()) {
+      updateExpensiveMoveRevertCounter(bestImprovementIndex);
     }
 
     if constexpr (use_delta) {
@@ -347,6 +396,41 @@ namespace mt_kahypar {
       sharedData.moveTracker.invalidateMove(m);
       localMoves.pop_back();
     }
+  }
+
+  template<typename FMStrategy>
+  void LocalizedKWayFM<FMStrategy>::updateExpensiveMoveRevertCounter(size_t bestGainIndex) {
+    auto next_large_move = touched_edges_per_move.rbegin();
+    auto next_move_to_revert = localMoves.rbegin();
+    auto first_move_to_keep = localMoves.rend() - bestGainIndex - 1;
+    while (next_move_to_revert < first_move_to_keep
+           && next_large_move->first != next_move_to_revert->first.node) {
+      next_move_to_revert++;
+    }
+    for (auto i = next_move_to_revert; i < first_move_to_keep; ++i) {
+      Move& m = i->first;
+      if (next_large_move->first == m.node) {
+        for (auto e : next_large_move->second) {
+          size_t index = sharedData.num_edges_up_to[e];
+          sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to]++;
+        }
+        next_large_move++;
+      }
+    }
+    touched_edges_per_move.clear();
+  }
+
+  template<typename FMStrategy>
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  bool LocalizedKWayFM<FMStrategy>::moveForbidden(PHG& phg, Move& move) {
+    for (auto e : phg.incidentEdges(move.node)) {
+      size_t edge_id = sharedData.num_edges_up_to[e];
+      if (sharedData.forbidden_move_counter[edge_id * (context.partition.k - 1) + move.to].load(std::memory_order_relaxed) >= 5) {
+        return true;
+      }
+    }
+    return false;
   }
 
   template<typename FMStrategy>

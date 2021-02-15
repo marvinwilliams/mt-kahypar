@@ -47,6 +47,9 @@ namespace mt_kahypar {
     HighResClockTimepoint fm_start = std::chrono::high_resolution_clock::now();
     utils::Timer& timer = utils::Timer::instance();
 
+    if (context.refinement.fm.prevent_expensive_gain_updates) {
+      sharedData.constructLargeEdgeIDMapping(phg, context);
+    }
     for (size_t round = 0; round < context.refinement.fm.multitry_rounds; ++round) { // global multi try rounds
       for (PartitionID i = 0; i < sharedData.numParts; ++i) {
         initialPartWeights[i] = phg.partWeight(i);
@@ -56,7 +59,7 @@ namespace mt_kahypar {
       roundInitialization(phg, refinement_nodes);
       timer.stop_timer("collect_border_nodes");
 
-      size_t num_border_nodes = sharedData.refinementNodes.unsafe_size();
+      size_t num_border_nodes = context.refinement.fm.random_assignment ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
       if (num_border_nodes == 0) {
         break;
       }
@@ -163,6 +166,9 @@ namespace mt_kahypar {
         mq.unsafe_clear();
       }
     }
+    if (context.refinement.fm.prevent_expensive_gain_updates) {
+      sharedData.forbidden_move_counter.assign(sharedData.num_large_he * (context.partition.k - 1), CAtomic<size_t>(0));
+    }
 
     if ( refinement_nodes.empty() ) {
       if (context.refinement.fm.random_assignment) {
@@ -200,7 +206,8 @@ namespace mt_kahypar {
 
     // requesting new searches activates all nodes by raising the deactivated node marker
     // also clears the array tracking search IDs in case of overflow
-    sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
+    size_t num_border_nodes = context.refinement.fm.random_assignment ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
+    sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(num_border_nodes));
   }
 
   template<typename FMStrategy>
@@ -214,7 +221,9 @@ namespace mt_kahypar {
             tl_border_nodes.push_back(u);
           }
         }
-        sharedData.shared_refinement_nodes.append(tl_border_nodes);
+        if (!tl_border_nodes.empty()) {
+          sharedData.shared_refinement_nodes.append(tl_border_nodes);
+        }
       });
 
       sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
