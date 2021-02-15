@@ -121,6 +121,7 @@ namespace mt_kahypar {
       out << "    Random Assignment:                " << std::boolalpha << params.random_assignment << std::endl;
       out << "    Prevent Expensive Gain Updates:   " << std::boolalpha << params.prevent_expensive_gain_updates << std::endl;
       out << "    Large Hyperedge Threshold:        " << params.large_he_threshold << std::endl;
+      out << "    Forbidden Move Threshold:         " << params.forbidden_move_theshold << std::endl;
     }
     out << std::flush;
     return out;
