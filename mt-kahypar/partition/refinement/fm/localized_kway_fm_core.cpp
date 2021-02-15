@@ -430,6 +430,8 @@ namespace mt_kahypar {
   bool LocalizedKWayFM<FMStrategy>::moveForbidden(PHG& phg, Move& move) {   // REVIEW this PHG doesn't have to be generic
     for (auto e : phg.incidentEdges(move.node)) {
       size_t edge_id = sharedData.num_edges_up_to[e];
+      // REVIEW this value may be a little small since the same to-part can cause two gain updates per local search
+      // and it can appear arbitrarily often if the from-parts cause improvements
       if (sharedData.forbidden_move_counter[edge_id * (context.partition.k - 1) + move.to].load(std::memory_order_relaxed) >= 5) {
         return true;
       }
