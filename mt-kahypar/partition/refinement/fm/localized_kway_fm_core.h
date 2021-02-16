@@ -140,8 +140,8 @@ private:
 
   size_t _local_moves_since_sync = 0;
 
-  // REVIEW can be flattened by using the same node ID value for the sequence of touched edges. --> less allocations and no case distinction. or second vector for indexing
-  vec<std::pair<HypernodeID, vec<HyperedgeID>>> touched_edges_per_move;
+  vec<HyperedgeID> touched_edges;
+  vec<size_t> move_edges_begin;
 };
 
 }

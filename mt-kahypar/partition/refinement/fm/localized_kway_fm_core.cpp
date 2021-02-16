@@ -103,14 +103,13 @@ namespace mt_kahypar {
     // Actually: only vertices incident to edges with gain changes can become new boundary vertices.
     // Vertices that already were boundary vertices, can still be considered later since they are in the task queue
     // --> actually not that bad
+    if (context.refinement.fm.prevent_expensive_gain_updates) {
+      move_edges_begin.push_back(touched_edges.size());
+    }
     for (HyperedgeID e : edgesWithGainChanges) {
       if (context.refinement.fm.prevent_expensive_gain_updates &&
           phg.edgeSize(e) >= context.refinement.fm.large_he_threshold) {
-        if (!touched_edges_per_move.empty() && touched_edges_per_move.back().first == move.node) {
-          touched_edges_per_move.back().second.push_back(e);
-        } else {
-          touched_edges_per_move.push_back({move.node, {e}});
-        }
+          touched_edges.push_back(e);
       }
       if (phg.edgeSize(e) < context.partition.ignore_hyperedge_size_threshold) {
         for (HypernodeID v : phg.pins(e)) {
@@ -162,6 +161,7 @@ namespace mt_kahypar {
       if constexpr (use_delta) {
         fm_strategy.deltaGainUpdates(deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after,
                                      move.to, pin_count_in_to_part_after);
+        // prevent gain updates here
       } else {
         fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from, pin_count_in_from_part_after,
                                      move.to, pin_count_in_to_part_after);
@@ -220,6 +220,7 @@ namespace mt_kahypar {
       MoveID move_id = std::numeric_limits<MoveID>::max();
       bool moved = false;
       if (move.to != kInvalidPartition) {
+        /*ASSERT([&]{ return !moveForbidden(phg, move); }());*/
         if constexpr (use_delta) {
           heaviestPartWeight = heaviestPartAndWeight(deltaPhg).second;
           fromWeight = deltaPhg.partWeight(move.from);
@@ -270,16 +271,15 @@ namespace mt_kahypar {
 
     }
 
-    // REVIEW this should be after the local rollback!
-    if (context.refinement.fm.prevent_expensive_gain_updates && !touched_edges_per_move.empty()) {
-      updateExpensiveMoveRevertCounter(bestImprovementIndex);
-    }
-
     if constexpr (use_delta) {
       std::tie(bestImprovement, bestImprovementIndex) =
               applyMovesOnGlobalHypergraph(phg, bestImprovementIndex, bestImprovement);
     } else {
       revertToBestLocalPrefix(phg, bestImprovementIndex);
+    }
+
+    if (context.refinement.fm.prevent_expensive_gain_updates && !touched_edges.empty()) {
+      updateExpensiveMoveRevertCounter(bestImprovementIndex);
     }
 
     runStats.estimated_improvement = bestImprovement;
@@ -367,41 +367,35 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex) {
     runStats.local_reverts += localMoves.size() - bestGainIndex;
-    while (localMoves.size() > bestGainIndex) {
-      Move& m = sharedData.moveTracker.getMove(localMoves.back().second);
+    auto next_move_to_revert = localMoves.end();
+    auto first_move_to_keep = localMoves.begin() + bestGainIndex;
+    while (--next_move_to_revert > first_move_to_keep) {
+      Move& m = sharedData.moveTracker.getMove(next_move_to_revert->second);
       if constexpr (FMStrategy::uses_gain_cache) {
         phg.changeNodePartWithGainCacheUpdate(m.node, m.to, m.from);
       } else {
         phg.changeNodePart(m.node, m.to, m.from);
       }
       sharedData.moveTracker.invalidateMove(m);
-      localMoves.pop_back();
     }
   }
 
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::updateExpensiveMoveRevertCounter(size_t bestGainIndex) {
-    // REVIEW this code is hard to read!
-    auto next_large_move = touched_edges_per_move.rbegin();
-    auto next_move_to_revert = localMoves.rbegin();
-    auto first_move_to_keep = localMoves.rend() - bestGainIndex - 1;
-    while (next_move_to_revert < first_move_to_keep
-           && next_large_move->first != next_move_to_revert->first.node) {
-      next_move_to_revert++;
-    }
-    for (auto i = next_move_to_revert; i < first_move_to_keep; ++i) {
+    move_edges_begin.push_back(touched_edges.size());
+    auto next_expensive_move = move_edges_begin.begin() + bestGainIndex + 1;
+    auto next_move_to_revert = localMoves.begin() + bestGainIndex + 1;
+    for (auto i = next_move_to_revert; i < localMoves.end(); ++i) {
       Move& m = i->first;
-      if (next_large_move->first == m.node) {
-        for (auto e : next_large_move->second) {
-          size_t index = sharedData.num_edges_up_to[e];
-          sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to].fetch_add(1, std::memory_order_acq_rel);
-        }
-        if (++next_large_move == touched_edges_per_move.rend()) {
-	  break;
-	}
+      auto begin = touched_edges.begin() + *next_expensive_move;
+      auto end = touched_edges.begin() + *(++next_expensive_move);
+      for (auto e = begin; e < end; ++e) {
+        size_t index = sharedData.num_edges_up_to[*e];
+        sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to].fetch_add(1, std::memory_order_acq_rel);
       }
     }
-    touched_edges_per_move.clear();
+    touched_edges.clear();
+    move_edges_begin.clear();
   }
 
   template<typename FMStrategy>
