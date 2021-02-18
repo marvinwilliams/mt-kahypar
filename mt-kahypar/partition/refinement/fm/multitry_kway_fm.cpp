@@ -47,7 +47,7 @@ namespace mt_kahypar {
     HighResClockTimepoint fm_start = std::chrono::high_resolution_clock::now();
     utils::Timer& timer = utils::Timer::instance();
 
-    if (context.refinement.fm.prevent_expensive_gain_updates) {
+    if (context.refinement.fm.prevent_expensive_gain_updates || context.refinement.fm.delay_expensive_gain_updates) {
       sharedData.constructLargeEdgeIDMapping(phg, context);
     }
     for (size_t round = 0; round < context.refinement.fm.multitry_rounds; ++round) { // global multi try rounds
@@ -166,7 +166,7 @@ namespace mt_kahypar {
         mq.unsafe_clear();
       }
     }
-    if (context.refinement.fm.prevent_expensive_gain_updates) {
+    if (context.refinement.fm.prevent_expensive_gain_updates || context.refinement.fm.delay_expensive_gain_updates) {
       sharedData.forbidden_move_counter.assign(sharedData.num_large_he * (context.partition.k - 1), CAtomic<size_t>(0));
     }
 

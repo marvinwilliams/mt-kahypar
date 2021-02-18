@@ -141,6 +141,7 @@ struct FMParameters {
   size_t num_moves_before_sync = 100;
   bool random_assignment = false;
   bool prevent_expensive_gain_updates = false;
+  bool delay_expensive_gain_updates = false;
   size_t large_he_threshold = 1000;
   size_t forbidden_move_theshold = 10;
 };

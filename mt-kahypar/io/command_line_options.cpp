@@ -350,6 +350,10 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.prevent_expensive_gain_updates :
                  &context.refinement.fm.prevent_expensive_gain_updates))->value_name("<bool>")->default_value(false),
              "If true, prevent reoccuring expensive moves that were reverted.")
+            ((initial_partitioning ? "i-r-fm-delay-expensive-gain-updates" : "r-fm-delay-expensive-gain-updates"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.delay_expensive_gain_updates :
+                 &context.refinement.fm.delay_expensive_gain_updates))->value_name("<bool>")->default_value(false),
+             "If true, delay updates for reoccuring expensive moves that were reverted.")
             ((initial_partitioning ? "i-r-fm-large-he-threshold" : "r-fm-large-he-threshold"),
              po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.large_he_threshold :
                  &context.refinement.fm.large_he_threshold))->value_name("<size_t>")->default_value(1000),

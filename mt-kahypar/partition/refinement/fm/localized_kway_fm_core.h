@@ -142,6 +142,15 @@ private:
 
   vec<HyperedgeID> touched_edges;
   vec<size_t> move_edges_begin;
+
+  struct DelayedGainUpdate {
+    HypernodeID node;
+    HyperedgeID edge;
+    size_t pin_count_in_from_part_after;
+    size_t pin_count_in_to_part_after;
+  };
+
+  vec<DelayedGainUpdate> delayed_gain_updates;
 };
 
 }

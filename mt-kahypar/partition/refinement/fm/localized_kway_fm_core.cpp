@@ -103,11 +103,13 @@ namespace mt_kahypar {
     // Actually: only vertices incident to edges with gain changes can become new boundary vertices.
     // Vertices that already were boundary vertices, can still be considered later since they are in the task queue
     // --> actually not that bad
-    if (context.refinement.fm.prevent_expensive_gain_updates) {
+    if (context.refinement.fm.prevent_expensive_gain_updates
+        || context.refinement.fm.delay_expensive_gain_updates) {
       move_edges_begin.push_back(touched_edges.size());
     }
     for (HyperedgeID e : edgesWithGainChanges) {
-      if (context.refinement.fm.prevent_expensive_gain_updates &&
+      if ((context.refinement.fm.prevent_expensive_gain_updates
+           || context.refinement.fm.delay_expensive_gain_updates) &&
           phg.edgeSize(e) >= context.refinement.fm.large_he_threshold) {
           touched_edges.push_back(e);
       }
@@ -152,6 +154,13 @@ namespace mt_kahypar {
                           const HypernodeID,
                           const HypernodeID pin_count_in_from_part_after,
                           const HypernodeID pin_count_in_to_part_after) {
+      if (context.refinement.fm.delay_expensive_gain_updates && moveForbidden(phg, move)) {
+        delayed_gain_updates.push_back({move.node, he, pin_count_in_from_part_after, pin_count_in_to_part_after});
+        /* TODO: remember move + pin counts
+         * update gains if move is applied later
+         * <16-02-21, @noahares> */
+        return;
+      }
       // Gains of the pins of a hyperedge can only change in the following situations.
       if (pin_count_in_from_part_after == 0 || pin_count_in_from_part_after == 1 ||
           pin_count_in_to_part_after == 1 || pin_count_in_to_part_after == 2) {
@@ -199,21 +208,19 @@ namespace mt_kahypar {
         if (!fm_strategy.findNextMove(phg, move)) break;
       }
 
-      if (context.refinement.fm.prevent_expensive_gain_updates && !sharedData.forbidden_move_counter.empty()) {
-        if (moveForbidden(phg, move)) {
-          /* TODO: really deactive node?
-             theoretically the node should still be able to move.
-             The problem is that we would need to reinsert it into the PQ,
-             but most likely it will get the same (forbidden) target block with a potential high gain
-             and therefore will get extracted when searching for the next move <12-02-21, @noahares> */
-          sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
-          if constexpr (use_delta) {
-            fm_strategy.updatePQs(deltaPhg);
-          } else {
-            fm_strategy.updatePQs(phg);
-          }
-          continue;
+      if (context.refinement.fm.prevent_expensive_gain_updates && moveForbidden(phg, move)) {
+        /* TODO: really deactive node?
+           theoretically the node should still be able to move.
+           The problem is that we would need to reinsert it into the PQ,
+           but most likely it will get the same (forbidden) target block with a potential high gain
+           and therefore will get extracted when searching for the next move <12-02-21, @noahares> */
+        sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
+        if constexpr (use_delta) {
+          fm_strategy.updatePQs(deltaPhg);
+        } else {
+          fm_strategy.updatePQs(phg);
         }
+        continue;
       }
 
       sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
@@ -278,7 +285,8 @@ namespace mt_kahypar {
       revertToBestLocalPrefix(phg, bestImprovementIndex);
     }
 
-    if (context.refinement.fm.prevent_expensive_gain_updates && !touched_edges.empty()) {
+    if ((context.refinement.fm.prevent_expensive_gain_updates || context.refinement.fm.delay_expensive_gain_updates)
+        && !touched_edges.empty()) {
       updateExpensiveMoveRevertCounter(bestImprovementIndex);
     }
 
@@ -378,6 +386,20 @@ namespace mt_kahypar {
       }
       sharedData.moveTracker.invalidateMove(m);
     }
+    if (context.refinement.fm.delay_expensive_gain_updates && !delayed_gain_updates.empty()) {
+      auto next_gain_update_to_apply = delayed_gain_updates.begin();
+      for (auto i = localMoves.begin(); i <= first_move_to_keep; ++i) {
+        Move &m = i->first;
+        if (next_gain_update_to_apply->node == m.node) {
+          auto &d = next_gain_update_to_apply;
+          phg.gainCacheUpdate(d->edge, phg.edgeWeight(d->edge), m.from, d->pin_count_in_from_part_after, m.to, d->pin_count_in_to_part_after);
+          if (++next_gain_update_to_apply == delayed_gain_updates.end()) {
+            break;
+          }
+        }
+      }
+      delayed_gain_updates.clear();
+    }
   }
 
   template<typename FMStrategy>
@@ -401,6 +423,9 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   bool LocalizedKWayFM<FMStrategy>::moveForbidden(PartitionedHypergraph& phg, Move& move) {
+    if (sharedData.num_large_he == 0) {
+      return false;
+    }
     for (auto e : phg.incidentEdges(move.node)) {
       size_t edge_id = sharedData.num_edges_up_to[e];
       if (sharedData.forbidden_move_counter[edge_id * (context.partition.k - 1) + move.to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
