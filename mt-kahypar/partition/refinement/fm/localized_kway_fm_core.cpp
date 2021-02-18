@@ -154,16 +154,13 @@ namespace mt_kahypar {
                           const HypernodeID,
                           const HypernodeID pin_count_in_from_part_after,
                           const HypernodeID pin_count_in_to_part_after) {
-      if (context.refinement.fm.delay_expensive_gain_updates && moveForbidden(phg, move)) {
-        delayed_gain_updates.push_back({move.node, he, pin_count_in_from_part_after, pin_count_in_to_part_after});
-        /* TODO: remember move + pin counts
-         * update gains if move is applied later
-         * <16-02-21, @noahares> */
-        return;
-      }
       // Gains of the pins of a hyperedge can only change in the following situations.
       if (pin_count_in_from_part_after == 0 || pin_count_in_from_part_after == 1 ||
           pin_count_in_to_part_after == 1 || pin_count_in_to_part_after == 2) {
+        if (context.refinement.fm.delay_expensive_gain_updates && moveForbidden(phg, move)) {
+          delayed_gain_updates.push_back({move.node, he, pin_count_in_from_part_after, pin_count_in_to_part_after});
+          return;
+        }
         edgesWithGainChanges.push_back(he);
       }
 
@@ -388,14 +385,14 @@ namespace mt_kahypar {
     }
     if (context.refinement.fm.delay_expensive_gain_updates && !delayed_gain_updates.empty()) {
       auto next_gain_update_to_apply = delayed_gain_updates.begin();
-      for (auto i = localMoves.begin(); i <= first_move_to_keep; ++i) {
+      for (auto i = localMoves.begin(); i <= first_move_to_keep
+           && next_gain_update_to_apply != delayed_gain_updates.end(); ++i) {
         Move &m = i->first;
-        if (next_gain_update_to_apply->node == m.node) {
+        while (next_gain_update_to_apply != delayed_gain_updates.end()
+               && next_gain_update_to_apply->node == m.node) {
           auto &d = next_gain_update_to_apply;
           phg.gainCacheUpdate(d->edge, phg.edgeWeight(d->edge), m.from, d->pin_count_in_from_part_after, m.to, d->pin_count_in_to_part_after);
-          if (++next_gain_update_to_apply == delayed_gain_updates.end()) {
-            break;
-          }
+          ++next_gain_update_to_apply;
         }
       }
       delayed_gain_updates.clear();
