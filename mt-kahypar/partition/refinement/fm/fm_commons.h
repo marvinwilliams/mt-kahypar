@@ -247,7 +247,7 @@ struct FMSharedData {
 
     parallel::TBBPrefixSum<HyperedgeID, vec> scan_graph_edges(num_edges_up_to);
     tbb::parallel_scan(tbb::blocked_range<size_t>(0, num_hyper_edges + 1), scan_graph_edges);
-    num_large_he = scan_graph_edges.total_sum();
+    num_large_he = scan_graph_edges.total_sum() + 1;
   }
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const {

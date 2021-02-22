@@ -373,8 +373,8 @@ namespace mt_kahypar {
   void LocalizedKWayFM<FMStrategy>::revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex) {
     runStats.local_reverts += localMoves.size() - bestGainIndex;
     auto next_move_to_revert = localMoves.end();
-    auto first_move_to_keep = localMoves.begin() + bestGainIndex;
-    while (--next_move_to_revert > first_move_to_keep) {
+    auto first_move_to_keep = localMoves.begin() + bestGainIndex - 1;
+    while (--next_move_to_revert != first_move_to_keep) {
       Move& m = sharedData.moveTracker.getMove(next_move_to_revert->second);
       if constexpr (FMStrategy::uses_gain_cache) {
         phg.changeNodePartWithGainCacheUpdate(m.node, m.to, m.from);
@@ -402,15 +402,18 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::updateExpensiveMoveRevertCounter(size_t bestGainIndex) {
     move_edges_begin.push_back(touched_edges.size());
-    auto next_expensive_move = move_edges_begin.begin() + bestGainIndex + 1;
-    auto next_move_to_revert = localMoves.begin() + bestGainIndex + 1;
+    auto next_expensive_move = move_edges_begin.begin() + bestGainIndex;
+    auto next_move_to_revert = localMoves.begin() + bestGainIndex;
     for (auto i = next_move_to_revert; i < localMoves.end(); ++i) {
       Move& m = i->first;
       auto begin = touched_edges.begin() + *next_expensive_move;
       auto end = touched_edges.begin() + *(++next_expensive_move);
+      ASSERT(begin <= touched_edges.end() && end <= touched_edges.end());
       for (auto e = begin; e < end; ++e) {
+        ASSERT(*e < sharedData.num_edges_up_to.size());
         size_t index = sharedData.num_edges_up_to[*e];
-        sharedData.forbidden_move_counter[index * (context.partition.k - 1) + m.to].fetch_add(1, std::memory_order_acq_rel);
+        ASSERT(index * context.partition.k + m.to < sharedData.forbidden_move_counter.size());
+        sharedData.forbidden_move_counter[index * context.partition.k + m.to].fetch_add(1, std::memory_order_acq_rel);
       }
     }
     touched_edges.clear();
@@ -420,12 +423,14 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   bool LocalizedKWayFM<FMStrategy>::moveForbidden(PartitionedHypergraph& phg, Move& move) {
-    if (sharedData.num_large_he == 0) {
+    if (sharedData.num_large_he == 0 || move.to == kInvalidPartition) {
       return false;
     }
     for (auto e : phg.incidentEdges(move.node)) {
+      ASSERT(e < sharedData.num_edges_up_to.size());
       size_t edge_id = sharedData.num_edges_up_to[e];
-      if (sharedData.forbidden_move_counter[edge_id * (context.partition.k - 1) + move.to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
+      ASSERT(edge_id * context.partition.k + move.to < sharedData.forbidden_move_counter.size());
+      if (sharedData.forbidden_move_counter[edge_id * context.partition.k + move.to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
         return true;
       }
     }
