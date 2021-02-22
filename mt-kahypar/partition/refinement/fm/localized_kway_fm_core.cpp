@@ -412,6 +412,7 @@ namespace mt_kahypar {
       for (auto e = begin; e < end; ++e) {
         ASSERT(*e < sharedData.num_edges_up_to.size());
         size_t index = sharedData.num_edges_up_to[*e];
+        ASSERT(index < sharedData.num_large_he);
         ASSERT(index * context.partition.k + m.to < sharedData.forbidden_move_counter.size());
         sharedData.forbidden_move_counter[index * context.partition.k + m.to].fetch_add(1, std::memory_order_acq_rel);
       }
@@ -428,10 +429,14 @@ namespace mt_kahypar {
     }
     for (auto e : phg.incidentEdges(move.node)) {
       ASSERT(e < sharedData.num_edges_up_to.size());
-      size_t edge_id = sharedData.num_edges_up_to[e];
-      ASSERT(edge_id * context.partition.k + move.to < sharedData.forbidden_move_counter.size());
-      if (sharedData.forbidden_move_counter[edge_id * context.partition.k + move.to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
-        return true;
+      if (sharedData.num_edges_up_to[e + 1] - sharedData.num_edges_up_to[e] == 1) {
+        ASSERT(phg.edgeSize(e) >= context.refinement.fm.large_he_threshold);
+        size_t edge_id = sharedData.num_edges_up_to[e];
+        ASSERT(edge_id < sharedData.num_large_he);
+        ASSERT(edge_id * context.partition.k + move.to < sharedData.forbidden_move_counter.size());
+        if (sharedData.forbidden_move_counter[edge_id * context.partition.k + move.to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
+          return true;
+        }
       }
     }
     return false;
