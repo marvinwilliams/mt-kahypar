@@ -25,6 +25,9 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   bool LocalizedKWayFM<FMStrategy>::findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds) {
     localMoves.clear();
+    touched_edges.clear();
+    move_edges_begin.clear();
+    delayed_gain_updates.clear();
     // persistent searchIDs during one round
     if (thisSearch == 0) {
       thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
@@ -372,18 +375,22 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void LocalizedKWayFM<FMStrategy>::revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex) {
     runStats.local_reverts += localMoves.size() - bestGainIndex;
-    auto next_move_to_revert = localMoves.end();
-    auto first_move_to_keep = localMoves.begin() + bestGainIndex - 1;
-    while (--next_move_to_revert != first_move_to_keep) {
-      Move& m = sharedData.moveTracker.getMove(next_move_to_revert->second);
+    size_t next_revert = localMoves.size();
+    while (next_revert > bestGainIndex) {
+      Move& m = sharedData.moveTracker.getMove(localMoves[next_revert - 1].second);
       if constexpr (FMStrategy::uses_gain_cache) {
         phg.changeNodePartWithGainCacheUpdate(m.node, m.to, m.from);
       } else {
         phg.changeNodePart(m.node, m.to, m.from);
       }
       sharedData.moveTracker.invalidateMove(m);
+      --next_revert;
     }
     if (context.refinement.fm.delay_expensive_gain_updates && !delayed_gain_updates.empty()) {
+      if (bestGainIndex == 0) {
+        return;
+      }
+      auto first_move_to_keep = localMoves.begin() + bestGainIndex - 1;
       auto next_gain_update_to_apply = delayed_gain_updates.begin();
       for (auto i = localMoves.begin(); i <= first_move_to_keep
            && next_gain_update_to_apply != delayed_gain_updates.end(); ++i) {
