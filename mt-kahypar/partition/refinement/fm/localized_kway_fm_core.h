@@ -90,6 +90,9 @@ private:
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   bool moveForbidden(PartitionedHypergraph& phg, Move& move);
 
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  bool moveForbidden(HyperedgeID he, PartitionID to);
+
   void updateNeighborDeduplicator() {
     if (++deduplicationTime == 0) {
       neighborDeduplicator.assign(neighborDeduplicator.size(), 0);

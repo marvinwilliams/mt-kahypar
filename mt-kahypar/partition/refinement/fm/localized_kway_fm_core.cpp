@@ -160,7 +160,7 @@ namespace mt_kahypar {
       // Gains of the pins of a hyperedge can only change in the following situations.
       if (pin_count_in_from_part_after == 0 || pin_count_in_from_part_after == 1 ||
           pin_count_in_to_part_after == 1 || pin_count_in_to_part_after == 2) {
-        if (context.refinement.fm.delay_expensive_gain_updates && moveForbidden(phg, move)) {
+        if (context.refinement.fm.delay_expensive_gain_updates && moveForbidden(he, move.to)) {
           delayed_gain_updates.push_back({move.node, he, pin_count_in_from_part_after, pin_count_in_to_part_after});
           return;
         }
@@ -444,6 +444,23 @@ namespace mt_kahypar {
         if (sharedData.forbidden_move_counter[edge_id * context.partition.k + move.to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
           return true;
         }
+      }
+    }
+    return false;
+  }
+
+  template<typename FMStrategy>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  bool LocalizedKWayFM<FMStrategy>::moveForbidden(HyperedgeID he, PartitionID to) {
+    if (sharedData.num_large_he == 0 || to == kInvalidPartition) {
+      return false;
+    }
+    if (sharedData.num_edges_up_to[he + 1] - sharedData.num_edges_up_to[he] == 1) {
+      size_t edge_id = sharedData.num_edges_up_to[he];
+      ASSERT(edge_id < sharedData.num_large_he);
+      ASSERT(edge_id * context.partition.k + to < sharedData.forbidden_move_counter.size());
+      if (sharedData.forbidden_move_counter[edge_id * context.partition.k + to].load(std::memory_order_relaxed) >= context.refinement.fm.forbidden_move_theshold) {
+        return true;
       }
     }
     return false;
