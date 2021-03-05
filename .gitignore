@@ -40,3 +40,4 @@ example_2
 config/nlevel_interleaved_preset.ini
 .clangd/
 compile_commands.json
+.cache/
