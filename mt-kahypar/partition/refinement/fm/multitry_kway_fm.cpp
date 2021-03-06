@@ -71,18 +71,24 @@ namespace mt_kahypar {
       timer.start_timer("find_moves", "Find Moves");
       sharedData.finishedTasks.store(0, std::memory_order_relaxed);
 
+/*
       auto task = [&](const size_t task_id) {
         auto& fm = ets_fm.local();
         while(sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit
-              && fm.findMoves(phg, task_id, num_seeds)) { /* keep running*/ }
+              && fm.findMoves(phg, task_id, num_seeds)) { }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
-      size_t num_tasks = std::min(num_border_nodes, context.shared_memory.num_threads);
+*/
+      size_t num_tasks = std::min(num_border_nodes, context.shared_memory.num_threads
+                                  + context.refinement.fm.num_additional_searches);
       ASSERT(static_cast<int>(num_tasks) <= TBBNumaArena::instance().total_number_of_threads());
+      scheduler.performLocalSearches(phg, num_seeds, num_tasks);
+/*
       for (size_t i = 0; i < num_tasks; ++i) {
         tg.run(std::bind(task, i));
       }
       tg.wait();
+*/
       timer.stop_timer("find_moves");
 
       timer.start_timer("rollback", "Rollback to Best Solution");

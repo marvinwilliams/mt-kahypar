@@ -25,6 +25,7 @@
 
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/fm/localized_kway_fm_core.h"
+#include "mt-kahypar/partition/refinement/fm/local_search_scheduler.h"
 #include "mt-kahypar/partition/refinement/fm/global_rollback.h"
 
 
@@ -48,7 +49,8 @@ public:
     taskGroupID(taskGroupID),
     sharedData(hypergraph.initialNumNodes(), context),
     globalRollback(hypergraph, context),
-    ets_fm([&] { return constructLocalizedKWayFMSearch(); })
+    ets_fm([&] { return constructLocalizedKWayFMSearch(); }),
+    scheduler(c, hypergraph.initialNumNodes(), sharedData)
   {
     if (context.refinement.fm.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
@@ -70,6 +72,12 @@ public:
     return LocalizedKWayFM<FMStrategy>(context, initial_num_nodes, sharedData);
   }
 
+/*
+  LocalSearchScheduler<FMStrategy> constructLocalSearchScheduler() {
+    return LocalSearchScheduler<FMStrategy>(context, initial_num_nodes, sharedData);
+  }
+*/
+
   static double improvementFraction(Gain gain, HyperedgeWeight old_km1) {
     if (old_km1 == 0)
       return 0;
@@ -87,6 +95,7 @@ public:
   FMSharedData sharedData;
   GlobalRollback globalRollback;
   tbb::enumerable_thread_specific<LocalizedKWayFM<FMStrategy>> ets_fm;
+  LocalSearchScheduler<FMStrategy> scheduler;
 };
 
 } // namespace mt_kahypar

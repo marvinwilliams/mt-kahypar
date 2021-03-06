@@ -24,12 +24,13 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/localized_kway_fm_core.h"
-#include <mt-kahypar/datastructures/priority_queue.h>
+#include <queue>
 namespace mt_kahypar {
 
   template<typename FMStrategy>
   struct SearchData {
-    SearchData(Context& context, HypernodeID numNodes, FMSharedData& sharedData) :
+    // each thread gets a pointer to the data of its current search
+    SearchData(const Context& context, const HypernodeID numNodes, const FMSharedData& sharedData) :
       thisSearch(0),
       fm_strategy(context, numNodes, sharedData, runStats)
     { }
@@ -42,29 +43,31 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   class LocalSearchScheduler {
   public:
-    explicit LocalSearchScheduler(const Context& context, HypernodeID numNodes, FMSharedData& sharedData) :
-      ets_fm([&] { return constructLocalizedKWayFMSearch(context, numNodes, sharedData); }) {
-        search_data.assign(context.shared_memory.num_threads + context.refinement.fm.num_additional_searches,
-                           SearchData<FMStrategy>(context, numNodes, sharedData));
-      }
+    explicit LocalSearchScheduler(const Context& context, const HypernodeID numNodes, const FMSharedData& sharedData) :
+      numNodes(numNodes),
+      context(context),
+      sharedData(sharedData),
+      ets_fm([&] { return constructLocalizedKWayFMSearch(); }) { }
 
-    void performLocalSearches(PartitionedHypergraph& phg, size_t numSeeds);
-
-    void initSearches();
+    void performLocalSearches(PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches);
 
   private:
 
-    LocalizedKWayFM<FMStrategy> constructLocalizedKWayFMSearch(
-      Context& context, HypernodeID numNodes, FMSharedData& sharedData) {
-      return LocalizedKWayFM<FMStrategy>(context, numNodes, sharedData);
+    LocalizedKWayFM<FMStrategy> constructLocalizedKWayFMSearch() {
+      return LocalizedKWayFM<FMStrategy>(context,numNodes, sharedData);
     }
+
+    void initSearches(PartitionedHypergraph& phg, size_t numSeeds);
 
     bool scheduleSearch();
 
   private:
-    mt_kahypar::ds::Heap<Gain, size_t> local_searches;
-
+    const HypernodeID numNodes;
+    const Context& context;
+    const FMSharedData& sharedData;
     tbb::enumerable_thread_specific<LocalizedKWayFM<FMStrategy>> ets_fm;
+
+    std::priority_queue<std::pair<Gain, size_t>> local_searches;
 
     vec<SearchData<FMStrategy>> search_data;
   };
