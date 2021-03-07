@@ -24,10 +24,17 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void LocalSearchScheduler<FMStrategy>::performLocalSearches(
     PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches) {
-      search_data.assign(numSearches, SearchData<FMStrategy>(context, numNodes, sharedData));
+      search_data = vec<SearchData<FMStrategy>>(numSearches, {context, numNodes, sharedData});
       initSearches(phg, numSeeds);
   }
 
+  template<typename FMStrategy>
+  void LocalSearchScheduler<FMStrategy>::initSearches(PartitionedHypergraph& phg, size_t numSeeds) {
+    auto task = [&](const size_t task_id) {
+      auto& fm = ets_fm.local();
+      fm.setup(phg, task_id, numSeeds, search_data[task_id]);
+    };
+  }
 }
 
 // instantiate templates

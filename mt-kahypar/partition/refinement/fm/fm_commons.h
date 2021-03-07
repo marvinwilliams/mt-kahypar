@@ -272,5 +272,18 @@ struct FMStats {
   }
 };
 
+template<typename FMStrategy>
+struct SearchData {
+  // each thread gets a pointer to the data of its current search
+  SearchData(const Context& context, const HypernodeID numNodes, FMSharedData& sharedData) :
+    thisSearch(0),
+    fm_strategy(context, numNodes, sharedData, runStats)
+  { }
+
+  SearchID thisSearch;
+  vec<std::pair<Move, MoveID>> localMoves;
+  FMStrategy fm_strategy; // TODO: share this or sperate per search? For now each search gets one
+  FMStats runStats;
+};
 
 }
