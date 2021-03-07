@@ -78,6 +78,17 @@ namespace mt_kahypar {
       return true;
     }
 
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    Gain getNextMoveGain(const PHG& phg) {
+      if (pq.empty()) {
+        return kInvalidGain;
+      }
+      const HypernodeID u = pq.top();
+      auto [to, gain] = gc.computeBestTargetBlock(phg, u, context.partition.max_part_weights);
+      return gain;
+    }
+
     void clearPQs(const size_t /* bestImprovementIndex */ ) {
       // release all nodes that were not moved
       const bool release = sharedData.release_nodes

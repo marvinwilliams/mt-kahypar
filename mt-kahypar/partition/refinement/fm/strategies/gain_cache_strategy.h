@@ -126,6 +126,13 @@ public:
     }
   }
 
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  Gain getNextMoveGain(PHG&) {
+    const PartitionID from = blockPQ.top();
+    return vertexPQs[from].topKey();
+  }
+
   void clearPQs(const size_t /* bestImprovementIndex */ ) {
     // release all nodes that were not moved
     const bool release = sharedData.release_nodes

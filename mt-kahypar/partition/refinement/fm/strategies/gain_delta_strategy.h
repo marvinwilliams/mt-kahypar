@@ -90,6 +90,16 @@ namespace mt_kahypar {
       return true;
     }
 
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    Gain getNextMoveGain(PHG& phg) {
+      const PartitionID target = findBestTargetBlock(phg);
+      if (target == kInvalidPartition) {
+        return kInvalidGain;
+      }
+      return vertexPQs[target].topKey();
+    }
+
     void clearPQs(const size_t /* bestImprovementIndex */ ) {
       // release all nodes that were not moved
       const bool release = sharedData.release_nodes
