@@ -37,11 +37,10 @@ class SchedulerLocalizedKWayFM {
 public:
   explicit SchedulerLocalizedKWayFM(const Context& context, HypernodeID numNodes, FMSharedData& sharedData) :
           context(context),
-          thisSearch(0),
           k(context.partition.k),
           deltaPhg(context.partition.k),
           neighborDeduplicator(numNodes, 0),
-          fm_strategy(context, numNodes, sharedData, runStats),
+          fm_strategy(context, numNodes, sharedData, {}),
           sharedData(sharedData)
           { }
 
@@ -50,6 +49,24 @@ public:
   bool findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds);
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const ;
+
+  void checkDeltaMemory() {
+    if (deltaPhg.combinedMemoryConsumption() > sharedData.deltaMemoryLimitPerThread) {
+      sharedData.deltaExceededMemoryConstraints = true;
+    }
+  }
+
+  /* TODO: make bool for return status aborted or can be resumed <07-03-21, @noahares> */
+  std::optional<Gain> resumeLocalSearch(PartitionedHypergraph& phg, SearchData<FMStrategy>& search_data) {
+    bool global_moves = context.refinement.fm.perform_moves_global || sharedData.deltaExceededMemoryConstraints;
+    if (global_moves) {
+      return internalFindMoves<false>(phg, search_data);
+    } else {
+      auto result = internalFindMoves<true>(phg, search_data);
+      checkDeltaMemory();
+      return result;
+    }
+  }
 
   FMStats stats;
 
@@ -60,9 +77,9 @@ private:
   // ! The best prefix of moves is applied to the global partitioned hypergraph after the search finishes.
   //void internalFindMovesOnDeltaHypergraph(PartitionedHypergraph& phg, FMSharedData& sharedData);
 
-
   template<bool use_delta>
-  void internalFindMoves(PartitionedHypergraph& phg);
+  std::optional<Gain> internalFindMoves(PartitionedHypergraph& phg, SearchData<FMStrategy>& search_data);
+
 
   template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
@@ -79,19 +96,14 @@ private:
   // ! directly on the global partitioned hypergraph.
   void revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex);
 
+  void applyMovesOntoDeltaPhg();
+
  private:
 
   const Context& context;
 
-  // ! Unique search id associated with the current local search
-  SearchID thisSearch;
-
   // ! Number of blocks
   PartitionID k;
-
-  // ! Local data members required for one localized search run
-  //FMLocalData localData;
-  vec< std::pair<Move, MoveID> > localMoves;
 
   // ! Wrapper around the global partitioned hypergraph, that allows
   // ! to perform moves non-visible for other local searches
@@ -104,11 +116,11 @@ private:
   // ! Stores hyperedges whose pins's gains may have changed after vertex move
   vec<HyperedgeID> edgesWithGainChanges;
 
-  FMStats runStats;
+  FMSharedData& sharedData;
 
   FMStrategy fm_strategy;
 
-  FMSharedData& sharedData;
+  SearchData<FMStrategy>* searchData;
 
 };
 

@@ -143,6 +143,7 @@ struct FMParameters {
   mutable bool obey_minimal_parallelism = false;
   bool release_nodes = true;
   size_t num_additional_searches = 8;
+  size_t max_moves_before_reschedule = 42;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);

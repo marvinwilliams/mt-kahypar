@@ -23,67 +23,28 @@
 namespace mt_kahypar {
 
   template<typename FMStrategy>
-  bool SchedulerLocalizedKWayFM<FMStrategy>::setup(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds, SearchData<FMStrategy>& searchData) {
-    searchData.localMoves.clear();
-    if (searchData.thisSearch == 0) {
-      searchData.thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
+  bool SchedulerLocalizedKWayFM<FMStrategy>::setup(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds, SearchData<FMStrategy>& _searchData) {
+    searchData = &_searchData;
+    searchData->localMoves.clear();
+    if (searchData->thisSearch == 0) {
+      searchData->thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
     }
-    ASSERT(thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
+    ASSERT(searchData->thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
 
     HypernodeID seedNode;
-    while (searchData.runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
+    while (searchData->runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
       SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
-      if (sharedData.nodeTracker.tryAcquireNode(seedNode, searchData.thisSearch)) {
-        searchData.fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+      if (sharedData.nodeTracker.tryAcquireNode(seedNode, searchData->thisSearch)) {
+        searchData->fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
       }
     }
 
-    if (searchData.runStats.pushes > 0) {
+    if (searchData->runStats.pushes > 0) {
       if (sharedData.deltaExceededMemoryConstraints) {
         deltaPhg.dropMemory();
       }
 
-      if (context.refinement.fm.perform_moves_global || sharedData.deltaExceededMemoryConstraints) {
         return true;
-      } else {
-        deltaPhg.clear();
-        deltaPhg.setPartitionedHypergraph(&phg);
-        return true;
-      }
-    } else {
-      return false;
-    }
-  }
-
-  template<typename FMStrategy>
-  bool SchedulerLocalizedKWayFM<FMStrategy>::findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds) {
-    localMoves.clear();
-    thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
-
-    HypernodeID seedNode;
-    while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
-      SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
-      if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
-        fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
-      }
-    }
-
-    if (runStats.pushes > 0) {
-      if (sharedData.deltaExceededMemoryConstraints) {
-        deltaPhg.dropMemory();
-      }
-
-      if (context.refinement.fm.perform_moves_global || sharedData.deltaExceededMemoryConstraints) {
-        internalFindMoves<false>(phg);
-      } else {
-        deltaPhg.clear();
-        deltaPhg.setPartitionedHypergraph(&phg);
-        internalFindMoves<true>(phg);
-        if (deltaPhg.combinedMemoryConsumption() > sharedData.deltaMemoryLimitPerThread) {
-          sharedData.deltaExceededMemoryConstraints = true;
-        }
-      }
-      return true;
     } else {
       return false;
     }
@@ -116,10 +77,10 @@ namespace mt_kahypar {
         for (HypernodeID v : phg.pins(e)) {
           if (neighborDeduplicator[v] != deduplicationTime) {
             SearchID searchOfV = sharedData.nodeTracker.searchOfNode[v].load(std::memory_order_acq_rel);
-            if (searchOfV == thisSearch) {
-              fm_strategy.updateGain(phg, v, move);
-            } else if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
-              fm_strategy.insertIntoPQ(phg, v, searchOfV);
+            if (searchOfV == searchData->thisSearch) {
+              searchData->fm_strategy.updateGain(phg, v, move);
+            } else if (sharedData.nodeTracker.tryAcquireNode(v, searchData->thisSearch)) {
+              searchData->fm_strategy.insertIntoPQ(phg, v, searchOfV);
             }
             neighborDeduplicator[v] = deduplicationTime;
           }
@@ -137,9 +98,15 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   template<bool use_delta>
-  void SchedulerLocalizedKWayFM<FMStrategy>::internalFindMoves(PartitionedHypergraph& phg) {
+  std::optional<Gain> SchedulerLocalizedKWayFM<FMStrategy>::internalFindMoves(PartitionedHypergraph& phg, SearchData<FMStrategy>& _searchData) {
     StopRule stopRule(phg.initialNumNodes());
     Move move;
+    searchData = &_searchData;
+    if constexpr (use_delta) {
+      deltaPhg.clear();
+      deltaPhg.setPartitionedHypergraph(&phg);
+      applyMovesOntoDeltaPhg();
+    }
 
     auto delta_func = [&](const HyperedgeID he,
                           const HyperedgeWeight edge_weight,
@@ -153,10 +120,10 @@ namespace mt_kahypar {
       }
 
       if constexpr (use_delta) {
-        fm_strategy.deltaGainUpdates(deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after,
+        searchData->fm_strategy.deltaGainUpdates(deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after,
                                      move.to, pin_count_in_to_part_after);
       } else {
-        fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from, pin_count_in_from_part_after,
+        searchData->fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from, pin_count_in_from_part_after,
                                      move.to, pin_count_in_to_part_after);
       }
 
@@ -167,23 +134,25 @@ namespace mt_kahypar {
     // and do the local rollback outside this function
 
 
-    size_t bestImprovementIndex = 0;
-    Gain estimatedImprovement = 0;
-    Gain bestImprovement = 0;
-
     HypernodeWeight heaviestPartWeight = 0;
     HypernodeWeight fromWeight = 0, toWeight = 0;
 
     while (!stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
 
-      if constexpr (use_delta) {
-        if (!fm_strategy.findNextMove(deltaPhg, move)) break;
-      } else {
-        if (!fm_strategy.findNextMove(phg, move)) break;
+      Gain next_gain = searchData->fm_strategy.getNextMoveGain(phg);
+      if ((searchData->negativeGain && next_gain < 0) || /* need something else here */ searchData->localMoves.size() > context.refinement.fm.max_moves_before_reschedule) {
+        /* TODO: apply moves before rescheduling? <08-03-21, @noahares> */
+        return next_gain;
       }
 
-      sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
+      if constexpr (use_delta) {
+        if (!searchData->fm_strategy.findNextMove(deltaPhg, move)) break;
+      } else {
+        if (!searchData->fm_strategy.findNextMove(phg, move)) break;
+      }
+
+      sharedData.nodeTracker.deactivateNode(move.node, searchData->thisSearch);
       MoveID move_id = std::numeric_limits<MoveID>::max();
       bool moved = false;
       if (move.to != kInvalidPartition) {
@@ -204,24 +173,24 @@ namespace mt_kahypar {
       }
 
       if (moved) {
-        runStats.moves++;
-        estimatedImprovement += move.gain;
-        localMoves.emplace_back(move, move_id);
+        searchData->runStats.moves++;
+        searchData->estimatedImprovement += move.gain;
+        searchData->localMoves.emplace_back(move, move_id);
         stopRule.update(move.gain);
-        const bool improved_km1 = estimatedImprovement > bestImprovement;
-        const bool improved_balance_less_equal_km1 = estimatedImprovement >= bestImprovement
+        const bool improved_km1 = searchData->estimatedImprovement > searchData->bestImprovement;
+        const bool improved_balance_less_equal_km1 = searchData->estimatedImprovement >= searchData->bestImprovement
                                                      && fromWeight == heaviestPartWeight
                                                      && toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
 
         if (improved_km1 || improved_balance_less_equal_km1) {
           stopRule.reset();
-          bestImprovement = estimatedImprovement;
-          bestImprovementIndex = localMoves.size();
+          searchData->bestImprovement = searchData->estimatedImprovement;
+          searchData->bestImprovementIndex = searchData->localMoves.size();
 
           if constexpr (use_delta) {
-            applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, true /* apply all moves */);
-            bestImprovementIndex = 0;
-            localMoves.clear();
+            applyBestLocalPrefixToSharedPartition(phg, searchData->bestImprovementIndex, searchData->bestImprovement, true /* apply all moves */);
+            searchData->bestImprovementIndex = 0;
+            searchData->localMoves.clear();
             deltaPhg.clear();   // clear hashtables, save memory :)
           }
         }
@@ -236,15 +205,16 @@ namespace mt_kahypar {
     }
 
     if constexpr (use_delta) {
-      std::tie(bestImprovement, bestImprovementIndex) =
-              applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, false);
+      std::tie(searchData->bestImprovement, searchData->bestImprovementIndex) =
+              applyBestLocalPrefixToSharedPartition(phg, searchData->bestImprovementIndex, searchData->bestImprovement, false);
     } else {
-      revertToBestLocalPrefix(phg, bestImprovementIndex);
+      revertToBestLocalPrefix(phg, searchData->bestImprovementIndex);
     }
 
-    runStats.estimated_improvement = bestImprovement;
-    fm_strategy.clearPQs(bestImprovementIndex);
-    runStats.merge(stats);
+    searchData->runStats.estimated_improvement = searchData->bestImprovement;
+    searchData->fm_strategy.clearPQs(searchData->bestImprovementIndex);
+    searchData->runStats.merge(stats);
+    return {};
   }
 
 
@@ -271,9 +241,9 @@ namespace mt_kahypar {
     Gain best_improvement_from_attributed_gains = 0;
     size_t best_index_from_attributed_gains = 0;
     for (size_t i = 0; i < best_index_locally_observed; ++i) {
-      assert(i < localMoves.size());
-      Move& local_move = localMoves[i].first;
-      MoveID& move_id = localMoves[i].second;
+      assert(i < searchData->localMoves.size());
+      Move& local_move = searchData->localMoves[i].first;
+      MoveID& move_id = searchData->localMoves[i].second;
       attributed_gain = 0;
 
       if constexpr (FMStrategy::uses_gain_cache) {
@@ -297,17 +267,17 @@ namespace mt_kahypar {
       }
     }
 
-    runStats.local_reverts += localMoves.size() - best_index_locally_observed;
+    searchData->runStats.local_reverts += searchData->localMoves.size() - best_index_locally_observed;
     if (!apply_all_moves && best_index_from_attributed_gains != best_index_locally_observed) {
-      runStats.best_prefix_mismatch++;
+      searchData->runStats.best_prefix_mismatch++;
     }
 
     // kind of double rollback, if attributed gains say we overall made things worse
     if (!apply_all_moves && improvement_from_attributed_gains < 0) {
       // always using the if-branch gave similar results
-      runStats.local_reverts += best_index_locally_observed - best_index_from_attributed_gains + 1;
+      searchData->runStats.local_reverts += best_index_locally_observed - best_index_from_attributed_gains + 1;
       for (size_t i = best_index_from_attributed_gains + 1; i < best_index_locally_observed; ++i) {
-        Move& m = sharedData.moveTracker.getMove(localMoves[i].second);
+        Move& m = sharedData.moveTracker.getMove(searchData->localMoves[i].second);
 
         if constexpr (FMStrategy::uses_gain_cache) {
           phg.changeNodePartWithGainCacheUpdate(m.node, m.to, m.from);
@@ -325,16 +295,25 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   void SchedulerLocalizedKWayFM<FMStrategy>::revertToBestLocalPrefix(PartitionedHypergraph& phg, size_t bestGainIndex) {
-    runStats.local_reverts += localMoves.size() - bestGainIndex;
-    while (localMoves.size() > bestGainIndex) {
-      Move& m = sharedData.moveTracker.getMove(localMoves.back().second);
+    searchData->runStats.local_reverts += searchData->localMoves.size() - bestGainIndex;
+    while (searchData->localMoves.size() > bestGainIndex) {
+      Move& m = sharedData.moveTracker.getMove(searchData->localMoves.back().second);
       if constexpr (FMStrategy::uses_gain_cache) {
         phg.changeNodePartWithGainCacheUpdate(m.node, m.to, m.from);
       } else {
         phg.changeNodePart(m.node, m.to, m.from);
       }
       m.invalidate();
-      localMoves.pop_back();
+      searchData->localMoves.pop_back();
+    }
+  }
+
+  template<typename FMStrategy>
+  void SchedulerLocalizedKWayFM<FMStrategy>::applyMovesOntoDeltaPhg() {
+    for (auto& m : searchData->localMoves) {
+      Move& move = sharedData.moveTracker.getMove(m.second);
+      deltaPhg.changeNodePartWithGainCacheUpdate(
+        move.node, move.from, move.to, std::numeric_limits<HypernodeWeight>::max());
     }
   }
 
@@ -350,9 +329,9 @@ namespace mt_kahypar {
     edges_to_activate_node->updateSize(edgesWithGainChanges.capacity() * sizeof(HyperedgeID));
 
     utils::MemoryTreeNode *local_moves_node = parent->addChild("Local FM Moves");
-    local_moves_node->updateSize(localMoves.capacity() * sizeof(std::pair<Move, MoveID>));
+    local_moves_node->updateSize(searchData->localMoves.capacity() * sizeof(std::pair<Move, MoveID>));
 
-    fm_strategy.memoryConsumption(localized_fm_node);
+    searchData->fm_strategy.memoryConsumption(localized_fm_node);
     deltaPhg.memoryConsumption(localized_fm_node);
   }
 

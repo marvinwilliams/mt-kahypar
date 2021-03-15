@@ -43,7 +43,7 @@ namespace mt_kahypar {
       return SchedulerLocalizedKWayFM<FMStrategy>(context,numNodes, sharedData);
     }
 
-    void initSearches(PartitionedHypergraph& phg, size_t numSeeds);
+    void initSearches(PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches);
 
     bool scheduleSearch();
 
@@ -56,6 +56,10 @@ namespace mt_kahypar {
     std::priority_queue<std::pair<Gain, size_t>> local_searches;
 
     vec<SearchData<FMStrategy>> search_data;
+
+    tbb::task_group tg;
+
+    std::mutex m;
   };
 
 }
