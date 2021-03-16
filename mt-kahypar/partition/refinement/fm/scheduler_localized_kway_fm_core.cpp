@@ -45,8 +45,7 @@ namespace mt_kahypar {
       if (sharedData.deltaExceededMemoryConstraints) {
         deltaPhg.dropMemory();
       }
-
-        return true;
+      return true;
     } else {
       return false;
     }
@@ -138,13 +137,18 @@ namespace mt_kahypar {
 
     HypernodeWeight heaviestPartWeight = 0;
     HypernodeWeight fromWeight = 0, toWeight = 0;
+    Gain next_gain = 0;
 
     while (!stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
 
-      Gain next_gain = searchData->fm_strategy.getNextMoveGain(phg);
-      if ((searchData->negativeGain && next_gain < 0) || /* need something else here */ searchData->localMoves.size() > context.refinement.fm.max_moves_before_reschedule) {
-        /* TODO: apply moves before rescheduling? <08-03-21, @noahares> */
+      Gain last_gain = next_gain;
+      next_gain = searchData->fm_strategy.getNextMoveGain(phg);
+      // Idea: if more than half of the scheduled moves have been performed and the next move would be the first nagative gain move, reschedule
+      bool preemtive_reschedule = last_gain >= 0 && next_gain < 0
+        && searchData->num_moves > (context.refinement.fm.max_moves_before_reschedule / 2);
+      if (preemtive_reschedule || searchData->num_moves > context.refinement.fm.max_moves_before_reschedule) {
+        searchData->num_moves = 0;
         return next_gain;
       }
 
@@ -176,6 +180,7 @@ namespace mt_kahypar {
 
       if (moved) {
         searchData->runStats.moves++;
+        searchData->num_moves++;
         searchData->estimatedImprovement += move.gain;
         searchData->localMoves.emplace_back(move, move_id);
         stopRule.update(move.gain);

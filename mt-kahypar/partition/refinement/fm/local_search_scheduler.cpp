@@ -32,13 +32,10 @@ namespace mt_kahypar {
       }
       auto task = [&]() {
         auto& fm = ets_fm.local();
-        while (sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
+        while (!local_searches.empty() && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
           m.lock();
           size_t search = local_searches.top().second;
           auto& data = search_data[search];
-          if (local_searches.top().first < 0) {
-            data.negativeGain = true;
-          }
           local_searches.pop();
           m.unlock();
           auto result = fm.resumeLocalSearch(phg, data);
@@ -47,8 +44,7 @@ namespace mt_kahypar {
             local_searches.emplace(result.value(), data.thisSearch);
             m.unlock();
           } else { // reinsert boundary vertices and reinsert search into pq
-            fm.setup(phg, numSeeds, data);
-            // TODO: break if setup returns false -> same behavior as multitry loop
+            if (!fm.setup(phg, numSeeds, data)) break;
             Gain gain = data.fm_strategy.getNextMoveGain(phg);
             m.lock();
             local_searches.emplace(gain, data.thisSearch);

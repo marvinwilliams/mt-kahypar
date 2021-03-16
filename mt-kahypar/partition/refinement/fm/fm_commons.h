@@ -291,7 +291,7 @@ struct SearchData {
   size_t bestImprovementIndex = 0;
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
-  bool negativeGain = false;
+  size_t num_moves = 0;
 };
 
 }
