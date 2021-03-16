@@ -47,7 +47,7 @@ namespace mt_kahypar {
             local_searches.emplace(result.value(), data.thisSearch);
             m.unlock();
           } else { // reinsert boundary vertices and reinsert search into pq
-            fm.setup(phg, search, numSeeds, data);
+            fm.setup(phg, numSeeds, data);
             // TODO: break if setup returns false -> same behavior as multitry loop
             Gain gain = data.fm_strategy.getNextMoveGain(phg);
             m.lock();
@@ -65,9 +65,9 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   void LocalSearchScheduler<FMStrategy>::initSearches(PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches) {
-    auto task = [&](const size_t task_id) {
+    auto task = [&](const size_t search) {
       auto& fm = ets_fm.local();
-      fm.setup(phg, task_id, numSeeds, search_data[task_id]);
+      fm.setup(phg, numSeeds, search_data[search]);
     };
     for (size_t i = 0; i < numSearches; ++i) {
       tg.run(std::bind(task, i));

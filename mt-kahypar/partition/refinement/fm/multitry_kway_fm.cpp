@@ -55,7 +55,7 @@ namespace mt_kahypar {
       roundInitialization(phg, refinement_nodes);
       timer.stop_timer("collect_border_nodes");
 
-      size_t num_border_nodes = sharedData.refinementNodes.unsafe_size();
+      size_t num_border_nodes = context.refinement.fm.scheduling ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
       if (num_border_nodes == 0) {
         break;
       }
@@ -156,9 +156,16 @@ namespace mt_kahypar {
   void MultiTryKWayFM<FMStrategy>::roundInitialization(PartitionedHypergraph& phg,
                                                        const vec<HypernodeID>& refinement_nodes) {
     // clear border nodes
-    sharedData.refinementNodes.clear();
+    if (context.refinement.fm.scheduling) {
+      sharedData.shared_refinement_nodes.clear();
+    } else {
+      sharedData.refinementNodes.clear();
+    }
 
     if ( refinement_nodes.empty() ) {
+      if (context.refinement.fm.scheduling) {
+        randomAssignment(phg);
+      } else {
       // log(n) level case
       // iterate over all nodes and insert border nodes into task queue
       tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()),
@@ -171,6 +178,7 @@ namespace mt_kahypar {
             }
           }
         });
+      }
     } else {
       // n-level case
       tbb::parallel_for(0UL, refinement_nodes.size(), [&](const size_t i) {
@@ -184,15 +192,34 @@ namespace mt_kahypar {
     }
 
     // shuffle task queue if requested
-    if (context.refinement.fm.shuffle) {
+    if (!context.refinement.fm.scheduling && context.refinement.fm.shuffle) {
       sharedData.refinementNodes.shuffle();
     }
 
     // requesting new searches activates all nodes by raising the deactivated node marker
     // also clears the array tracking search IDs in case of overflow
-    sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(sharedData.refinementNodes.unsafe_size()));
+    size_t num_border_nodes = context.refinement.fm.scheduling ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
+    sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(num_border_nodes));
   }
 
+  template<typename FMStrategy>
+    void MultiTryKWayFM<FMStrategy>::randomAssignment(PartitionedHypergraph &phg) {
+
+      // thread local border node calculation
+      tbb::parallel_for(tbb::blocked_range<HypernodeID>(0, phg.initialNumNodes()), [&](const tbb::blocked_range<HypernodeID> &r) {
+        vec<HypernodeID> tl_border_nodes;
+        for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+          if (phg.nodeIsEnabled(u) && phg.isBorderNode(u)) {
+            tl_border_nodes.push_back(u);
+          }
+        }
+        if (!tl_border_nodes.empty()) {
+          sharedData.shared_refinement_nodes.append(tl_border_nodes);
+        }
+      });
+
+      sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
+    }
 
   template<typename FMStrategy>
   void MultiTryKWayFM<FMStrategy>::initializeImpl(PartitionedHypergraph& phg) {

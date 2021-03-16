@@ -25,6 +25,7 @@
 #include <mt-kahypar/datastructures/priority_queue.h>
 #include <mt-kahypar/partition/context.h>
 #include <mt-kahypar/parallel/work_stack.h>
+#include <mt-kahypar/datastructures/shared_work_queue.h>
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 
@@ -169,13 +170,16 @@ struct FMSharedData {
   bool release_nodes = true;
   bool perform_moves_global = true;
 
+  SharedWorkQueue<HypernodeID> shared_refinement_nodes;
+
   FMSharedData(size_t numNodes = 0, PartitionID numParts = 0, size_t numThreads = 0, size_t numPQHandles = 0) :
           refinementNodes(), //numNodes, numThreads),
           vertexPQHandles(), //numPQHandles, invalid_position),
           numParts(numParts),
           moveTracker(), //numNodes),
           nodeTracker(), //numNodes),
-          targetPart()
+          targetPart(),
+          shared_refinement_nodes(numNodes)
   {
     finishedTasks.store(0, std::memory_order_relaxed);
 

@@ -88,6 +88,8 @@ public:
       return static_cast<double>(gain) / static_cast<double>(old_km1);
   }
 
+  void randomAssignment(PartitionedHypergraph &phg);
+
   void printMemoryConsumption();
 
   bool is_initialized = false;

@@ -142,6 +142,7 @@ struct FMParameters {
   bool shuffle = true;
   mutable bool obey_minimal_parallelism = false;
   bool release_nodes = true;
+  bool scheduling = false;
   size_t num_additional_searches = 8;
   size_t max_moves_before_reschedule = 42;
 };

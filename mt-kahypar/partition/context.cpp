@@ -123,6 +123,9 @@ namespace mt_kahypar {
       out << "    Minimum Improvement Factor:       " << params.min_improvement << std::endl;
       out << "    Release Nodes:                    " << std::boolalpha << params.release_nodes << std::endl;
       out << "    Time Limit Factor:                " << params.time_limit_factor << std::endl;
+      out << "    Random Node Assignment:           " << std::boolalpha << params.scheduling << std::endl;
+      out << "    Additional Searches:              " << params.num_additional_searches << std::endl;
+      out << "    Max Moves Before Reschedule:      " << params.max_moves_before_reschedule << std::endl;
     }
     out << std::flush;
     return out;

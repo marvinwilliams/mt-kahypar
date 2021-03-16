@@ -44,9 +44,7 @@ public:
           /*fm_strategy(context, numNodes, sharedData, {})*/
           { }
 
-  bool setup(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds, SearchData<FMStrategy>& searchData);
-
-  bool findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds);
+  bool setup(PartitionedHypergraph& phg, size_t numSeeds, SearchData<FMStrategy>& searchData);
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const ;
 
