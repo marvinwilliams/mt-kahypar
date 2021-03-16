@@ -35,26 +35,29 @@ namespace mt_kahypar {
         while (sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
           m.lock();
           size_t search = local_searches.top().second;
+          auto& data = search_data[search];
           if (local_searches.top().first < 0) {
-            search_data[search].negativeGain = true;
+            data.negativeGain = true;
           }
           local_searches.pop();
           m.unlock();
-          auto result = fm.resumeLocalSearch(phg, search_data[search]);
+          auto result = fm.resumeLocalSearch(phg, data);
           if (result) { // reinsert to resume later
             m.lock();
-            local_searches.emplace(result.value(), search_data[search].thisSearch);
+            local_searches.emplace(result.value(), data.thisSearch);
             m.unlock();
           } else { // reinsert boundary vertices and reinsert search into pq
-            fm.setup(phg, search, numSeeds, search_data[search]);
-            Gain gain = search_data[search].fm_strategy.getNextMoveGain(phg);
+            fm.setup(phg, search, numSeeds, data);
+            // TODO: break if setup returns false -> same behavior as multitry loop
+            Gain gain = data.fm_strategy.getNextMoveGain(phg);
             m.lock();
-            local_searches.emplace(gain, search_data[search].thisSearch);
+            local_searches.emplace(gain, data.thisSearch);
             m.unlock();
           }
         }
+        sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
-      for (size_t i = 0; i < context.shared_memory.num_threads; ++i) {
+      for (size_t i = 0; i < std::min(numSearches, context.shared_memory.num_threads); ++i) {
         tg.run(task);
       }
 

@@ -1,6 +1,7 @@
 set(RefinementSources
         fm/multitry_kway_fm.cpp
         fm/localized_kway_fm_core.cpp
+        fm/scheduler_localized_kway_fm_core.cpp
         fm/local_search_scheduler.cpp
         fm/global_rollback.cpp
         fm/sequential_twoway_fm_refiner.cpp
