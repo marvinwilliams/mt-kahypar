@@ -129,6 +129,10 @@ public:
   template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   Gain getNextMoveGain(PHG&) {
+    updatePQs();
+    if (blockPQ.empty()) {
+      return invalidGain;
+    }
     const PartitionID from = blockPQ.top();
     return vertexPQs[from].topKey();
   }

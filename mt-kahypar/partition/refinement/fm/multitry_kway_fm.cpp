@@ -77,9 +77,8 @@ namespace mt_kahypar {
               && fm.findMoves(phg, task_id, num_seeds)) { }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
-      size_t num_tasks = std::min(num_border_nodes, context.shared_memory.num_threads
-                                  + context.refinement.fm.num_additional_searches);
-      ASSERT(static_cast<int>(num_tasks) <= TBBNumaArena::instance().total_number_of_threads());
+      size_t num_tasks = context.refinement.fm.scheduling ? std::min(num_border_nodes, context.shared_memory.num_threads + context.refinement.fm.num_additional_searches) : std::min(num_border_nodes, context.shared_memory.num_threads);
+      /*ASSERT(static_cast<int>(num_tasks) <= TBBNumaArena::instance().total_number_of_threads());*/
 
       if (context.refinement.fm.scheduling) {
         scheduler.performLocalSearches(phg, num_seeds, num_tasks);
@@ -108,8 +107,12 @@ namespace mt_kahypar {
       const double elapsed_time = std::chrono::duration<double>(fm_timestamp - fm_start).count();
       if (debug && context.type == kahypar::ContextType::main) {
         FMStats stats;
-        for (auto& fm : ets_fm) {
-          fm.stats.merge(stats);
+        if (context.refinement.fm.scheduling) {
+          scheduler.collectStats(stats);
+        } else {
+          for (auto& fm : ets_fm) {
+            fm.stats.merge(stats);
+          }
         }
         LOG << V(round) << V(improvement) << V(metrics::km1(phg)) << V(metrics::imbalance(phg, context))
             << V(num_border_nodes) << V(roundImprovementFraction) << V(elapsed_time) << V(current_time_limit)

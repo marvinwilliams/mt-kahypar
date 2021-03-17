@@ -24,11 +24,17 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void LocalSearchScheduler<FMStrategy>::performLocalSearches(
     PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches) {
-      search_data = vec<SearchData<FMStrategy>>(numSearches, {context, numNodes, sharedData});
+      /*search_data = vec<SearchData<FMStrategy>>(numSearches, {context, numNodes, sharedData});*/
+      for (size_t i = 0; i < numSearches; ++i) {
+        SearchData<FMStrategy> data(context, numNodes, sharedData);
+        search_data.push_back(data);
+      }
       initSearches(phg, numSeeds, numSearches);
-      for (auto& search : search_data) {
-        Gain gain = search.fm_strategy.getNextMoveGain(phg);
-        local_searches.emplace(gain, search.thisSearch);
+      for (size_t i = 0; i < search_data.size(); ++i) {
+        Gain gain = search_data[i].fm_strategy.getNextMoveGain(phg);
+        if (gain != invalidGain) {
+          local_searches.emplace(gain, i);
+        }
       }
       auto task = [&]() {
         auto& fm = ets_fm.local();
@@ -41,33 +47,45 @@ namespace mt_kahypar {
           auto result = fm.resumeLocalSearch(phg, data);
           if (result) { // reinsert to resume later
             m.lock();
-            local_searches.emplace(result.value(), data.thisSearch);
+            local_searches.emplace(result.value(), search);
             m.unlock();
-          } else { // reinsert boundary vertices and reinsert search into pq
+          } /* else { // reinsert boundary vertices and reinsert search into pq
             if (!fm.setup(phg, numSeeds, data)) break;
             Gain gain = data.fm_strategy.getNextMoveGain(phg);
+            data.thisSearch = 0;
             m.lock();
             local_searches.emplace(gain, data.thisSearch);
             m.unlock();
-          }
+          } */
         }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
       for (size_t i = 0; i < std::min(numSearches, context.shared_memory.num_threads); ++i) {
         tg.run(task);
       }
+      tg.wait();
 
   }
 
   template<typename FMStrategy>
+  void LocalSearchScheduler<FMStrategy>::collectStats(FMStats& stats) {
+    for (auto& fm : ets_fm) {
+      fm.stats.merge(stats);
+    }
+  }
+
+  template<typename FMStrategy>
   void LocalSearchScheduler<FMStrategy>::initSearches(PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches) {
-    auto task = [&](const size_t search) {
+    auto task = [&, numSeeds](const size_t search) {
       auto& fm = ets_fm.local();
+      ASSERT(search_data[search].thisSearch == 0);
       fm.setup(phg, numSeeds, search_data[search]);
     };
     for (size_t i = 0; i < numSearches; ++i) {
       tg.run(std::bind(task, i));
     }
+    tg.wait();
+    /*tbb::parallel_for(size_t(0), numSearches, task);*/
   }
 }
 

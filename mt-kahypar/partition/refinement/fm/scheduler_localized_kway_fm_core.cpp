@@ -29,18 +29,21 @@ namespace mt_kahypar {
     if (searchData->thisSearch == 0) {
       searchData->thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
     }
-    ASSERT(searchData->thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
+    ASSERT(searchData->thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads + context.refinement.fm.num_additional_searches);
 
     auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
+    size_t pushes = 0;
     if (seeds) {
       for (HypernodeID u : *seeds) {
         SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
         if (sharedData.nodeTracker.tryAcquireNode(u, searchData->thisSearch)) {
           searchData->fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
+          pushes++;
         }
       }
     }
 
+    ASSERT(pushes == searchData->runStats.pushes);
     if (searchData->runStats.pushes > 0) {
       if (sharedData.deltaExceededMemoryConstraints) {
         deltaPhg.dropMemory();
@@ -144,6 +147,7 @@ namespace mt_kahypar {
 
       Gain last_gain = next_gain;
       next_gain = searchData->fm_strategy.getNextMoveGain(phg);
+      if (next_gain == kInvalidGain) break;
       // Idea: if more than half of the scheduled moves have been performed and the next move would be the first nagative gain move, reschedule
       bool preemtive_reschedule = last_gain >= 0 && next_gain < 0
         && searchData->num_moves > (context.refinement.fm.max_moves_before_reschedule / 2);

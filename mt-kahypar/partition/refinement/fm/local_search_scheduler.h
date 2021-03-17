@@ -37,6 +37,8 @@ namespace mt_kahypar {
 
     void performLocalSearches(PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches);
 
+    void collectStats(FMStats& stats);
+
   private:
 
     SchedulerLocalizedKWayFM<FMStrategy> constructLocalizedKWayFMSearch() {
