@@ -286,8 +286,8 @@ struct SearchData {
 
   SearchID thisSearch;
   vec<std::pair<Move, MoveID>> localMoves;
-  FMStrategy fm_strategy; // TODO: share this or sperate per search? For now each search gets one
   FMStats runStats;
+  FMStrategy fm_strategy; // TODO: share this or sperate per search? For now each search gets one
   size_t bestImprovementIndex = 0;
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
