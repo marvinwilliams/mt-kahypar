@@ -25,6 +25,7 @@ namespace mt_kahypar {
   void LocalSearchScheduler<FMStrategy>::performLocalSearches(
     PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches) {
       /*search_data = vec<SearchData<FMStrategy>>(numSearches, {context, numNodes, sharedData});*/
+      search_data.reserve(numSearches);
       for (size_t i = 0; i < numSearches; ++i) {
         SearchData<FMStrategy> data(context, numNodes, sharedData);
         search_data.push_back(data);
