@@ -276,22 +276,53 @@ struct FMStats {
   }
 };
 
+struct ScheduleStats {
+  size_t reschedules = 0;
+  size_t preemtive_reschedules = 0;
+  size_t searches_started_and_resumed = 0;
+
+  void clear() {
+    reschedules = 0;
+    preemtive_reschedules = 0;
+    searches_started_and_resumed = 0;
+  }
+
+  void merge(ScheduleStats& other) {
+    other.reschedules += reschedules;
+    other.preemtive_reschedules += preemtive_reschedules;
+    other.searches_started_and_resumed += searches_started_and_resumed;
+  }
+
+  std::string serialize() const {
+    std::stringstream os;
+    os << V(reschedules) << " " << V(preemtive_reschedules) << " " V(searches_started_and_resumed);
+    return os.str();
+  }
+};
+
 template<typename FMStrategy>
 struct SearchData {
   // each thread gets a pointer to the data of its current search
-  SearchData(const Context& context, const HypernodeID numNodes, FMSharedData& sharedData) :
-    thisSearch(0),
-    fm_strategy(context, numNodes, sharedData, runStats)
-  { }
+  SearchData(){ }
 
-  SearchID thisSearch;
+  SearchID thisSearch = 0;
   vec<std::pair<Move, MoveID>> localMoves;
   FMStats runStats;
-  FMStrategy fm_strategy; // TODO: share this or sperate per search? For now each search gets one
   size_t bestImprovementIndex = 0;
   Gain estimatedImprovement = 0;
   Gain bestImprovement = 0;
   size_t num_moves = 0;
+  vec<HypernodeID> nodes;
+  Gain gain = invalidGain;
+  ScheduleStats scheduleStats;
+
+  void reset() {
+    thisSearch = 0;
+    bestImprovementIndex = 0;
+    estimatedImprovement = 0;
+    bestImprovement = 0;
+    num_moves = 0;
+  }
 };
 
 }

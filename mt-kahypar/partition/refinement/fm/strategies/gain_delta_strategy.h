@@ -39,7 +39,22 @@ namespace mt_kahypar {
                           FMStats& runStats) :
             context(context),
             k(context.partition.k),
-            runStats(runStats),
+            runStats(&runStats),
+            sharedData(sharedData),
+            vertexPQs(),
+            gc(sharedData.numParts)
+    {
+      vertexPQs.reserve(k);
+      for (PartitionID i = 0; i < k; ++i) {
+        vertexPQs.emplace_back(sharedData.vertexPQHandles.data() + (i * numNodes), numNodes);
+      }
+    }
+
+    GainDeltaStrategy(const Context& context,
+                          HypernodeID numNodes,
+                          FMSharedData& sharedData) :
+            context(context),
+            k(context.partition.k),
             sharedData(sharedData),
             vertexPQs(),
             gc(sharedData.numParts)
@@ -60,7 +75,7 @@ namespace mt_kahypar {
           ASSERT(vertexPQs[i].contains(v));
         }
       }
-      runStats.pushes++;
+      runStats->pushes++;
     }
 
     template<typename PHG>
@@ -81,7 +96,7 @@ namespace mt_kahypar {
       vertexPQs[target].deleteTop();
       m.node = u; m.to = target; m.from = phg.partID(u);
       m.gain = estimated_gain;
-      runStats.extractions++;
+      runStats->extractions++;
       for (PartitionID i = 0; i < k; ++i) {
         if (i != m.from && i != target) {
           vertexPQs[i].remove(u);
@@ -103,7 +118,7 @@ namespace mt_kahypar {
     void clearPQs(const size_t /* bestImprovementIndex */ ) {
       // release all nodes that were not moved
       const bool release = sharedData.release_nodes
-                           && runStats.moves > 0;
+                           && runStats->moves > 0;
 
       if (release) {
         // Release all nodes contained in the search
@@ -124,6 +139,21 @@ namespace mt_kahypar {
       for (PartitionID i = 0; i < k; ++i) {
         vertexPQs[i].clear();
       }
+    }
+
+    void resetPQs(vec<HypernodeID>& nodes) {
+      nodes.clear();
+      for (PartitionID i = 0; i < context.partition.k; ++i) {
+        for (PosT j = 0; j < vertexPQs[i].size(); ++j) {
+          const HypernodeID v = vertexPQs[i].at(j);
+          nodes.push_back(v);
+        }
+        vertexPQs[i].clear();
+      }
+    }
+
+    void setRunStats(FMStats& _runStats) {
+      runStats = &_runStats;
     }
 
     // ! perform delta gain updates for vertices that are in our search. uses the PQs as gain store
@@ -241,7 +271,7 @@ namespace mt_kahypar {
 
     PartitionID k;
 
-    FMStats& runStats;
+    FMStats* runStats;
 
     FMSharedData& sharedData;
 

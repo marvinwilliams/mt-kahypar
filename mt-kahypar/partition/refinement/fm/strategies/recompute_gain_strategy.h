@@ -39,7 +39,16 @@ namespace mt_kahypar {
                       FMSharedData& sharedData,
                       FMStats& runStats) :
             context(context),
-            runStats(runStats),
+            runStats(&runStats),
+            sharedData(sharedData),
+            pq(VertexPriorityQueue(sharedData.vertexPQHandles.data(), numNodes)),
+            gc(sharedData.numParts)
+    { }
+
+    RecomputeGainStrategy(const Context& context,
+                      HypernodeID numNodes,
+                      FMSharedData& sharedData) :
+            context(context),
             sharedData(sharedData),
             pq(VertexPriorityQueue(sharedData.vertexPQHandles.data(), numNodes)),
             gc(sharedData.numParts)
@@ -51,7 +60,7 @@ namespace mt_kahypar {
       auto [target, gain] = gc.computeBestTargetBlock(phg, v, context.partition.max_part_weights);
       sharedData.targetPart[v] = target;
       pq.insert(v, gain);
-      runStats.pushes++;
+      runStats->pushes++;
     }
 
     template<typename PHG>
@@ -73,7 +82,7 @@ namespace mt_kahypar {
       auto [to, gain] = gc.computeBestTargetBlock(phg, u, context.partition.max_part_weights);
       m.node = u; m.to = to; m.from = phg.partID(u);
       m.gain = gain;
-      runStats.extractions++;
+      runStats->extractions++;
       pq.deleteTop();
       return true;
     }
@@ -92,7 +101,7 @@ namespace mt_kahypar {
     void clearPQs(const size_t /* bestImprovementIndex */ ) {
       // release all nodes that were not moved
       const bool release = sharedData.release_nodes
-                           && runStats.moves > 0;
+                           && runStats->moves > 0;
 
       if (release) {
         // Release all nodes contained in PQ
@@ -103,6 +112,19 @@ namespace mt_kahypar {
       }
 
       pq.clear();
+    }
+
+  void resetPQs(vec<HypernodeID>& nodes) {
+    nodes.clear();
+    for (PosT j = 0; j < pq.size(); ++j) {
+      const HypernodeID v = pq.at(j);
+      nodes.push_back(v);
+    }
+    pq.clear();
+  }
+
+    void setRunStats(FMStats& _runStats) {
+      runStats = &_runStats;
     }
 
     template<typename PHG>
@@ -121,7 +143,7 @@ namespace mt_kahypar {
   private:
     const Context& context;
 
-    FMStats& runStats;
+    FMStats* runStats;
 
     FMSharedData& sharedData;
 

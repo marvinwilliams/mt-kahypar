@@ -24,48 +24,67 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void LocalSearchScheduler<FMStrategy>::performLocalSearches(
     PartitionedHypergraph& phg, size_t numSeeds, size_t numSearches) {
-      /*search_data = vec<SearchData<FMStrategy>>(numSearches, {context, numNodes, sharedData});*/
+      search_data = vec<SearchData<FMStrategy>>(numSearches);
+/*
       search_data.clear();
       search_data.reserve(numSearches);
       for (size_t i = 0; i < numSearches; ++i) {
         SearchData<FMStrategy> data(context, numNodes, sharedData);
         search_data.push_back(data);
       }
+*/
       initSearches(phg, numSeeds, numSearches);
+      while (!local_searches.empty()) {
+        local_searches.pop();
+      }
       for (size_t i = 0; i < search_data.size(); ++i) {
-        Gain gain = search_data[i].fm_strategy.getNextMoveGain(phg);
+        Gain gain = search_data[i].gain;
         if (gain != invalidGain) {
           local_searches.emplace(gain, i);
         }
       }
       auto task = [&]() {
         auto& fm = ets_fm.local();
-        while (!local_searches.empty() && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
+        while (sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
           m.lock();
+          if (local_searches.empty()) {
+            m.unlock();
+            break;
+          }
           size_t search = local_searches.top().second;
           auto& data = search_data[search];
           local_searches.pop();
           m.unlock();
+          data.scheduleStats.searches_started_and_resumed++;
           auto result = fm.resumeLocalSearch(phg, data);
-          if (result) { // reinsert to resume later
+          if (result.has_value()) { // reinsert to resume later
             m.lock();
             local_searches.emplace(result.value(), search);
             m.unlock();
           } /* else { // reinsert boundary vertices and reinsert search into pq
-            if (!fm.setup(phg, numSeeds, data)) break;
-            Gain gain = data.fm_strategy.getNextMoveGain(phg);
-            data.thisSearch = 0;
-            m.lock();
-            local_searches.emplace(gain, data.thisSearch);
-            m.unlock();
+            sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
+            fm.setup(phg, numSeeds, data);
+            Gain gain = data.gain;
+            if (gain != invalidGain) {
+              m.lock();
+              local_searches.emplace(gain, data.thisSearch);
+              m.unlock();
+            }
           } */
+          else {
+            sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
+          }
         }
-        sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
       for (size_t i = 0; i < std::min(numSearches, context.shared_memory.num_threads); ++i) {
         tg.run(task);
       }
       tg.wait();
+      ScheduleStats scheduleStats;
+      for (auto& search : search_data) {
+        search.scheduleStats.merge(scheduleStats);
+      }
+      LOG << scheduleStats.serialize();
 
   }
 

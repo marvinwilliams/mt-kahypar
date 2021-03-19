@@ -25,6 +25,7 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   bool SchedulerLocalizedKWayFM<FMStrategy>::setup(PartitionedHypergraph& phg, size_t numSeeds, SearchData<FMStrategy>& _searchData) {
     searchData = &_searchData;
+    fm_strategy.setRunStats(searchData->runStats);
     searchData->localMoves.clear();
     if (searchData->thisSearch == 0) {
       searchData->thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
@@ -32,19 +33,18 @@ namespace mt_kahypar {
     ASSERT(searchData->thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads + context.refinement.fm.num_additional_searches);
 
     auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
-    size_t pushes = 0;
     if (seeds) {
       for (HypernodeID u : *seeds) {
         SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
         if (sharedData.nodeTracker.tryAcquireNode(u, searchData->thisSearch)) {
-          searchData->fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
-          pushes++;
+          fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
         }
       }
     }
 
-    ASSERT(pushes == searchData->runStats.pushes);
-    if (searchData->runStats.pushes > 0) {
+    searchData->gain = fm_strategy.getNextMoveGain(phg);
+    fm_strategy.resetPQs(searchData->nodes);
+    if (searchData->nodes.size() > 0) {
       if (sharedData.deltaExceededMemoryConstraints) {
         deltaPhg.dropMemory();
       }
@@ -82,9 +82,9 @@ namespace mt_kahypar {
           if (neighborDeduplicator[v] != deduplicationTime) {
             SearchID searchOfV = sharedData.nodeTracker.searchOfNode[v].load(std::memory_order_acq_rel);
             if (searchOfV == searchData->thisSearch) {
-              searchData->fm_strategy.updateGain(phg, v, move);
+              fm_strategy.updateGain(phg, v, move);
             } else if (sharedData.nodeTracker.tryAcquireNode(v, searchData->thisSearch)) {
-              searchData->fm_strategy.insertIntoPQ(phg, v, searchOfV);
+              fm_strategy.insertIntoPQ(phg, v, searchOfV);
             }
             neighborDeduplicator[v] = deduplicationTime;
           }
@@ -106,6 +106,7 @@ namespace mt_kahypar {
     StopRule stopRule(phg.initialNumNodes());
     Move move;
     searchData = &_searchData;
+    setFMStrategy(phg);
     if constexpr (use_delta) {
       deltaPhg.clear();
       deltaPhg.setPartitionedHypergraph(&phg);
@@ -124,10 +125,10 @@ namespace mt_kahypar {
       }
 
       if constexpr (use_delta) {
-        searchData->fm_strategy.deltaGainUpdates(deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after,
+        fm_strategy.deltaGainUpdates(deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after,
                                      move.to, pin_count_in_to_part_after);
       } else {
-        searchData->fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from, pin_count_in_from_part_after,
+        fm_strategy.deltaGainUpdates(phg, he, edge_weight, move.from, pin_count_in_from_part_after,
                                      move.to, pin_count_in_to_part_after);
       }
 
@@ -146,21 +147,27 @@ namespace mt_kahypar {
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
 
       Gain last_gain = next_gain;
-      next_gain = searchData->fm_strategy.getNextMoveGain(phg);
+      next_gain = fm_strategy.getNextMoveGain(phg);
       if (next_gain == kInvalidGain) break;
       // Idea: if more than half of the scheduled moves have been performed and the next move would be the first nagative gain move, reschedule
       bool preemtive_reschedule = last_gain >= 0 && next_gain < 0
         && searchData->num_moves > (context.refinement.fm.max_moves_before_reschedule / 2);
       if (preemtive_reschedule || searchData->num_moves > context.refinement.fm.max_moves_before_reschedule) {
         searchData->num_moves = 0;
+        searchData->scheduleStats.reschedules++;
+        if (preemtive_reschedule) {
+          searchData->scheduleStats.preemtive_reschedules++;
+        }
+        fm_strategy.resetPQs(searchData->nodes);
         return next_gain;
       }
 
       if constexpr (use_delta) {
-        if (!searchData->fm_strategy.findNextMove(deltaPhg, move)) break;
+        if (!fm_strategy.findNextMove(deltaPhg, move)) break;
       } else {
-        if (!searchData->fm_strategy.findNextMove(phg, move)) break;
+        if (!fm_strategy.findNextMove(phg, move)) break;
       }
+      ASSERT(!sharedData.nodeTracker.isLocked(move.node));
 
       sharedData.nodeTracker.deactivateNode(move.node, searchData->thisSearch);
       MoveID move_id = std::numeric_limits<MoveID>::max();
@@ -223,7 +230,8 @@ namespace mt_kahypar {
     }
 
     searchData->runStats.estimated_improvement = searchData->bestImprovement;
-    searchData->fm_strategy.clearPQs(searchData->bestImprovementIndex);
+    fm_strategy.clearPQs(searchData->bestImprovementIndex);
+    searchData->reset();
     searchData->runStats.merge(stats);
     return {};
   }
@@ -322,9 +330,19 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void SchedulerLocalizedKWayFM<FMStrategy>::applyMovesOntoDeltaPhg() {
     for (auto& m : searchData->localMoves) {
-      Move& move = sharedData.moveTracker.getMove(m.second);
+      Move& move = m.first;
       deltaPhg.changeNodePartWithGainCacheUpdate(
-        move.node, move.from, move.to, std::numeric_limits<HypernodeWeight>::max());
+        move.node, move.from, move.to, context.partition.max_part_weights[move.to]);
+    }
+  }
+
+  /* TODO: dont call insert multiple times, but use some sort of heapify <18-03-21, @noahares> */
+  template<typename FMStrategy>
+  void SchedulerLocalizedKWayFM<FMStrategy>::setFMStrategy(PartitionedHypergraph& phg) {
+    fm_strategy.setRunStats(searchData->runStats);
+    for (HypernodeID u : searchData->nodes) {
+      SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
+      fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
     }
   }
 
@@ -342,7 +360,7 @@ namespace mt_kahypar {
     utils::MemoryTreeNode *local_moves_node = parent->addChild("Local FM Moves");
     local_moves_node->updateSize(searchData->localMoves.capacity() * sizeof(std::pair<Move, MoveID>));
 
-    searchData->fm_strategy.memoryConsumption(localized_fm_node);
+    fm_strategy.memoryConsumption(localized_fm_node);
     deltaPhg.memoryConsumption(localized_fm_node);
   }
 

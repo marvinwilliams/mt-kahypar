@@ -40,8 +40,8 @@ public:
           k(context.partition.k),
           deltaPhg(context.partition.k),
           neighborDeduplicator(numNodes, 0),
-          sharedData(sharedData)
-          /*fm_strategy(context, numNodes, sharedData, {})*/
+          sharedData(sharedData),
+          fm_strategy(context, numNodes, sharedData)
           { }
 
   bool setup(PartitionedHypergraph& phg, size_t numSeeds, SearchData<FMStrategy>& searchData);
@@ -96,6 +96,8 @@ private:
 
   void applyMovesOntoDeltaPhg();
 
+  void setFMStrategy(PartitionedHypergraph& phg);
+
  private:
 
   const Context& context;
@@ -116,7 +118,7 @@ private:
 
   FMSharedData& sharedData;
 
-  /*FMStrategy fm_strategy;*/
+  FMStrategy fm_strategy;
 
   SearchData<FMStrategy>* searchData;
 

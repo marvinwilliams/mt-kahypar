@@ -53,7 +53,17 @@ public:
                     FMSharedData& sharedData,
                     FMStats& runStats) :
       context(context),
-      runStats(runStats),
+      runStats(&runStats),
+      sharedData(sharedData),
+      blockPQ(static_cast<size_t>(context.partition.k)),
+      vertexPQs(static_cast<size_t>(context.partition.k),
+                VertexPriorityQueue(sharedData.vertexPQHandles.data(), numNodes))
+      { }
+
+  GainCacheStrategy(const Context& context,
+                    HypernodeID numNodes,
+                    FMSharedData& sharedData) :
+      context(context),
       sharedData(sharedData),
       blockPQ(static_cast<size_t>(context.partition.k)),
       vertexPQs(static_cast<size_t>(context.partition.k),
@@ -67,7 +77,7 @@ public:
     auto [target, gain] = computeBestTargetBlock(phg, v);
     sharedData.targetPart[v] = target;
     vertexPQs[pv].insert(v, gain);  // blockPQ updates are done later, collectively.
-    runStats.pushes++;
+    runStats->pushes++;
   }
 
   template<typename PHG>
@@ -112,11 +122,11 @@ public:
       if (gain >= estimated_gain) { // accept any gain that is at least as good
         m.node = u; m.to = to; m.from = from;
         m.gain = gain;
-        runStats.extractions++;
+        runStats->extractions++;
         vertexPQs[from].deleteTop();  // blockPQ updates are done later, collectively.
         return true;
       } else {
-        runStats.retries++;
+        runStats->retries++;
         vertexPQs[from].adjustKey(u, gain);
         sharedData.targetPart[u] = to;
         if (vertexPQs[from].topKey() != blockPQ.keyOf(from)) {
@@ -140,7 +150,7 @@ public:
   void clearPQs(const size_t /* bestImprovementIndex */ ) {
     // release all nodes that were not moved
     const bool release = sharedData.release_nodes
-                         && runStats.moves > 0;
+                         && runStats->moves > 0;
 
     for (PartitionID i = 0; i < context.partition.k; ++i) {
       for (PosT j = 0; j < vertexPQs[i].size(); ++j) {
@@ -157,6 +167,21 @@ public:
     blockPQ.clear();
   }
 
+  void resetPQs(vec<HypernodeID>& nodes) {
+    nodes.clear();
+    for (PartitionID i = 0; i < context.partition.k; ++i) {
+      for (PosT j = 0; j < vertexPQs[i].size(); ++j) {
+        const HypernodeID v = vertexPQs[i].at(j);
+        nodes.push_back(v);
+      }
+      vertexPQs[i].clear();
+    }
+    blockPQ.clear();
+  }
+
+  void setRunStats(FMStats& _runStats) {
+    runStats = &_runStats;
+  }
 
   // We're letting the FM details implementation decide what happens here, since some may not want to do gain cache updates,
   // but rather update gains in their PQs or something
@@ -247,7 +272,7 @@ private:
 
   const Context& context;
 
-  FMStats& runStats;
+  FMStats* runStats;
 
 protected:
   FMSharedData& sharedData;

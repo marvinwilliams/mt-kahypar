@@ -38,6 +38,13 @@ namespace mt_kahypar {
             gainCacheInitMem(context.partition.k, 0)
     { }
 
+    GainCacheOnDemandStrategy(const Context& context,
+                              HypernodeID numNodes,
+                              FMSharedData& sharedData) :
+            GainCacheStrategy(context, numNodes, sharedData),
+            gainCacheInitMem(context.partition.k, 0)
+    { }
+
     // conflicting signatures. derived does not have const qualifier for PHG. base has const. compiler doesn't complain, so probably fine.
     template<typename PHG>
     MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
@@ -53,6 +60,15 @@ namespace mt_kahypar {
       GainCacheStrategy::memoryConsumption(parent);
       parent->addChild("Initial Gain Comp", gainCacheInitMem.size() * sizeof(Gain));
     }
+
+    void resetPQs(vec<HypernodeID>& nodes) {
+      GainCacheStrategy::resetPQs(nodes);
+    }
+
+  void setRunStats(FMStats& _runStats) {
+    GainCacheStrategy::setRunStats(_runStats);
+  }
+
 
   private:
     vec<Gain> gainCacheInitMem;
