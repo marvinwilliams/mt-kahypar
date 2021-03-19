@@ -352,6 +352,14 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.scheduling :
                  &context.refinement.fm.scheduling))->value_name("<bool>")->default_value(false),
              "If true, use FM Scheduling.")
+            ((initial_partitioning ? "i-r-fm-num-additional-searches" : "i-r-fm-num-additional-searches"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.num_additional_searches :
+                 &context.refinement.fm.num_additional_searches))->value_name("<siz_t>")->default_value(8),
+             "Number of additional searches that get scheduled, if scheduling is enabled.")
+            ((initial_partitioning ? "i-r-fm-max-moves-before-reschedule" : "i-r-fm-max-moves-before-reschedule"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.max_moves_before_reschedule :
+                 &context.refinement.fm.max_moves_before_reschedule))->value_name("<siz_t>")->default_value(10),
+             "Maximum number of moves before rescheduling happens, if scheduling is enabled.")
             #ifdef USE_STRONG_PARTITIONER
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :
