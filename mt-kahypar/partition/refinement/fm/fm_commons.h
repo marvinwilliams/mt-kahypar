@@ -317,7 +317,6 @@ struct SearchData {
   ScheduleStats scheduleStats;
 
   void reset() {
-    thisSearch = 0;
     bestImprovementIndex = 0;
     estimatedImprovement = 0;
     bestImprovement = 0;

@@ -44,6 +44,7 @@ namespace mt_kahypar {
 
     searchData->gain = fm_strategy.getNextMoveGain(phg);
     fm_strategy.resetPQs(searchData->nodes);
+    ASSERT(searchData->nodes.size() == searchData->runStats.pushes);
     if (searchData->nodes.size() > 0) {
       if (sharedData.deltaExceededMemoryConstraints) {
         deltaPhg.dropMemory();
@@ -331,6 +332,7 @@ namespace mt_kahypar {
   void SchedulerLocalizedKWayFM<FMStrategy>::applyMovesOntoDeltaPhg() {
     for (auto& m : searchData->localMoves) {
       Move& move = m.first;
+      /* TODO: is this right? <19-03-21, @noahares> */
       deltaPhg.changeNodePartWithGainCacheUpdate(
         move.node, move.from, move.to, context.partition.max_part_weights[move.to]);
     }
