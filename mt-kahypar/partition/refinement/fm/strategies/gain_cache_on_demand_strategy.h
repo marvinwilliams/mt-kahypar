@@ -56,6 +56,18 @@ namespace mt_kahypar {
       GainCacheStrategy::insertIntoPQ(phg, v, previous_search_of_v);
     }
 
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    void insertAll(PHG& phg, const vec<HypernodeID>& nodes) {
+      for (auto v : nodes) {
+        SearchID previous_search_of_v = sharedData.nodeTracker.searchOfNode[v].load(std::memory_order_relaxed);
+        if (sharedData.nodeTracker.releasedMarker != previous_search_of_v) {
+          phg.initializeGainCacheEntry(v, gainCacheInitMem);
+        }
+      }
+      GainCacheStrategy::insertAll(phg, nodes);
+    }
+
     void memoryConsumption(utils::MemoryTreeNode *parent) const {
       GainCacheStrategy::memoryConsumption(parent);
       parent->addChild("Initial Gain Comp", gainCacheInitMem.size() * sizeof(Gain));

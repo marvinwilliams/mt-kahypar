@@ -82,6 +82,21 @@ public:
 
   template<typename PHG>
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  void insertAll(const PHG& phg, const vec<HypernodeID>& nodes) {
+    vec<vec<std::pair<HypernodeID, Gain>>> data(context.partition.k);
+    for (auto v : nodes) {
+      const PartitionID pv = phg.partID(v);
+      auto [target, gain] = computeBestTargetBlock(phg, v);
+      sharedData.targetPart[v] = target;
+      data[pv].push_back({v, gain});
+    }
+    for (int i = 0; i < context.partition.k; ++i) {
+      vertexPQs[i].build_heap(data[i]);
+    }
+  }
+
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   void updateGain(const PHG& phg, const HypernodeID v, const Move& move) {
     const PartitionID pv = phg.partID(v);
     ASSERT(vertexPQs[pv].contains(v));

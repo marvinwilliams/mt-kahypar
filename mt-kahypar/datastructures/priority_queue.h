@@ -69,6 +69,18 @@ public:
     siftUp(pos);
   }
 
+  void build_heap(const vec<std::pair<IdT, KeyT>>& data) {
+    for (auto i : data) {
+      heap.push_back({i.second, i.first});
+    }
+    for (int i = size() - 1; i >= 0; --i) {
+      positions[heap[i].id] = i;
+      if (static_cast<PosT>(i) < size() / arity) {
+        siftDown(i);
+      }
+    }
+  }
+
   void remove(const IdT e) {
     assert(!empty() && contains(e));
     PosT pos = positions[e];

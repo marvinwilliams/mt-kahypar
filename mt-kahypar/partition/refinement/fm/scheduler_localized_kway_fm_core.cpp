@@ -19,6 +19,7 @@
  ******************************************************************************/
 
 #include "mt-kahypar/partition/refinement/fm/scheduler_localized_kway_fm_core.h"
+#include "mt-kahypar/partition/refinement/fm/strategies/km1_gains.h"
 
 namespace mt_kahypar {
 
@@ -33,18 +34,27 @@ namespace mt_kahypar {
     ASSERT(searchData->thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads + context.refinement.fm.num_additional_searches);
 
     auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
+    Gain max_gain = invalidGain;
     if (seeds) {
+      Km1GainComputer gc(sharedData.numParts);
       for (HypernodeID u : *seeds) {
+        if (sharedData.nodeTracker.tryAcquireNode(u, searchData->thisSearch)) {
+          searchData->nodes.push_back(u);
+          auto [target, gain] = gc.computeBestTargetBlock(phg, u, context.partition.max_part_weights);
+          max_gain = std::max(max_gain, gain);
+        }
+/*
         SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
         if (sharedData.nodeTracker.tryAcquireNode(u, searchData->thisSearch)) {
           fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
         }
+*/
       }
     }
 
-    searchData->gain = fm_strategy.getNextMoveGain(phg);
-    fm_strategy.resetPQs(searchData->nodes);
-    ASSERT(searchData->nodes.size() == searchData->runStats.pushes);
+    searchData->gain = max_gain;
+    /*fm_strategy.resetPQs(searchData->nodes);*/
+    /*ASSERT(searchData->nodes.size() == searchData->runStats.pushes);*/
     if (searchData->nodes.size() > 0) {
       if (sharedData.deltaExceededMemoryConstraints) {
         deltaPhg.dropMemory();
@@ -342,10 +352,13 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   void SchedulerLocalizedKWayFM<FMStrategy>::setFMStrategy(PartitionedHypergraph& phg) {
     fm_strategy.setRunStats(searchData->runStats);
+/*
     for (HypernodeID u : searchData->nodes) {
       SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
       fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
     }
+*/
+    fm_strategy.insertAll(phg, searchData->nodes);
   }
 
   template<typename FMStrategy>

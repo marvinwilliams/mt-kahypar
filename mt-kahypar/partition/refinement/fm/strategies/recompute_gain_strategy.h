@@ -65,6 +65,18 @@ namespace mt_kahypar {
 
     template<typename PHG>
     MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    void insertAll(const PHG& phg, const vec<HypernodeID>& nodes) {
+      vec<std::pair<HypernodeID, Gain>> data(context.partition.k);
+      for (auto v : nodes) {
+        auto [target, gain] = gc.computeBestTargetBlock(phg, v, context.partition.max_part_weights);
+        sharedData.targetPart[v] = target;
+        data.push_back({v, gain});
+      }
+      pq.build_heap(data);
+    }
+
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
     void updateGain(const PHG& phg, const HypernodeID v, const Move& /*move*/) {
       ASSERT(pq.contains(v));
       auto [target, gain] = gc.computeBestTargetBlock(phg, v, context.partition.max_part_weights);

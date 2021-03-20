@@ -80,6 +80,23 @@ namespace mt_kahypar {
 
     template<typename PHG>
     MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    void insertAll(const PHG& phg, const vec<HypernodeID>& nodes) {
+      vec<vec<std::pair<HypernodeID, Gain>>> data(context.partition.k);
+      for (auto v : nodes) {
+        gc.computeGainsFromScratch(phg, v);
+        for (PartitionID i = 0; i < k; ++i) {
+          if (i != phg.partID(v)) {
+            data[i].push_back({v, gc.gains[i]});
+          }
+        }
+      }
+      for (int i = 0; i < context.partition.k; ++i) {
+        vertexPQs[i].build_heap(data[i]);
+      }
+    }
+
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
     void updateGain(const PHG& /*phg*/, const HypernodeID /*v*/, const Move& /*move*/) {
       // do nothing
     }
