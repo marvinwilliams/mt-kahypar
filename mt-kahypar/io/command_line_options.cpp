@@ -352,10 +352,10 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.scheduling :
                  &context.refinement.fm.scheduling))->value_name("<bool>")->default_value(false),
              "If true, use FM Scheduling. Always uses random node assignment.")
-            ((initial_partitioning ? "i-r-fm-num-additional-searches" : "i-r-fm-num-additional-searches"),
-             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.num_additional_searches :
-                 &context.refinement.fm.num_additional_searches))->value_name("<siz_t>")->default_value(8),
-             "Number of additional searches that get scheduled, if scheduling is enabled.")
+            ((initial_partitioning ? "i-r-fm-additional-searches-factor" : "i-r-fm-additional-searches-factor"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.additional_searches_factor :
+                 &context.refinement.fm.additional_searches_factor))->value_name("<siz_t>")->default_value(2),
+             "Number of threads * factor searches get scheduled, if scheduling is enabled.")
             ((initial_partitioning ? "i-r-fm-max-moves-before-reschedule" : "i-r-fm-max-moves-before-reschedule"),
              po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.max_moves_before_reschedule :
                  &context.refinement.fm.max_moves_before_reschedule))->value_name("<siz_t>")->default_value(10),

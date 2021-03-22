@@ -32,7 +32,7 @@ namespace mt_kahypar {
     if (searchData->thisSearch == 0) {
       searchData->thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
     }
-    ASSERT(searchData->thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads + context.refinement.fm.num_additional_searches);
+    ASSERT(searchData->thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads + context.refinement.fm.additional_searches_factor);
 
     auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
     Gain max_gain = invalidGain;

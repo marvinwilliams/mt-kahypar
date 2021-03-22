@@ -124,7 +124,7 @@ namespace mt_kahypar {
       out << "    Release Nodes:                    " << std::boolalpha << params.release_nodes << std::endl;
       out << "    Time Limit Factor:                " << params.time_limit_factor << std::endl;
       out << "    Scheduling:                       " << std::boolalpha << params.scheduling << std::endl;
-      out << "    Additional Searches:              " << params.num_additional_searches << std::endl;
+      out << "    Additional Searches Factor:       " << params.additional_searches_factor << std::endl;
       out << "    Max Moves Before Reschedule:      " << params.max_moves_before_reschedule << std::endl;
       out << "    Random Node Assignment:           " << std::boolalpha << (params.scheduling || params.random_assignment) << std::endl;
     }
