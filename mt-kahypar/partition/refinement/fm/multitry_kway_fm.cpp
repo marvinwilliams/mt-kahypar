@@ -67,13 +67,6 @@ namespace mt_kahypar {
         num_seeds = std::min(num_seeds, context.refinement.fm.num_seed_nodes);
         num_seeds = std::max(num_seeds, 1UL);
       }
-      size_t schedule_searches = context.shared_memory.num_threads + context.refinement.fm.num_additional_searches;
-      if (context.refinement.fm.scheduling && num_border_nodes < num_seeds * schedule_searches) {
-        num_seeds = num_border_nodes / schedule_searches + 1;
-        num_seeds = std::min(num_seeds, schedule_searches);
-        num_seeds = std::max(num_seeds, 1UL);
-      }
-
       timer.start_timer("find_moves", "Find Moves");
       sharedData.finishedTasks.store(0, std::memory_order_relaxed);
 
@@ -84,6 +77,7 @@ namespace mt_kahypar {
               && fm.findMoves(phg, task_id, num_seeds)) { /* keep running */ }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
+      size_t schedule_searches = context.shared_memory.num_threads + context.refinement.fm.num_additional_searches;
       size_t num_tasks = context.refinement.fm.scheduling ? std::min(num_border_nodes, schedule_searches) : std::min(num_border_nodes, context.shared_memory.num_threads);
       /*ASSERT(static_cast<int>(num_tasks) <= TBBNumaArena::instance().total_number_of_threads());*/
 

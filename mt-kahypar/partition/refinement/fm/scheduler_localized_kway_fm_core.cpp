@@ -336,10 +336,16 @@ namespace mt_kahypar {
   void SchedulerLocalizedKWayFM<FMStrategy>::applyMovesOntoDeltaPhg() {
     for (auto& m : searchData->localMoves) {
       Move& move = m.first;
-      /* TODO: is this right? <19-03-21, @noahares> */
+      /* TODO: is this right now? <22-03-21, @noahares> */
       // REVIEW nope. call the fm_strategy.deltaGainUpdates function in the delta_func lambda for changeNodePart
-      deltaPhg.changeNodePartWithGainCacheUpdate(
-        move.node, move.from, move.to, context.partition.max_part_weights[move.to]);
+      auto delta_func = [&](const HyperedgeID he, const HyperedgeWeight edge_weight, const HypernodeID edge_size,
+            const HypernodeID pin_count_in_from_part_after, const HypernodeID pin_count_in_to_part_after) {
+        fm_strategy.deltaGainUpdates(
+          deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after, move.to, pin_count_in_to_part_after);
+      };
+
+      deltaPhg.changeNodePart(
+        move.node, move.from, move.to, context.partition.max_part_weights[move.to], delta_func);
     }
   }
 

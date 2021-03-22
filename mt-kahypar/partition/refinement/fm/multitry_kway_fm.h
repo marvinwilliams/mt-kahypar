@@ -53,7 +53,12 @@ public:
     scheduler(c, hypergraph.initialNumNodes(), sharedData)
   {
     if (context.refinement.fm.obey_minimal_parallelism) {
-      sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
+      if (context.refinement.fm.scheduling) {
+        sharedData.finishedTasksLimit = context.shared_memory.num_threads + context.refinement.fm.num_additional_searches;
+      } else {
+        sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
+      }
+
     }
   }
 

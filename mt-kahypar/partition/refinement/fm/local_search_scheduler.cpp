@@ -54,7 +54,6 @@ namespace mt_kahypar {
             local_searches.emplace(result.value(), search);
             m.unlock();
           } else { // reinsert boundary vertices and reinsert search into pq
-            // REVIEW finished task limit still set to min(8, num threads)? --> stops after 8 finished localized searches
             sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
             fm.setup(phg, numSeeds, data);
             Gain gain = data.gain;
