@@ -41,6 +41,7 @@ namespace mt_kahypar {
       for (HypernodeID u : *seeds) {
         if (sharedData.nodeTracker.tryAcquireNode(u, searchData->thisSearch)) {
           searchData->nodes.push_back(u);
+          // REVIEW can look in gain cache? ask strategy for the gain value
           auto [target, gain] = gc.computeBestTargetBlock(phg, u, context.partition.max_part_weights);
           max_gain = std::max(max_gain, gain);
         }
@@ -336,6 +337,7 @@ namespace mt_kahypar {
     for (auto& m : searchData->localMoves) {
       Move& move = m.first;
       /* TODO: is this right? <19-03-21, @noahares> */
+      // REVIEW nope. call the fm_strategy.deltaGainUpdates function in the delta_func lambda for changeNodePart
       deltaPhg.changeNodePartWithGainCacheUpdate(
         move.node, move.from, move.to, context.partition.max_part_weights[move.to]);
     }

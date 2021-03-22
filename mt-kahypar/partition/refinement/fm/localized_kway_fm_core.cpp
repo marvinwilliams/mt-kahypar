@@ -31,6 +31,7 @@ namespace mt_kahypar {
     ASSERT(thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
 
     if (context.refinement.fm.random_assignment) {
+      // REVIEW why is this random assignment and the other one not? both do the same thing, one just does fewer atomic increments
       auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
       if (seeds) {
         for (HypernodeID u : *seeds) {
