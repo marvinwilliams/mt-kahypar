@@ -55,7 +55,7 @@ namespace mt_kahypar {
       roundInitialization(phg, refinement_nodes);
       timer.stop_timer("collect_border_nodes");
 
-      size_t num_border_nodes = context.refinement.fm.scheduling ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
+      size_t num_border_nodes = context.refinement.fm.scheduling || context.refinement.fm.random_assignment ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
       if (num_border_nodes == 0) {
         break;
       }
@@ -79,8 +79,9 @@ namespace mt_kahypar {
 
       auto task = [&](const size_t task_id) {
         auto& fm = ets_fm.local();
+        fm.resetSearchID();
         while(sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit
-              && fm.findMoves(phg, task_id, num_seeds)) { }
+              && fm.findMoves(phg, task_id, num_seeds)) { /* keep running */ }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
       size_t num_tasks = context.refinement.fm.scheduling ? std::min(num_border_nodes, schedule_searches) : std::min(num_border_nodes, context.shared_memory.num_threads);
@@ -165,14 +166,14 @@ namespace mt_kahypar {
   void MultiTryKWayFM<FMStrategy>::roundInitialization(PartitionedHypergraph& phg,
                                                        const vec<HypernodeID>& refinement_nodes) {
     // clear border nodes
-    if (context.refinement.fm.scheduling) {
+    if (context.refinement.fm.scheduling || context.refinement.fm.random_assignment) {
       sharedData.shared_refinement_nodes.clear();
     } else {
       sharedData.refinementNodes.clear();
     }
 
     if ( refinement_nodes.empty() ) {
-      if (context.refinement.fm.scheduling) {
+      if (context.refinement.fm.scheduling || context.refinement.fm.random_assignment) {
         randomAssignment(phg);
       } else {
       // log(n) level case
@@ -201,13 +202,13 @@ namespace mt_kahypar {
     }
 
     // shuffle task queue if requested
-    if (!context.refinement.fm.scheduling && context.refinement.fm.shuffle) {
+    if (!(context.refinement.fm.scheduling || context.refinement.fm.random_assignment) && context.refinement.fm.shuffle) {
       sharedData.refinementNodes.shuffle();
     }
 
     // requesting new searches activates all nodes by raising the deactivated node marker
     // also clears the array tracking search IDs in case of overflow
-    size_t num_border_nodes = context.refinement.fm.scheduling ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
+    size_t num_border_nodes = context.refinement.fm.scheduling || context.refinement.fm.random_assignment ? sharedData.shared_refinement_nodes.unsafe_size() : sharedData.refinementNodes.unsafe_size();
     sharedData.nodeTracker.requestNewSearches(static_cast<SearchID>(num_border_nodes));
   }
 

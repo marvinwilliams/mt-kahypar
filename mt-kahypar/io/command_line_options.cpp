@@ -351,7 +351,7 @@ namespace mt_kahypar {
             ((initial_partitioning ? "i-r-fm-scheduling" : "r-fm-scheduling"),
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.scheduling :
                  &context.refinement.fm.scheduling))->value_name("<bool>")->default_value(false),
-             "If true, use FM Scheduling.")
+             "If true, use FM Scheduling. Always uses random node assignment.")
             ((initial_partitioning ? "i-r-fm-num-additional-searches" : "i-r-fm-num-additional-searches"),
              po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.num_additional_searches :
                  &context.refinement.fm.num_additional_searches))->value_name("<siz_t>")->default_value(8),
@@ -360,6 +360,10 @@ namespace mt_kahypar {
              po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.max_moves_before_reschedule :
                  &context.refinement.fm.max_moves_before_reschedule))->value_name("<siz_t>")->default_value(10),
              "Maximum number of moves before rescheduling happens, if scheduling is enabled.")
+             ((initial_partitioning ? "i-r-fm-random-assignment" : "r-fm-random-assignment"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.random_assignment :
+                 &context.refinement.fm.random_assignment))->value_name("<bool>")->default_value(false),
+             "If true, use randomized assignment for border nodes. Implicit true, if scheduling is used.")
             #ifdef USE_STRONG_PARTITIONER
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :

@@ -145,6 +145,7 @@ struct FMParameters {
   bool scheduling = false;
   size_t num_additional_searches = 8;
   size_t max_moves_before_reschedule = 10;
+  bool random_assignment = false;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);

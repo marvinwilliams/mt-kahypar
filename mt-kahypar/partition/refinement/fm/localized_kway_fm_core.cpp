@@ -25,13 +25,28 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   bool LocalizedKWayFM<FMStrategy>::findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds) {
     localMoves.clear();
-    thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
+    if (thisSearch == 0) {
+      thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
+    }
+    ASSERT(thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
 
-    HypernodeID seedNode;
-    while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
-      SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
-      if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
-        fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+    if (context.refinement.fm.random_assignment) {
+      auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
+      if (seeds) {
+        for (HypernodeID u : *seeds) {
+          SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[u].load(std::memory_order_relaxed);
+          if (sharedData.nodeTracker.tryAcquireNode(u, thisSearch)) {
+            fm_strategy.insertIntoPQ(phg, u, previousSearchOfSeedNode);
+          }
+        }
+      }
+    } else {
+      HypernodeID seedNode;
+      while (runStats.pushes < numSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
+        SearchID previousSearchOfSeedNode = sharedData.nodeTracker.searchOfNode[seedNode].load(std::memory_order_relaxed);
+        if (sharedData.nodeTracker.tryAcquireNode(seedNode, thisSearch)) {
+          fm_strategy.insertIntoPQ(phg, seedNode, previousSearchOfSeedNode);
+        }
       }
     }
 
