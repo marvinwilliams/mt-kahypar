@@ -278,24 +278,24 @@ struct FMStats {
 
 struct ScheduleStats {
   size_t reschedules = 0;
-  size_t preemtive_reschedules = 0;
+  size_t preemptive_reschedules = 0;
   size_t searches_started_and_resumed = 0;
 
   void clear() {
     reschedules = 0;
-    preemtive_reschedules = 0;
+    preemptive_reschedules = 0;
     searches_started_and_resumed = 0;
   }
 
   void merge(ScheduleStats& other) {
     other.reschedules += reschedules;
-    other.preemtive_reschedules += preemtive_reschedules;
+    other.preemptive_reschedules += preemptive_reschedules;
     other.searches_started_and_resumed += searches_started_and_resumed;
   }
 
   std::string serialize() const {
     std::stringstream os;
-    os << V(reschedules) << " " << V(preemtive_reschedules) << " " V(searches_started_and_resumed);
+    os << V(reschedules) << " " << V(preemptive_reschedules) << " " V(searches_started_and_resumed);
     return os.str();
   }
 };

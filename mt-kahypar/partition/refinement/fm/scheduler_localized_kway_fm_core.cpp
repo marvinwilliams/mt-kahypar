@@ -155,13 +155,13 @@ namespace mt_kahypar {
       next_gain = fm_strategy.getNextMoveGain(phg);
       if (next_gain == kInvalidGain) break;
       // Idea: if more than half of the scheduled moves have been performed and the next move would be the first nagative gain move, reschedule
-      bool preemtive_reschedule = last_gain >= 0 && next_gain < 0
-        && searchData->num_moves > (context.refinement.fm.max_moves_before_reschedule / 2);
-      if (preemtive_reschedule || searchData->num_moves > context.refinement.fm.max_moves_before_reschedule) {
+      bool preemptive_reschedule = last_gain >= 0 && next_gain < 0
+                                   && searchData->num_moves > (context.refinement.fm.max_moves_before_reschedule / 2);
+      if (preemptive_reschedule || searchData->num_moves > context.refinement.fm.max_moves_before_reschedule) {
         searchData->num_moves = 0;
         searchData->scheduleStats.reschedules++;
-        if (preemtive_reschedule) {
-          searchData->scheduleStats.preemtive_reschedules++;
+        if (preemptive_reschedule) {
+          searchData->scheduleStats.preemptive_reschedules++;
         }
         fm_strategy.resetPQs(searchData->nodes);
         return next_gain;
