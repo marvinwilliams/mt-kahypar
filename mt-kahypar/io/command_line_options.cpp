@@ -351,19 +351,19 @@ namespace mt_kahypar {
             ((initial_partitioning ? "i-r-fm-scheduling" : "r-fm-scheduling"),
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.scheduling :
                  &context.refinement.fm.scheduling))->value_name("<bool>")->default_value(false),
-             "If true, use FM Scheduling. Always uses random node assignment.")
+             "If true, use FM Scheduling. Always uses shared work queue.")
             ((initial_partitioning ? "i-r-fm-additional-searches-factor" : "r-fm-additional-searches-factor"),
              po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.additional_searches_factor :
                  &context.refinement.fm.additional_searches_factor))->value_name("<siz_t>")->default_value(2),
              "Number of threads * factor searches get scheduled, if scheduling is enabled.")
             ((initial_partitioning ? "i-r-fm-max-moves-before-reschedule" : "r-fm-max-moves-before-reschedule"),
              po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.max_moves_before_reschedule :
-                 &context.refinement.fm.max_moves_before_reschedule))->value_name("<siz_t>")->default_value(10),
+                 &context.refinement.fm.max_moves_before_reschedule))->value_name("<siz_t>")->default_value(50),
              "Maximum number of moves before rescheduling happens, if scheduling is enabled.")
-             ((initial_partitioning ? "i-r-fm-random-assignment" : "r-fm-random-assignment"),
-             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.random_assignment :
-                 &context.refinement.fm.random_assignment))->value_name("<bool>")->default_value(false),
-             "If true, use randomized assignment for border nodes. Implicit true, if scheduling is used.")
+             ((initial_partitioning ? "i-r-fm-shared-work-queue" : "r-fm-shared-work-queue"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.shared_work_queue :
+                 &context.refinement.fm.shared_work_queue))->value_name("<bool>")->default_value(false),
+             "If true, use one shared work queue for border-node assignment. Implicit true, if scheduling is used.")
             #ifdef USE_STRONG_PARTITIONER
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :

@@ -30,9 +30,7 @@ namespace mt_kahypar {
     }
     ASSERT(thisSearch - sharedData.nodeTracker.deactivatedNodeMarker <= context.shared_memory.num_threads);
 
-    /* TODO: rename param to shared_work_queue <22-03-21, @noahares> */
-    if (context.refinement.fm.random_assignment) {
-      // REVIEW why is this random assignment and the other one not? both do the same thing, one just does fewer atomic increments
+    if (context.refinement.fm.shared_work_queue) {
       auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
       if (seeds) {
         for (HypernodeID u : *seeds) {

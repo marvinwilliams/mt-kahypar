@@ -144,8 +144,8 @@ struct FMParameters {
   bool release_nodes = true;
   bool scheduling = false;
   size_t additional_searches_factor = 2;
-  size_t max_moves_before_reschedule = 10;
-  bool random_assignment = false;
+  size_t max_moves_before_reschedule = 50;
+  bool shared_work_queue = false;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);

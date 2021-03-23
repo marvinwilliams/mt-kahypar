@@ -126,7 +126,7 @@ namespace mt_kahypar {
       out << "    Scheduling:                       " << std::boolalpha << params.scheduling << std::endl;
       out << "    Additional Searches Factor:       " << params.additional_searches_factor << std::endl;
       out << "    Max Moves Before Reschedule:      " << params.max_moves_before_reschedule << std::endl;
-      out << "    Random Node Assignment:           " << std::boolalpha << (params.scheduling || params.random_assignment) << std::endl;
+      out << "    Shared Work Queue:                " << std::boolalpha << (params.scheduling || params.shared_work_queue) << std::endl;
     }
     out << std::flush;
     return out;
