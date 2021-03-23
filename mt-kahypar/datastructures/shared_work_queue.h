@@ -19,9 +19,11 @@
  ******************************************************************************/
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
+#include "mt-kahypar/definitions.h"
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/parallel/atomic_wrapper.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
+#include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/utils/range.h"
 #include <algorithm>
 #include <random>
@@ -76,17 +78,15 @@ template <class T> struct SharedWorkQueue {
     return back.load(std::memory_order_relaxed) - front.load(std::memory_order_relaxed);
   }
 
-/*
   struct Comparator {
-    const vec<int> &value_vector;
+    const vec<Gain> &value_vector;
 
-    Comparator(const vec<int> &val_vec) : value_vector(val_vec) {}
+    Comparator(const vec<Gain> &val_vec) : value_vector(val_vec) {}
 
     bool operator()(const T& i1, const T& i2) {
-      return value_vector[i1] < value_vector[i2];
+      return value_vector[i1] > value_vector[i2];
     }
   };
-*/
 
   void shuffle(size_t seed) {
 /*
@@ -119,6 +119,35 @@ template <class T> struct SharedWorkQueue {
                       });
 */
   }
+
+  // very hacky thing
+  void sortByGain(PartitionedHypergraph& phg, const Context& context) {
+    vec<Gain> gains(phg.initialNumNodes());
+    for (auto u : work_queue) {
+      const HypernodeWeight wu = phg.nodeWeight(u);
+      const PartitionID from = phg.partID(u);
+      const HypernodeWeight from_weight = phg.partWeight(from);
+      PartitionID to = kInvalidPartition;
+      HyperedgeWeight to_penalty = std::numeric_limits<HyperedgeWeight>::max();
+      HypernodeWeight best_to_weight = from_weight - wu;
+      for (PartitionID i = 0; i < phg.k(); ++i) {
+        if (i != from) {
+          const HypernodeWeight to_weight = phg.partWeight(i);
+          const HyperedgeWeight penalty = phg.moveToPenalty(u, i);
+          if ( ( penalty < to_penalty || ( penalty == to_penalty && to_weight < best_to_weight ) ) &&
+              to_weight + wu <= context.partition.max_part_weights[i] ) {
+            to_penalty = penalty;
+            to = i;
+            best_to_weight = to_weight;
+          }
+        }
+      }
+      const Gain gain = to != kInvalidPartition ? phg.moveFromBenefit(u) - to_penalty : std::numeric_limits<HyperedgeWeight>::min();
+      gains[u] = gain;
+    }
+    std::sort(work_queue.begin() + front, work_queue.begin() + back, Comparator(gains));
+  }
 };
+
 
 } // namespace mt_kahypar

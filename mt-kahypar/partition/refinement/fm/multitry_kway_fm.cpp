@@ -77,7 +77,7 @@ namespace mt_kahypar {
               && fm.findMoves(phg, task_id, num_seeds)) { /* keep running */ }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
-      size_t schedule_searches = context.shared_memory.num_threads + context.refinement.fm.additional_searches_factor;
+      size_t schedule_searches = context.shared_memory.num_threads * context.refinement.fm.additional_searches_factor;
       size_t num_tasks = context.refinement.fm.scheduling ? std::min(num_border_nodes, schedule_searches) : std::min(num_border_nodes, context.shared_memory.num_threads);
       /*ASSERT(static_cast<int>(num_tasks) <= TBBNumaArena::instance().total_number_of_threads());*/
 
@@ -222,7 +222,9 @@ namespace mt_kahypar {
         }
       });
 
-      sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
+      /*sharedData.shared_refinement_nodes.shuffle(context.partition.seed);*/
+      // Assumes gain cache is used !
+      sharedData.shared_refinement_nodes.sortByGain(phg, context);
     }
 
   template<typename FMStrategy>

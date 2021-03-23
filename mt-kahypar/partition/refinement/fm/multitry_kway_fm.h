@@ -54,7 +54,7 @@ public:
   {
     if (context.refinement.fm.obey_minimal_parallelism) {
       if (context.refinement.fm.scheduling) {
-        sharedData.finishedTasksLimit = context.shared_memory.num_threads + context.refinement.fm.additional_searches_factor;
+        sharedData.finishedTasksLimit = context.shared_memory.num_threads * context.refinement.fm.additional_searches_factor;
       } else {
         sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
       }
