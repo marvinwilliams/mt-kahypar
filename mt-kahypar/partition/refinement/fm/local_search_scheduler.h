@@ -59,7 +59,7 @@ namespace mt_kahypar {
 
     vec<SearchData<FMStrategy>> search_data;
 
-    tbb::task_group tg;
+    /*tbb::task_group tg;*/
 
     std::mutex m;
   };

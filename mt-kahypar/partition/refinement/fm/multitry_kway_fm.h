@@ -63,7 +63,7 @@ public:
   }
 
   /* TODO: why do I need to add this?? <15-03-21, @noahares> */
-  ~MultiTryKWayFM() noexcept = default;
+  /*~MultiTryKWayFM() noexcept = default;*/
 
   bool refineImpl(PartitionedHypergraph& phg,
                   const vec<HypernodeID>& refinement_nodes,

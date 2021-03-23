@@ -29,6 +29,7 @@ namespace mt_kahypar {
       while (!local_searches.empty()) {
         local_searches.pop();
       }
+      tbb::task_group tg;
       for (size_t i = 0; i < search_data.size(); ++i) {
         Gain gain = search_data[i].gain;
         if (gain != invalidGain) {
@@ -96,6 +97,7 @@ namespace mt_kahypar {
       ASSERT(search_data[search].thisSearch == 0);
       fm.setup(phg, numSeeds, search_data[search]);
     };
+    tbb::task_group tg;
     for (size_t i = 0; i < numSearches; ++i) {
       tg.run(std::bind(task, i));
     }
