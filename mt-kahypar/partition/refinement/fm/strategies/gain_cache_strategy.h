@@ -84,7 +84,7 @@ public:
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
   void insertAll(const PHG& phg, const vec<HypernodeID>& nodes) {
     // REVIEW why are you allocating a new vector? just push into the heap vector
-    /* TODO: adjust build_heap for this <22-03-21, @noahares> */
+    /* TODO: adjust build_heap for this, note: heap is protected <22-03-21, @noahares> */
     vec<vec<std::pair<HypernodeID, Gain>>> data(context.partition.k);
     for (auto v : nodes) {
       const PartitionID pv = phg.partID(v);
