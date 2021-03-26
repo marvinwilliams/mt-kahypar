@@ -28,6 +28,9 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   class LocalSearchScheduler {
+
+  static constexpr bool debug = false;
+
   public:
     explicit LocalSearchScheduler(const Context& context, const HypernodeID numNodes, FMSharedData& sharedData) :
       numNodes(numNodes),

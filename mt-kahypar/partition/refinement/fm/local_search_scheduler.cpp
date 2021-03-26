@@ -70,16 +70,16 @@ namespace mt_kahypar {
         tg.run(task);
       }
       tg.wait();
-      ScheduleStats scheduleStats;
-      for (auto& search : search_data) {
-        search.scheduleStats.merge(scheduleStats);
+      if (debug) {
+        ScheduleStats scheduleStats;
+        for (auto& search : search_data) {
+          search.scheduleStats.merge(scheduleStats);
+        }
+        LOG << scheduleStats.serialize();
+        FMStats stats;
+        collectStats(stats);
+        LOG << stats.serialize();
       }
-      LOG << scheduleStats.serialize();
-/*
-      FMStats stats;
-      collectStats(stats);
-      LOG << stats.serialize();
-*/
 
   }
 
