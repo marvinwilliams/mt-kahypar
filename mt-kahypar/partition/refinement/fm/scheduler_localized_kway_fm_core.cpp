@@ -37,12 +37,14 @@ namespace mt_kahypar {
     auto seeds = sharedData.shared_refinement_nodes.try_pop(numSeeds);
     Gain max_gain = invalidGain;
     if (seeds) {
-      Km1GainComputer gc(sharedData.numParts);
       for (HypernodeID u : *seeds) {
         if (sharedData.nodeTracker.tryAcquireNode(u, searchData->thisSearch)) {
           searchData->nodes.push_back(u);
-          // REVIEW can look in gain cache? ask strategy for the gain value
-          auto [target, gain] = gc.computeBestTargetBlock(phg, u, context.partition.max_part_weights);
+          // assumes gain cache to be used
+          if (!FMStrategy::uses_gain_cache) {
+            LOG << "Strategy no yet supported";
+          }
+          Gain gain = fm_strategy.computeBestGain(phg, u);
           max_gain = std::max(max_gain, gain);
         }
       }

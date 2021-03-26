@@ -147,6 +147,12 @@ namespace mt_kahypar {
       // do nothing!
     }
 
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    Gain computeBestGain(const PHG&, const HypernodeID) {
+      return 0;
+    }
+
     void memoryConsumption(utils::MemoryTreeNode *parent) const {
       parent->addChild("PQs", pq.size_in_bytes());
       parent->addChild("Initial Gain Comp", gc.gains.size() * sizeof(Gain));

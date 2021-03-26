@@ -226,9 +226,11 @@ namespace mt_kahypar {
         }
       });
 
-      /*sharedData.shared_refinement_nodes.shuffle(context.partition.seed);*/
-      // Assumes gain cache is used !
-      sharedData.shared_refinement_nodes.sortByGain(phg, context);
+      if (FMStrategy::uses_gain_cache) {
+        sharedData.shared_refinement_nodes.sortByGain(phg, context);
+      } else {
+        sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
+      }
     }
 
   template<typename FMStrategy>

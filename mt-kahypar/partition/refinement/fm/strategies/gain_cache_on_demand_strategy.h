@@ -81,6 +81,11 @@ namespace mt_kahypar {
     GainCacheStrategy::setRunStats(_runStats);
   }
 
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  Gain computeBestGain(const PHG& phg, const HypernodeID u) {
+    return GainCacheStrategy::computeBestGain(phg, u);
+  }
 
   private:
     vec<Gain> gainCacheInitMem;

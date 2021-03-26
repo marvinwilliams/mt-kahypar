@@ -258,6 +258,12 @@ namespace mt_kahypar {
       parent->addChild("Initial Gain Comp", k * sizeof(Gain));
     }
 
+    template<typename PHG>
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    Gain computeBestGain(const PHG&, const HypernodeID) {
+      return 0;
+    }
+
   private:
 
     template<typename PHG>

@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include "mt-kahypar/macros.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 
 
@@ -217,6 +218,13 @@ public:
             [](size_t init, const VertexPriorityQueue& pq) { return init + pq.size_in_bytes(); }
     );
     parent->addChild("PQs", blockPQ.size_in_bytes() + vertex_pq_sizes);
+  }
+
+  template<typename PHG>
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+  Gain computeBestGain(const PHG& phg, const HypernodeID u) {
+    auto [target, gain] = computeBestTargetBlock(phg, u);
+    return gain;
   }
 
 private:

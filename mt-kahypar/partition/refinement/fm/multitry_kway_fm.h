@@ -63,6 +63,7 @@ public:
   }
 
   /* TODO: why do I need to add this?? <15-03-21, @noahares> */
+  // Seems like the tbb::task_group as a member of the scheduler did this... but it still resulted in an error while running on the compute. Putting the tast_group on the heap resolved this.
   /*~MultiTryKWayFM() noexcept = default;*/
 
   bool refineImpl(PartitionedHypergraph& phg,
