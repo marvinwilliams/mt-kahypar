@@ -340,7 +340,7 @@ namespace mt_kahypar {
       Move& move = m.first;
       /* TODO: is this right now? <22-03-21, @noahares> */
       // REVIEW nope. call the fm_strategy.deltaGainUpdates function in the delta_func lambda for changeNodePart
-      auto delta_func = [&](const HyperedgeID he, const HyperedgeWeight edge_weight, const HypernodeID edge_size,
+      auto delta_func = [&](const HyperedgeID he, const HyperedgeWeight edge_weight, const HypernodeID,
             const HypernodeID pin_count_in_from_part_after, const HypernodeID pin_count_in_to_part_after) {
         fm_strategy.deltaGainUpdates(
           deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after, move.to, pin_count_in_to_part_after);
