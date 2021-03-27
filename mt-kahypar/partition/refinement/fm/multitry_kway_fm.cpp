@@ -84,10 +84,12 @@ namespace mt_kahypar {
       if (context.refinement.fm.scheduling) {
         scheduler.performLocalSearches(phg, num_seeds, num_tasks);
       } else {
+/*
         if (context.type == kahypar::ContextType::main) {
           num_seeds = num_border_nodes;
           num_tasks = 1;
         }
+*/
         for (size_t i = 0; i < num_tasks; ++i) {
           tg.run(std::bind(task, i));
         }

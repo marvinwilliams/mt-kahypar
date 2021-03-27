@@ -148,11 +148,12 @@ namespace mt_kahypar {
 
     HypernodeWeight heaviestPartWeight = 0;
     HypernodeWeight fromWeight = 0, toWeight = 0;
-    Gain next_gain = 0;
+    /*Gain next_gain = 0;*/
 
     while (!stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
 
+/*
       Gain last_gain = next_gain;
       next_gain = fm_strategy.getNextMoveGain(phg);
       if (next_gain == kInvalidGain) break;
@@ -168,6 +169,7 @@ namespace mt_kahypar {
         fm_strategy.resetPQs(searchData->nodes);
         return next_gain;
       }
+*/
 
       if constexpr (use_delta) {
         if (!fm_strategy.findNextMove(deltaPhg, move)) break;
@@ -351,7 +353,6 @@ namespace mt_kahypar {
     }
   }
 
-  /* TODO: dont call insert multiple times, but use some sort of heapify <18-03-21, @noahares> */
   template<typename FMStrategy>
   void SchedulerLocalizedKWayFM<FMStrategy>::setFMStrategy(PartitionedHypergraph& phg) {
     fm_strategy.setRunStats(searchData->runStats);
