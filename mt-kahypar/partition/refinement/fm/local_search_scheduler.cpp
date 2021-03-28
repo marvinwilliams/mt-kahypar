@@ -55,7 +55,6 @@ namespace mt_kahypar {
             local_searches.emplace(result.value(), search);
             m.unlock();
           } else { // reinsert boundary vertices and reinsert search into pq
-            sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
             fm.setup(phg, numSeeds, data);
             Gain gain = data.gain;
             if (gain != invalidGain) {
@@ -65,6 +64,7 @@ namespace mt_kahypar {
             }
           }
         }
+        sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
       for (size_t i = 0; i < std::min(numSearches, context.shared_memory.num_threads); ++i) {
         tg.run(task);
