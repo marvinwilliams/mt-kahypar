@@ -69,10 +69,7 @@ public:
     siftUp(pos);
   }
 
-  void build_heap(const vec<std::pair<IdT, KeyT>>& data) {
-    for (auto i : data) {
-      heap.push_back({i.second, i.first});
-    }
+  void build_heap() {
     for (int i = size() - 1; i >= 0; --i) {
       positions[heap[i].id] = i;
       if (static_cast<PosT>(i) < size() / arity) {
@@ -294,7 +291,9 @@ protected:
 
   Comparator comp;                // comp(heap[parent(pos)].key, heap[pos].key) returns true if the element at pos should move upward --> comp = std::less for MaxHeaps
                                   // similarly comp(heap[child(pos)].key, heap[pos].key) returns false if the element at pos should move downward
+public:
   vec<HeapElement> heap;
+protected:
   PosT* positions;
   size_t positions_size;
 };

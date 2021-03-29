@@ -86,15 +86,15 @@ public:
   void insertAll(const PHG& phg, const vec<HypernodeID>& nodes) {
     // REVIEW why are you allocating a new vector? just push into the heap vector
     /* TODO: adjust build_heap for this, note: heap is protected <22-03-21, @noahares> */
-    vec<vec<std::pair<HypernodeID, Gain>>> data(context.partition.k);
     for (auto v : nodes) {
       const PartitionID pv = phg.partID(v);
       auto [target, gain] = computeBestTargetBlock(phg, v);
       sharedData.targetPart[v] = target;
-      data[pv].push_back({v, gain});
+      vertexPQs[pv].heap.push_back({gain, v});
+      runStats->pushes++;
     }
     for (int i = 0; i < context.partition.k; ++i) {
-      vertexPQs[i].build_heap(data[i]);
+      vertexPQs[i].build_heap();
     }
   }
 
