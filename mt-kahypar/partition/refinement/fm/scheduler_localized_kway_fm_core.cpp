@@ -29,6 +29,7 @@ namespace mt_kahypar {
     fm_strategy.setRunStats(searchData->runStats);
     searchData->localMoves.clear();
     searchData->nodes.clear();
+    searchData->stopRule.init(phg.initialNumNodes());
     if (searchData->thisSearch == 0) {
       searchData->thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
     }
@@ -110,7 +111,6 @@ namespace mt_kahypar {
   template<typename FMStrategy>
   template<bool use_delta>
   std::optional<Gain> SchedulerLocalizedKWayFM<FMStrategy>::internalFindMoves(PartitionedHypergraph& phg, SearchData<FMStrategy>& _searchData) {
-    StopRule stopRule(phg.initialNumNodes());
     Move move;
     searchData = &_searchData;
     setFMStrategy(phg);
@@ -150,7 +150,7 @@ namespace mt_kahypar {
     HypernodeWeight fromWeight = 0, toWeight = 0;
     Gain next_gain = 0;
 
-    while (!stopRule.searchShouldStop()
+    while (!searchData->stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
 
       Gain last_gain = next_gain;
@@ -201,14 +201,14 @@ namespace mt_kahypar {
         searchData->num_moves++;
         searchData->estimatedImprovement += move.gain;
         searchData->localMoves.emplace_back(move, move_id);
-        stopRule.update(move.gain);
+        searchData->stopRule.update(move.gain);
         const bool improved_km1 = searchData->estimatedImprovement > searchData->bestImprovement;
         const bool improved_balance_less_equal_km1 = searchData->estimatedImprovement >= searchData->bestImprovement
                                                      && fromWeight == heaviestPartWeight
                                                      && toWeight + phg.nodeWeight(move.node) < heaviestPartWeight;
 
         if (improved_km1 || improved_balance_less_equal_km1) {
-          stopRule.reset();
+          searchData->stopRule.reset();
           searchData->bestImprovement = searchData->estimatedImprovement;
           searchData->bestImprovementIndex = searchData->localMoves.size();
 

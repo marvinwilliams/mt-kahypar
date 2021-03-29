@@ -27,6 +27,7 @@ namespace mt_kahypar {
 // adaptive random walk stopping rule from KaHyPar
 class StopRule {
 public:
+  StopRule() {}
   StopRule(HypernodeID numNodes) : beta(std::log(numNodes) * 5) { }
 
   bool searchShouldStop() {
@@ -53,6 +54,11 @@ public:
   void reset() {
     numSteps = 0;
     variance = 0.0;
+  }
+
+  void init(HypernodeID numNodes) {
+    reset();
+    beta = std::log(numNodes) * 5;
   }
 
 private:

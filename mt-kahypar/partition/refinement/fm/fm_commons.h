@@ -28,6 +28,7 @@
 #include <mt-kahypar/datastructures/shared_work_queue.h>
 
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
+#include "mt-kahypar/partition/refinement/fm/stop_rule.h"
 
 #include <tbb/parallel_for.h>
 
@@ -315,6 +316,7 @@ struct SearchData {
   vec<HypernodeID> nodes;
   Gain gain = invalidGain;
   ScheduleStats scheduleStats;
+  StopRule stopRule;
 
   void reset() {
     bestImprovementIndex = 0;
