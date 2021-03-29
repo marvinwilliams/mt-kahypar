@@ -123,7 +123,10 @@ template <class T> struct SharedWorkQueue {
   // very hacky thing
   void sortByGain(PartitionedHypergraph& phg, const Context& context) {
     vec<Gain> gains(phg.initialNumNodes());
-    for (auto u : work_queue) {
+    auto begin = work_queue.begin() + front;
+    auto end = work_queue.begin() + back;
+    for (auto i = begin; i < end; ++i) {
+      HypernodeID u = *i;
       const HypernodeWeight wu = phg.nodeWeight(u);
       const PartitionID from = phg.partID(u);
       const HypernodeWeight from_weight = phg.partWeight(from);
