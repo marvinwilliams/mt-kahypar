@@ -346,6 +346,9 @@ namespace mt_kahypar {
           deltaPhg, he, edge_weight, move.from, pin_count_in_from_part_after, move.to, pin_count_in_to_part_after);
       };
 
+      // REVIEW deactivate part weight check by calling with std::numeric_limits<HypernodeWeight>::max() instead of max_part_weights[move.to]
+      // otherwise you might be missing gain updates!
+      // the deltaPhg does check the globally shared partition weight
       deltaPhg.changeNodePart(
         move.node, move.from, move.to, context.partition.max_part_weights[move.to], delta_func);
     }
