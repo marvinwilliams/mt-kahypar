@@ -364,6 +364,10 @@ namespace mt_kahypar {
              po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.shared_work_queue :
                  &context.refinement.fm.shared_work_queue))->value_name("<bool>")->default_value(false),
              "If true, use one shared work queue for border-node assignment. Implicit true, if scheduling is used.")
+             ((initial_partitioning ? "i-r-fm-shuffle" : "r-fm-shuffle"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.refinement.fm.w_shuffle :
+                 &context.refinement.fm.w_shuffle))->value_name("<bool>")->default_value(false),
+             "If true, shuffle shared work queue. Otherwise sort them by gain.")
             #ifdef USE_STRONG_PARTITIONER
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :

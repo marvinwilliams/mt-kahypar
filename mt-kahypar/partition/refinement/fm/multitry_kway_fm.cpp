@@ -228,10 +228,10 @@ namespace mt_kahypar {
         }
       });
 
-      if (FMStrategy::uses_gain_cache) {
-        sharedData.shared_refinement_nodes.sortByGain(phg, context);
-      } else {
+      if (context.refinement.fm.w_shuffle) {
         sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
+      } else {
+        sharedData.shared_refinement_nodes.sortByGain(phg, context);
       }
     }
 

@@ -146,6 +146,7 @@ struct FMParameters {
   size_t additional_searches_factor = 2;
   size_t max_moves_before_reschedule = 50;
   bool shared_work_queue = false;
+  bool w_shuffle = false;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);
