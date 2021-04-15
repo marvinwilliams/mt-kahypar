@@ -51,6 +51,8 @@ class LargeHyperedgeRemover {
         hypergraph.removeLargeEdge(he);
         _removed_hes.push_back(he);
         ++num_removed_large_hyperedges;
+      } else if (hypergraph.edgeSize(he) > 0.01 * hypergraph.initialNumNodes()) {
+        hypergraph.setEdgeWeight(he, 1000);
       }
     }
     std::reverse(_removed_hes.begin(), _removed_hes.end());
