@@ -228,11 +228,11 @@ namespace mt_kahypar {
         }
       });
 
-      if (context.refinement.fm.w_shuffle) {
+      /*if (context.refinement.fm.w_shuffle) {*/
         sharedData.shared_refinement_nodes.shuffle(context.partition.seed);
-      } else {
-        sharedData.shared_refinement_nodes.sortByGain(phg, context);
-      }
+      /*} else {*/
+        /*sharedData.shared_refinement_nodes.sortByGain(phg, context);*/
+      /*}*/
     }
 
   template<typename FMStrategy>

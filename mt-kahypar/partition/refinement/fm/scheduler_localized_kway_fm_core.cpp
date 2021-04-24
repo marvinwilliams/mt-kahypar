@@ -149,15 +149,15 @@ namespace mt_kahypar {
     HypernodeWeight heaviestPartWeight = 0;
     HypernodeWeight fromWeight = 0, toWeight = 0;
     Gain next_gain = 0;
+    bool escaped_local_minimum = false;
 
     while (!searchData->stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
 
-      Gain last_gain = next_gain;
       next_gain = fm_strategy.getNextMoveGain(phg);
       if (next_gain == kInvalidGain) break;
       // Idea: if more than half of the scheduled moves have been performed and the next move would be the first nagative gain move, reschedule
-      bool preemptive_reschedule = last_gain >= 0 && next_gain < 0
+      bool preemptive_reschedule = escaped_local_minimum && next_gain <= 0
                                    && searchData->num_moves > (context.refinement.fm.max_moves_before_reschedule / 2);
       if (preemptive_reschedule || searchData->num_moves > context.refinement.fm.max_moves_before_reschedule) {
         searchData->num_moves = 0;
@@ -168,6 +168,7 @@ namespace mt_kahypar {
         fm_strategy.resetPQs(searchData->nodes);
         return next_gain;
       }
+      escaped_local_minimum = false;
 
       if constexpr (use_delta) {
         if (!fm_strategy.findNextMove(deltaPhg, move)) break;
@@ -214,6 +215,7 @@ namespace mt_kahypar {
 
           if constexpr (use_delta) {
             applyBestLocalPrefixToSharedPartition(phg, searchData->bestImprovementIndex, searchData->bestImprovement, true /* apply all moves */);
+            escaped_local_minimum = searchData->localMoves.size() > 1;
             searchData->bestImprovementIndex = 0;
             searchData->localMoves.clear();
             deltaPhg.clear();   // clear hashtables, save memory :)
