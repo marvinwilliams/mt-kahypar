@@ -126,12 +126,27 @@ namespace mt_kahypar::ds {
     });
 
     timer.stop_timer("identical net detection","identical net detection");
+    timer.start_timer("allocs","allocs");
 
     StaticHypergraph chg;
     chg._num_hypernodes = num_coarse_nodes;
     chg._num_hyperedges = num_coarse_nets;
+    chg._num_pins = num_coarse_pins;
 
+    tbb::parallel_invoke([&] {
+      chg._incident_nets.resize(num_coarse_pins);
+    }, [&] {
+      chg._incidence_array.resize(num_coarse_pins);
+    }, [&]{
+      chg._community_ids.resize(num_coarse_nodes);
+      doParallelForAllNodes([&](HypernodeID u) { chg.setCommunityID(get_cluster(u), communityID(u)); });
+    }, [&] {
+      chg._hyperedges.resize(num_coarse_nets);
+    }, [&] {
+      chg._hypernodes.resize(num_coarse_nodes);
+    });
 
+    timer.stop_timer("allocs","allocs");
 
 
     timer.stop_timer("contraction","contraction");
