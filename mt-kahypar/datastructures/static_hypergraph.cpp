@@ -87,7 +87,7 @@ namespace mt_kahypar::ds {
         size_t edge_hash = 420; for (const auto v : pin_list) { edge_hash += cs2(v); }
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
       } else {
-        pin_list.clear();
+        pin_list.clear();   // globally mark net as removed
       }
     });
 
@@ -95,11 +95,11 @@ namespace mt_kahypar::ds {
     timer.start_timer("identical net detection","identical net detection");
 
     vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
-    size_t num_coarse_nets = 0;
+    size_t num_coarse_nets = 0, num_coarse_pins = 0;
 
     // identical net detection
     tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
-      size_t num_local_nets = 0;
+      size_t num_local_nets = 0, num_local_pins = 0;
       auto& bucket = net_map.getBucket(bucket_id);
       std::sort(bucket.begin(), bucket.end());
       for ( size_t i = 0; i < bucket.size(); ++i ) {
@@ -117,14 +117,19 @@ namespace mt_kahypar::ds {
           }
           coarse_edge_weights[rep.he] = rep_weight;
           num_local_nets++;
+          num_local_pins += coarse_pin_lists[rep.he].size();
         }
       }
       net_map.free(bucket_id);
       __atomic_fetch_add(&num_coarse_nets, num_local_nets, __ATOMIC_RELAXED);
+      __atomic_fetch_add(&num_coarse_pins, num_local_pins, __ATOMIC_RELAXED);
     });
 
     timer.stop_timer("identical net detection","identical net detection");
 
+    StaticHypergraph chg;
+    chg._num_hypernodes = num_coarse_nodes;
+    chg._num_hyperedges = num_coarse_nets;
 
 
 
