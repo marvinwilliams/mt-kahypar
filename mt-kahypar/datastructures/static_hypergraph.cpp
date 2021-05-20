@@ -95,9 +95,11 @@ namespace mt_kahypar::ds {
     timer.start_timer("identical net detection","identical net detection");
 
     vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
+    size_t num_coarse_nets = 0;
 
     // identical net detection
     tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
+      size_t num_local_nets = 0;
       auto& bucket = net_map.getBucket(bucket_id);
       std::sort(bucket.begin(), bucket.end());
       for ( size_t i = 0; i < bucket.size(); ++i ) {
@@ -114,12 +116,17 @@ namespace mt_kahypar::ds {
             }
           }
           coarse_edge_weights[rep.he] = rep_weight;
+          num_local_nets++;
         }
       }
       net_map.free(bucket_id);
+      __atomic_fetch_add(&num_coarse_nets, num_local_nets, __ATOMIC_RELAXED);
     });
 
     timer.stop_timer("identical net detection","identical net detection");
+
+
+
 
 
     timer.stop_timer("contraction","contraction");
