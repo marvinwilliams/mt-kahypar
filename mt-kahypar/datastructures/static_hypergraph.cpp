@@ -85,6 +85,8 @@ namespace mt_kahypar::ds {
       }
     });
 
+    vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
+
     // identical net detection
     tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
       auto& bucket = net_map.getBucket(bucket_id);
@@ -99,9 +101,10 @@ namespace mt_kahypar::ds {
             if (cand.valid && coarse_pin_lists[rep.he] == coarse_pin_lists[cand.he]) {
               cand.valid = false;
               rep_weight += edgeWeight(cand.he);
-              coarse_pin_lists[cand.he].clear();
+              coarse_pin_lists[cand.he].clear();    // globally mark net as removed
             }
           }
+          coarse_edge_weights[rep.he] = rep_weight;
         }
       }
       net_map.free(bucket_id);
