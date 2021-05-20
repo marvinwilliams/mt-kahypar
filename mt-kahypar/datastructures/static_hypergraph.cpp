@@ -177,8 +177,11 @@ namespace mt_kahypar::ds {
       }
       return std::make_pair(net_size_sum, coarse_net_id);
     };
+    auto sum_pair = [](std::pair<size_t, HyperedgeID> l, std::pair<size_t, HyperedgeID> r) {
+      return std::make_pair(l.first + r.first, l.second + r.second);
+    };
     tbb::parallel_scan(tbb::blocked_range<HyperedgeID>(0U, initialNumEdges()), std::make_pair(0UL,0U),
-            net_size_prefix_sum, std::plus<>());
+            net_size_prefix_sum, sum_pair);
 
     // can do this in the is_final_scan in the prefix sum above. may result in bad load balancing. measure!
     doParallelForAllEdges([&](HyperedgeID he) {
@@ -230,9 +233,9 @@ namespace mt_kahypar::ds {
       for (HyperedgeID e = r.begin(); e < r.end(); ++e) { max_net_size = std::max(max_net_size, chg.edgeSize(e)); }
       return max_net_size;
     };
-    auto reverse_join = [&](HypernodeID lhs, HypernodeID rhs) { return std::max(lhs, rhs); };
+    auto get_max = [&](HypernodeID lhs, HypernodeID rhs) { return std::max(lhs, rhs); };
     chg._max_edge_size = tbb::parallel_reduce(tbb::blocked_range<HyperedgeID>(0U, num_coarse_nets),
-                                      0,find_max_net_size, reverse_join);
+                                      0,find_max_net_size, get_max);
 
     timer.stop_timer("find max edge size");
     timer.stop_timer("contraction","contraction");
