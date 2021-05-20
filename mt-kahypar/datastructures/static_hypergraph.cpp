@@ -221,8 +221,19 @@ namespace mt_kahypar::ds {
       std::sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
                 chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
     });
-    timer.stop_timer("write incident nets");
 
+    timer.stop_timer("write incident nets");
+    timer.start_timer("find max edge size", "find max edge size");
+
+    auto find_max_net_size = [&](const tbb::blocked_range<HyperedgeID>& r, HypernodeID max_net_size) {
+      for (HyperedgeID e = r.begin(); e < r.end(); ++e) { max_net_size = std::max(max_net_size, chg.edgeSize(e)); }
+      return max_net_size;
+    };
+    auto reverse_join = [&](HypernodeID lhs, HypernodeID rhs) { return std::max(lhs, rhs); };
+    chg._max_edge_size = tbb::parallel_reduce(tbb::blocked_range<HyperedgeID>(0U, num_coarse_nets),
+                                      0,find_max_net_size, reverse_join);
+
+    timer.stop_timer("find max edge size");
     timer.stop_timer("contraction","contraction");
 
     return chg;
