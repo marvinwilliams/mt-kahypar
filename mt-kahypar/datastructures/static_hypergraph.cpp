@@ -64,7 +64,7 @@ namespace mt_kahypar::ds {
       clusters[u] = nodeIsEnabled(u) ? mapping[clusters[u]] - 1 : kInvalidHypernode;
     });
 
-    timer.stop_timer("compactify","compactify");
+    timer.stop_timer("compactify");
     timer.start_timer("generate pinlists","generate pinlists");
 
     auto get_cluster = [&](HypernodeID u) { assert(u < clusters.size()); return clusters[u]; };
@@ -93,7 +93,7 @@ namespace mt_kahypar::ds {
       }
     });
 
-    timer.stop_timer("generate pinlists","generate pinlists");
+    timer.stop_timer("generate pinlists");
     timer.start_timer("identical net detection","identical net detection");
 
     vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
@@ -127,7 +127,7 @@ namespace mt_kahypar::ds {
       __atomic_fetch_add(&num_coarse_pins, num_local_pins, __ATOMIC_RELAXED);
     });
 
-    timer.stop_timer("identical net detection","identical net detection");
+    timer.stop_timer("identical net detection");
     timer.start_timer("allocs","allocs");
 
     vec<size_t> offsets_for_fine_nets;   // TODO consolidate data structures into one vec. potentially extract into reusable memory
