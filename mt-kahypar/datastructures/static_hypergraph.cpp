@@ -44,6 +44,45 @@ namespace mt_kahypar::ds {
     bool valid = false;
   };
 
+  StaticHypergraph StaticHypergraph::contract_v2(vec<HypernodeID>& clusters) {
+
+    vec<HypernodeID> mapping(initialNumNodes(), 0);
+    tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) { mapping[clusters[u]] = 1; });
+    parallel_prefix_sum(mapping.begin(), mapping.begin() + initialNumNodes(), mapping.begin(), std::plus<>(), 0);
+    HypernodeID num_coarse_nodes = mapping[initialNumNodes() - 1];
+    // apply mapping to cluster IDs. subtract one because prefix sum is inclusive
+    tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) {
+      clusters[u] = nodeIsEnabled(u) ? mapping[clusters[u]] - 1 : kInvalidHypernode;
+    });
+
+    auto get_cluster = [&](HypernodeID u) { assert(u < clusters.size()); return clusters[u]; };
+    auto cs2 = [](const size_t x) { return x * x; };
+
+    vec<vec<HypernodeID>> coarse_pin_lists(initialNumEdges());    // can be replaced later by contraction buffers :)
+    ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
+    net_map.reserve_for_estimated_number_of_insertions(_num_hyperedges);
+
+    // map coarse pin lists and insert into hash map for work distribution
+    doParallelForAllEdges([&](HyperedgeID he) {
+      auto& pin_list = coarse_pin_lists[he];
+      // pin_list.reserve(edgeSize(he));
+      for (HypernodeID v : pins(he)) {
+        pin_list.push_back(get_cluster(v));
+      }
+      std::sort(pin_list.begin(), pin_list.end());
+      pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
+
+      if (pin_list.size() > 1) {
+        if (pin_list.back() == kInvalidHypernode){ pin_list.pop_back(); }
+        size_t edge_hash = 420; for (const auto v : pin_list) { edge_hash += cs2(v); }
+        net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
+      } else {
+        pin_list.clear();
+      }
+    });
+
+  }
+
   /*!
    * Contracts a given community structure. All vertices with the same label
    * are collapsed into the same vertex. The resulting single-pin and parallel
@@ -57,6 +96,7 @@ namespace mt_kahypar::ds {
   StaticHypergraph StaticHypergraph::contract(
           parallel::scalable_vector<HypernodeID>& communities,
           const TaskGroupID /* task_group_id */) {
+    //return contract_v2(communities);
 
     ASSERT(communities.size() == _num_hypernodes);
 

@@ -692,6 +692,9 @@ class StaticHypergraph {
   StaticHypergraph contract(parallel::scalable_vector<HypernodeID>& communities,
                             const TaskGroupID /* task_group_id */);
 
+
+  StaticHypergraph contract_v2(vec<HypernodeID>& clusters);
+
   bool registerContraction(const HypernodeID, const HypernodeID) {
     ERROR("registerContraction(u, v) is not supported in static hypergraph");
     return false;
