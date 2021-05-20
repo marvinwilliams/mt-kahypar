@@ -138,6 +138,7 @@ namespace mt_kahypar::ds {
     chg._num_hyperedges = num_coarse_nets;
     chg._num_pins = num_coarse_pins;
     chg._total_degree = num_coarse_pins;
+    chg._total_weight = _total_weight;   // didn't lose any vertices. or at least we don't want to let the imbalance calculation know about it...
 
     tbb::parallel_invoke([&] {
       chg._incident_nets.resize(num_coarse_pins);
