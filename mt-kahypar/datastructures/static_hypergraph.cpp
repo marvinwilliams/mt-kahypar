@@ -75,7 +75,7 @@ namespace mt_kahypar::ds {
     // map coarse pin lists and insert into hash map for work distribution
     doParallelForAllEdges([&](HyperedgeID he) {
       auto& pin_list = coarse_pin_lists[he];
-      // pin_list.reserve(edgeSize(he));
+      // pin_list.reserve(edgeSize(he) / 2);
       for (HypernodeID v : pins(he)) {
         pin_list.push_back(get_cluster(v));
       }
