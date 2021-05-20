@@ -164,6 +164,7 @@ namespace mt_kahypar::ds {
           if (is_final_scan) {
             chg._hyperedges[coarse_net_id].setSize(coarse_pin_lists[he].size());
             chg._hyperedges[coarse_net_id].setFirstEntry(net_size_sum);
+            chg._hyperedges[coarse_net_id].setWeight(coarse_edge_weights[he]);
             offsets_for_fine_nets[he] = net_size_sum;
           }
           net_size_sum += coarse_pin_lists[he].size();
