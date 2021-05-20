@@ -97,7 +97,8 @@ namespace mt_kahypar::ds {
     timer.start_timer("identical net detection","identical net detection");
 
     vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
-    size_t num_coarse_nets = 0, num_coarse_pins = 0;
+    HypernodeID num_coarse_nets = 0;
+    size_t num_coarse_pins = 0;
 
     // identical net detection
     tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
@@ -136,6 +137,7 @@ namespace mt_kahypar::ds {
     chg._num_hypernodes = num_coarse_nodes;
     chg._num_hyperedges = num_coarse_nets;
     chg._num_pins = num_coarse_pins;
+    chg._total_degree = num_coarse_pins;
 
     tbb::parallel_invoke([&] {
       chg._incident_nets.resize(num_coarse_pins);
@@ -162,6 +164,7 @@ namespace mt_kahypar::ds {
       for (HyperedgeID he = r.begin(); he < r.end(); ++he) {
         if (!coarse_pin_lists[he].empty()) {
           if (is_final_scan) {
+            chg._hyperedges[coarse_net_id].enable();
             chg._hyperedges[coarse_net_id].setSize(coarse_pin_lists[he].size());
             chg._hyperedges[coarse_net_id].setFirstEntry(net_size_sum);
             chg._hyperedges[coarse_net_id].setWeight(coarse_edge_weights[he]);
@@ -203,6 +206,20 @@ namespace mt_kahypar::ds {
     };
     tbb::parallel_scan(tbb::blocked_range<HypernodeID>(0U, num_coarse_nodes), 0UL, degree_prefix_sum, std::plus<>());
 
+    tbb::parallel_for(0U, num_coarse_nets, [&](HyperedgeID he) {
+      // pin lists fully constructed --> safe to use
+      for (HypernodeID v : chg.pins(he)) {
+        const size_t pos = __atomic_fetch_add(&chg._hypernodes[v]._begin, 1, __ATOMIC_RELAXED);
+        chg._incident_nets[pos] = he;
+      }
+    });
+
+    // reset begin pointers of nodes that we destroyed when writing the incident nets, and make the order deterministic
+    tbb::parallel_for(0U, num_coarse_nodes, [&](HypernodeID u) {
+      chg._hypernodes[u]._begin -= chg._hypernodes[u].size();
+      std::sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
+                chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
+    });
     timer.stop_timer("write incident nets");
 
     timer.stop_timer("contraction","contraction");
