@@ -49,6 +49,9 @@ namespace mt_kahypar::ds {
   };
 
   StaticHypergraph StaticHypergraph::contract_v2(vec<HypernodeID>& clusters) {
+    auto& timer = utils::Timer::instance();
+    timer.start_timer("contraction","contraction");
+    timer.start_timer("compactify","compactify");
 
     vec<HypernodeID> mapping(initialNumNodes(), 0);
     tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) { mapping[clusters[u]] = 1; });
@@ -58,6 +61,9 @@ namespace mt_kahypar::ds {
     tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) {
       clusters[u] = nodeIsEnabled(u) ? mapping[clusters[u]] - 1 : kInvalidHypernode;
     });
+
+    timer.stop_timer("compactify","compactify");
+    timer.start_timer("generate pinlists","generate pinlists");
 
     auto get_cluster = [&](HypernodeID u) { assert(u < clusters.size()); return clusters[u]; };
     auto cs2 = [](const size_t x) { return x * x; };
@@ -85,6 +91,9 @@ namespace mt_kahypar::ds {
       }
     });
 
+    timer.stop_timer("generate pinlists","generate pinlists");
+    timer.start_timer("identical net detection","identical net detection");
+
     vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
 
     // identical net detection
@@ -110,6 +119,10 @@ namespace mt_kahypar::ds {
       net_map.free(bucket_id);
     });
 
+    timer.stop_timer("identical net detection","identical net detection");
+
+
+    timer.stop_timer("contraction","contraction");
   }
 
   /*!
