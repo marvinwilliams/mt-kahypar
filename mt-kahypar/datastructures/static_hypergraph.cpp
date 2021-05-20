@@ -223,6 +223,8 @@ namespace mt_kahypar::ds {
     timer.stop_timer("write incident nets");
 
     timer.stop_timer("contraction","contraction");
+
+    return chg;
   }
 
   /*!
