@@ -175,6 +175,7 @@ namespace mt_kahypar::ds {
     tbb::parallel_scan(tbb::blocked_range<HyperedgeID>(0U, initialNumEdges()), std::make_pair(0UL,0U),
             net_size_prefix_sum, std::plus<>());
 
+    // can do this in the is_final_scan in the prefix sum above. may result in bad load balancing. measure!
     doParallelForAllEdges([&](HyperedgeID he) {
       // removed nets are marked via empty pin list
       if (!coarse_pin_lists[he].empty()) {
@@ -202,9 +203,6 @@ namespace mt_kahypar::ds {
     tbb::parallel_scan(tbb::blocked_range<HypernodeID>(0U, num_coarse_nodes), 0UL, degree_prefix_sum, std::plus<>());
 
     timer.stop_timer("write incident nets");
-
-    // still to go
-    // copy pin lists to chg
 
     timer.stop_timer("contraction","contraction");
   }
