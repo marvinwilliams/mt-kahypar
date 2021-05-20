@@ -104,7 +104,7 @@ namespace mt_kahypar::ds {
       size_t num_local_nets = 0, num_local_pins = 0;
       auto& bucket = net_map.getBucket(bucket_id);
       std::sort(bucket.begin(), bucket.end());
-      for ( size_t i = 0; i < bucket.size(); ++i ) {
+      for (size_t i = 0; i < bucket.size(); ++i) {
         const auto& rep = bucket[i];
         HyperedgeWeight rep_weight = edgeWeight(rep.he);
         if (rep.valid) {
