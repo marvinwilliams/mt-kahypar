@@ -150,6 +150,26 @@ namespace mt_kahypar::ds {
 
     timer.stop_timer("allocs","allocs");
 
+    doParallelForAllEdges([&](HyperedgeID he) {
+      // removed nets are marked via empty pin list
+      for (HypernodeID v : coarse_pin_lists[he]) {
+        __atomic_fetch_add(&chg._hypernodes[v]._size, 1, __ATOMIC_RELAXED);
+      }
+    });
+    auto degree_prefix_sum = [&](const tbb::blocked_range<HypernodeID>& r, size_t sum, bool is_final_scan) -> size_t {
+      for (HypernodeID u = r.begin(); u < r.end(); ++u) {
+        if (is_final_scan) {
+          chg._hypernodes[u].enable();
+          chg._hypernodes[u].setFirstEntry(sum);
+        }
+        sum += chg._hypernodes[u].size();
+      }
+    };
+    tbb::parallel_scan(tbb::blocked_range<HypernodeID>(0U, num_coarse_nodes), 0UL, degree_prefix_sum, std::plus<>());
+
+
+    // still to go
+    // copy pin lists to chg
 
     timer.stop_timer("contraction","contraction");
   }

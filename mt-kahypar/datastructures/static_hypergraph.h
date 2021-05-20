@@ -137,7 +137,6 @@ class StaticHypergraph {
       _weight = weight;
     }
 
-   private:
     // ! Index of the first element in _incident_nets
     size_t _begin;
     // ! Number of incident nets
@@ -229,7 +228,6 @@ class StaticHypergraph {
       return _begin != rhs._begin || _size != rhs._size || _weight != rhs._weight;
     }
 
-   private:
     // ! Index of the first element in _incidence_array
     size_t _begin;
     // ! Number of pins
