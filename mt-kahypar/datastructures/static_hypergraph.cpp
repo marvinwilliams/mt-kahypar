@@ -42,6 +42,10 @@ namespace mt_kahypar::ds {
     size_t hash = kEdgeHashSeed;
     size_t size = std::numeric_limits<size_t>::max();
     bool valid = false;
+    
+    bool operator<(const ContractedHyperedgeInformation& o) {
+      return std::tie(hash, size, he) < std::tie(o.hash, o.size, o.he);
+    }
   };
 
   StaticHypergraph StaticHypergraph::contract_v2(vec<HypernodeID>& clusters) {
@@ -79,6 +83,28 @@ namespace mt_kahypar::ds {
       } else {
         pin_list.clear();
       }
+    });
+
+    // identical net detection
+    tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
+      auto& bucket = net_map.getBucket(bucket_id);
+      std::sort(bucket.begin(), bucket.end());
+      for ( size_t i = 0; i < bucket.size(); ++i ) {
+        const auto& rep = bucket[i];
+        HyperedgeWeight rep_weight = edgeWeight(rep.he);
+        if (rep.valid) {
+          for (size_t j = i+1; j < bucket.size(); ++j) {
+            auto& cand = bucket[j];
+            if (cand.hash != rep.hash) { break; }
+            if (cand.valid && coarse_pin_lists[rep.he] == coarse_pin_lists[cand.he]) {
+              cand.valid = false;
+              rep_weight += edgeWeight(cand.he);
+              coarse_pin_lists[cand.he].clear();
+            }
+          }
+        }
+      }
+      net_map.free(bucket_id);
     });
 
   }
