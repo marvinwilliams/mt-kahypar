@@ -130,6 +130,8 @@ namespace mt_kahypar::ds {
     timer.stop_timer("identical net detection","identical net detection");
     timer.start_timer("allocs","allocs");
 
+    vec<size_t> offsets_for_fine_nets;   // TODO consolidate data structures into one vec. potentially extract into reusable memory
+
     StaticHypergraph chg;
     chg._num_hypernodes = num_coarse_nodes;
     chg._num_hyperedges = num_coarse_nets;
@@ -146,16 +148,48 @@ namespace mt_kahypar::ds {
       chg._hyperedges.resize(num_coarse_nets);
     }, [&] {
       chg._hypernodes.resize(num_coarse_nodes);
+    }, [&] {
+      offsets_for_fine_nets.resize(initialNumEdges());
     });
 
-    timer.stop_timer("allocs","allocs");
+    timer.stop_timer("allocs");
+    timer.start_timer("write pin lists", "write pin lists and coutn degrees");
+
+    auto net_size_prefix_sum = [&](const tbb::blocked_range<HyperedgeID>& r,
+            std::pair<size_t, HyperedgeID> sums, bool is_final_scan) -> std::pair<size_t,HyperedgeID> {
+      size_t net_size_sum = sums.first;
+      HyperedgeID coarse_net_id = sums.second;
+      for (HyperedgeID he = r.begin(); he < r.end(); ++he) {
+        if (!coarse_pin_lists[he].empty()) {
+          if (is_final_scan) {
+            chg._hyperedges[coarse_net_id].setSize(coarse_pin_lists[he].size());
+            chg._hyperedges[coarse_net_id].setFirstEntry(net_size_sum);
+            offsets_for_fine_nets[he] = net_size_sum;
+          }
+          net_size_sum += coarse_pin_lists[he].size();
+          coarse_net_id++;
+        }
+      }
+      return std::make_pair(net_size_sum, coarse_net_id);
+    };
+    tbb::parallel_scan(tbb::blocked_range<HyperedgeID>(0U, initialNumEdges()), std::make_pair(0UL,0U),
+            net_size_prefix_sum, std::plus<>());
 
     doParallelForAllEdges([&](HyperedgeID he) {
       // removed nets are marked via empty pin list
-      for (HypernodeID v : coarse_pin_lists[he]) {
-        __atomic_fetch_add(&chg._hypernodes[v]._size, 1, __ATOMIC_RELAXED);
+      if (!coarse_pin_lists[he].empty()) {
+        size_t pos = offsets_for_fine_nets[he];
+        for (HypernodeID v : coarse_pin_lists[he]) {
+          chg._incidence_array[pos++] = v;                                        // copy pin list TODO call to std::copy faster?
+          __atomic_fetch_add(&chg._hypernodes[v]._size, 1, __ATOMIC_RELAXED);     // increment pin's degree
+        }
       }
+      // TODO can clear and shrink_to_fit coarse_pin_lists[he]
     });
+
+    timer.stop_timer("write pin lists");
+    timer.start_timer("write incident nets", "write incident nets");
+
     auto degree_prefix_sum = [&](const tbb::blocked_range<HypernodeID>& r, size_t sum, bool is_final_scan) -> size_t {
       for (HypernodeID u = r.begin(); u < r.end(); ++u) {
         if (is_final_scan) {
@@ -167,6 +201,7 @@ namespace mt_kahypar::ds {
     };
     tbb::parallel_scan(tbb::blocked_range<HypernodeID>(0U, num_coarse_nodes), 0UL, degree_prefix_sum, std::plus<>());
 
+    timer.stop_timer("write incident nets");
 
     // still to go
     // copy pin lists to chg
