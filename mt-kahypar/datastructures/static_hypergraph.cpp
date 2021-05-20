@@ -204,6 +204,7 @@ namespace mt_kahypar::ds {
         }
         sum += chg._hypernodes[u].size();
       }
+      return sum;
     };
     tbb::parallel_scan(tbb::blocked_range<HypernodeID>(0U, num_coarse_nodes), 0UL, degree_prefix_sum, std::plus<>());
 
