@@ -240,6 +240,13 @@ namespace mt_kahypar::ds {
                                       0,find_max_net_size, get_max);
 
     timer.stop_timer("find max edge size");
+    timer.start_timer("aggregate node weights", "aggregate node weights");
+
+    doParallelForAllNodes([&](HypernodeID u) {
+      __atomic_fetch_add(&chg._hypernodes[get_cluster(u)]._weight, nodeWeight(u), __ATOMIC_RELAXED);
+    });
+
+    timer.stop_timer("aggregate node weights");
     timer.stop_timer("contraction");
 
     return chg;
