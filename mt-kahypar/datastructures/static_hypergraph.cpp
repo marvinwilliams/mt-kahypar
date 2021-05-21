@@ -127,7 +127,9 @@ namespace mt_kahypar::ds {
             auto& cand = bucket[j];
             if (cand.hash != rep.hash) { break; }
             if (cand.valid && coarse_pin_lists[rep.he].size() == coarse_pin_lists[cand.he].size()) {
-              for (HypernodeID v : coarse_pin_lists[cand.he]) { if (!contained[v]) continue; }
+              if (std::any_of(coarse_pin_lists[cand.he].begin(), coarse_pin_lists[cand.he].end(), [&](HypernodeID v) { return !contained[v];})) {
+                continue;
+              }
               cand.valid = false;
               rep_weight += edgeWeight(cand.he);
               coarse_pin_lists[cand.he].clear();    // globally mark net as removed
