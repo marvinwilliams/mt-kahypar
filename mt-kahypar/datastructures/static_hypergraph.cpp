@@ -240,7 +240,7 @@ namespace mt_kahypar::ds {
                                       0,find_max_net_size, get_max);
 
     timer.stop_timer("find max edge size");
-    timer.stop_timer("contraction","contraction");
+    timer.stop_timer("contraction");
 
     return chg;
   }
