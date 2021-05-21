@@ -28,6 +28,8 @@
 
 #include <tbb/parallel_reduce.h>
 
+#include <boost/dynamic_bitset.hpp>
+
 namespace mt_kahypar::ds {
 
   // TODO split contraction into multiple functions!
@@ -74,23 +76,23 @@ namespace mt_kahypar::ds {
     ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
     net_map.reserve_for_estimated_number_of_insertions(_num_hyperedges);
 
-    tbb::enumerable_thread_specific<vec<bool>> local_maps(num_coarse_nodes);
+    tbb::enumerable_thread_specific<boost::dynamic_bitset<>> local_maps(num_coarse_nodes);
 
     // map coarse pin lists and insert into hash map for work distribution
     doParallelForAllEdges([&](HyperedgeID he) {
       auto& pin_list = coarse_pin_lists[he];
-      auto& contained = local_maps.local();
+      boost::dynamic_bitset<>& contained = local_maps.local();
       pin_list.reserve(edgeSize(he) / 2);
       for (HypernodeID v : pins(he)) {
         const HypernodeID cv = get_cluster(v);
         if (cv != kInvalidHypernode && !contained[cv]) {
-          contained[cv] = true;
+          contained.set(cv);
           pin_list.push_back(cv);
         }
       }
       // std::sort(pin_list.begin(), pin_list.end());
       for (HypernodeID v : pin_list) {
-        contained[v] = false;
+        contained.reset(v);
       }
       // pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
 
@@ -121,7 +123,7 @@ namespace mt_kahypar::ds {
         HyperedgeWeight rep_weight = edgeWeight(rep.he);
         if (rep.valid) {
           auto& contained = local_maps.local();
-          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained[v] = true; }
+          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
 
           for (size_t j = i+1; j < bucket.size(); ++j) {
             auto& cand = bucket[j];
@@ -138,7 +140,7 @@ namespace mt_kahypar::ds {
           coarse_edge_weights[rep.he] = rep_weight;
           num_local_nets++;
           num_local_pins += coarse_pin_lists[rep.he].size();
-          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained[v] = false; }
+          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.reset(v); }
         }
       }
       net_map.free(bucket_id);
