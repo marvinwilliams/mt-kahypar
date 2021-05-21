@@ -74,26 +74,28 @@ namespace mt_kahypar::ds {
     ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
     net_map.reserve_for_estimated_number_of_insertions(_num_hyperedges);
 
-    // tbb::enumerable_thread_specific<vec<bool>> local_maps(num_coarse_nodes);
+    tbb::enumerable_thread_specific<vec<bool>> local_maps(num_coarse_nodes);
 
     // map coarse pin lists and insert into hash map for work distribution
     doParallelForAllEdges([&](HyperedgeID he) {
       auto& pin_list = coarse_pin_lists[he];
-      // auto& contained = local_maps.local();
+      auto& contained = local_maps.local();
       pin_list.reserve(edgeSize(he) / 2);   // saves about 10% on sk-2005
       for (HypernodeID v : pins(he)) {
         const HypernodeID cv = get_cluster(v);
-        //if (cv != kInvalidHypernode && !contained[cv]) {
-        //  contained[cv] = true;
+        if (cv != kInvalidHypernode && !contained[cv]) {
+          contained[cv] = true;
           pin_list.push_back(cv);
-        // }
+        }
+      }
+      for (HypernodeID v : pin_list) {
+        contained[v] = false;
       }
       std::sort(pin_list.begin(), pin_list.end());
-      pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
+      // pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
 
-      if (!pin_list.empty() && pin_list.back() == kInvalidHypernode) {
-        pin_list.pop_back();
-      }
+      //if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
+      //  pin_list.pop_back();
       if (pin_list.size() > 1) {
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
