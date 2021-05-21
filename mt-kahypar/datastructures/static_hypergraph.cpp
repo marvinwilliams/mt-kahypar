@@ -50,7 +50,7 @@ namespace mt_kahypar::ds {
 
   StaticHypergraph StaticHypergraph::contract_v2(vec<HypernodeID>& clusters) {
     auto& timer = utils::Timer::instance();
-    timer.start_timer("contraction","contraction");
+    timer.start_timer("hypergraph_contraction","Contraction");
     timer.start_timer("compactify","compactify");
 
     vec<HypernodeID> mapping(initialNumNodes(), 0);
@@ -233,7 +233,7 @@ namespace mt_kahypar::ds {
       chg._hypernodes[u]._weight = 0;
       chg._hypernodes[u]._begin -= chg._hypernodes[u].size();
       std::sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
-                chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
+                chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());   // ~60% on sk-2005
     });
 
     timer.stop_timer("write incident nets");
@@ -255,7 +255,7 @@ namespace mt_kahypar::ds {
     });
 
     timer.stop_timer("aggregate node weights");
-    timer.stop_timer("contraction");
+    timer.stop_timer("hypergraph_contraction");
 
     return chg;
   }
