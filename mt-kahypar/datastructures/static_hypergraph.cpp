@@ -89,13 +89,14 @@ namespace mt_kahypar::ds {
           contained.set(cv);
           pin_list.push_back(cv);
         }
+        // pin_list.push_back(cv);
       }
-      // std::sort(pin_list.begin(), pin_list.end());
       for (HypernodeID v : pin_list) {
         contained.reset(v);
       }
-      // pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
 
+      // std::sort(pin_list.begin(), pin_list.end());
+      // pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
       //if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
       //  pin_list.pop_back();
       if (pin_list.size() > 1) {
