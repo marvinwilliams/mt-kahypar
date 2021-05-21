@@ -242,7 +242,7 @@ namespace mt_kahypar::ds {
       chg._hypernodes[u]._weight = 0;
       chg._hypernodes[u]._begin -= chg._hypernodes[u].size();
       std::sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
-                chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());   // ~60% on sk-2005
+                chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
     });
 
     timer.stop_timer("write incident nets");
