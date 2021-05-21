@@ -162,7 +162,6 @@ namespace mt_kahypar::ds {
       chg._incidence_array.resize(num_coarse_pins);
     }, [&]{
       chg._community_ids.resize(num_coarse_nodes);
-      doParallelForAllNodes([&](HypernodeID u) { chg.setCommunityID(get_cluster(u), communityID(u)); });
     }, [&] {
       chg._hyperedges.resize(num_coarse_nets);
     }, [&] {
@@ -259,6 +258,7 @@ namespace mt_kahypar::ds {
 
     doParallelForAllNodes([&](HypernodeID u) {
       __atomic_fetch_add(&chg._hypernodes[get_cluster(u)]._weight, nodeWeight(u), __ATOMIC_RELAXED);
+      chg.setCommunityID(get_cluster(u), communityID(u));
     });
 
     timer.stop_timer("aggregate node weights");
