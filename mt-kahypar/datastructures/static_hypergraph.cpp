@@ -84,8 +84,10 @@ namespace mt_kahypar::ds {
       std::sort(pin_list.begin(), pin_list.end());
       pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
 
+      if (!pin_list.empty() && pin_list.back() == kInvalidHypernode) {
+        pin_list.pop_back();
+      }
       if (pin_list.size() > 1) {
-        if (pin_list.back() == kInvalidHypernode){ pin_list.pop_back(); }
         size_t edge_hash = 420; for (const auto v : pin_list) { edge_hash += cs2(v); }
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
       } else {
