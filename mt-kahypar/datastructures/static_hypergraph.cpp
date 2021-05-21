@@ -223,6 +223,7 @@ namespace mt_kahypar::ds {
 
     // reset begin pointers of nodes that we destroyed when writing the incident nets, and make the order deterministic
     tbb::parallel_for(0U, num_coarse_nodes, [&](HypernodeID u) {
+      chg._hypernodes[u]._weight = 0;
       chg._hypernodes[u]._begin -= chg._hypernodes[u].size();
       std::sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
                 chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
