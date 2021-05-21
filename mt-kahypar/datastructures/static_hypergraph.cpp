@@ -88,10 +88,10 @@ namespace mt_kahypar::ds {
           pin_list.push_back(cv);
         }
       }
+      std::sort(pin_list.begin(), pin_list.end());
       for (HypernodeID v : pin_list) {
         contained[v] = false;
       }
-      std::sort(pin_list.begin(), pin_list.end());
       // pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
 
       //if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
