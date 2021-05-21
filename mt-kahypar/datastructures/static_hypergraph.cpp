@@ -207,7 +207,7 @@ namespace mt_kahypar::ds {
           chg._hypernodes[u].enable();
           chg._hypernodes[u].setFirstEntry(sum);
         }
-        sum += chg._hypernodes[u].size();
+        sum += chg._hypernodes[u]._size;
       }
       return sum;
     };
@@ -258,7 +258,7 @@ namespace mt_kahypar::ds {
   StaticHypergraph StaticHypergraph::contract(
           parallel::scalable_vector<HypernodeID>& communities,
           const TaskGroupID /* task_group_id */) {
-    //return contract_v2(communities);
+    return contract_v2(communities);
 
     ASSERT(communities.size() == _num_hypernodes);
 
