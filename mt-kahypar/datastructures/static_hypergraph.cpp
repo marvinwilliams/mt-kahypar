@@ -55,7 +55,7 @@ namespace mt_kahypar::ds {
 
     vec<HypernodeID> mapping(initialNumNodes(), 0);
     tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) {
-      if (nodeIsEnabled(u)) mapping[clusters[u]] = 1;
+      mapping[clusters[u]] = 1;
     });
     parallel_prefix_sum(mapping.begin(), mapping.begin() + initialNumNodes(), mapping.begin(), std::plus<>(), 0);
     HypernodeID num_coarse_nodes = mapping[initialNumNodes() - 1];
