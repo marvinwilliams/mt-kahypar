@@ -73,6 +73,8 @@ namespace mt_kahypar::ds {
     auto cs2 = [](const size_t x) { return x * x; };
 
     vec<vec<HypernodeID>> coarse_pin_lists(initialNumEdges());    // can be replaced later by contraction buffers :)
+
+    // TODO why is this not just a vector with hyperedge IDs that gets sorted by (hash, edge size, edge ID)
     ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
     net_map.reserve_for_estimated_number_of_insertions(_num_hyperedges);
 
