@@ -44,6 +44,10 @@ public:
     return back.load(std::memory_order_relaxed);
   }
 
+  size_t capacity() const {
+    return data.size();
+  }
+
   void adapt_capacity(size_t sz) {
     if (sz > data.size()) {
       data.resize(sz, T());
@@ -73,6 +77,18 @@ public:
   auto begin() { return data.begin(); }
   auto end() { return data.begin() + size(); }
   T& operator[](size_t pos) { return data[pos]; }
+  const T& operator[](size_t pos) const { return data[pos]; }
+
+
+  struct RandomAccessRange {
+    size_t actual_size;
+    const vec_t& data_ref;
+    const T& operator[](size_t i) const { return data_ref[i]; }
+    size_t size() const { return actual_size; }
+  };
+  RandomAccessRange range() const { return { size(), data }; }
+
+  const vec_t& getData() { return data; }
 
 private:
 

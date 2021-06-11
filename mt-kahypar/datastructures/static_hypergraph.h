@@ -499,7 +499,7 @@ class StaticHypergraph {
   }
 
   // ! Computes the total node weight of the hypergraph
-  void computeAndSetTotalNodeWeight(const TaskGroupID);
+  void computeAndSetTotalNodeWeight(parallel_tag_t);
 
   // ####################### Iterators #######################
 
@@ -687,8 +687,7 @@ class StaticHypergraph {
    * \param communities Community structure that should be contracted
    * \param task_group_id Task Group ID
    */
-  StaticHypergraph contract(parallel::scalable_vector<HypernodeID>& communities,
-                            const TaskGroupID /* task_group_id */);
+  StaticHypergraph contract(parallel::scalable_vector<HypernodeID>& communities);
 
 
   StaticHypergraph contract_v2(vec<HypernodeID>& clusters);
@@ -794,7 +793,7 @@ class StaticHypergraph {
   }
 
   // ! Copy static hypergraph in parallel
-  StaticHypergraph copy(const TaskGroupID /* task_group_id */);
+  StaticHypergraph copy(parallel_tag_t);
 
   // ! Copy static hypergraph sequential
   StaticHypergraph copy();

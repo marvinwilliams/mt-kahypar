@@ -60,8 +60,6 @@ struct PartitioningParameters {
   bool write_partition_file = false;
   bool deterministic = false;
 
-  int snapshot_interval = std::numeric_limits<int>::max();
-
   std::string graph_filename { };
   std::string graph_partition_output_folder {};
   std::string graph_partition_filename { };
@@ -77,6 +75,7 @@ struct CommunityDetectionParameters {
   bool low_memory_contraction = false;
   long double min_vertex_move_fraction = std::numeric_limits<long double>::max();
   size_t vertex_degree_sampling_threshold = std::numeric_limits<size_t>::max();
+  size_t num_sub_rounds_deterministic = 16;
 };
 
 std::ostream & operator<< (std::ostream& str, const CommunityDetectionParameters& params);
@@ -109,6 +108,7 @@ struct CoarseningParameters {
   double minimum_shrink_factor = std::numeric_limits<double>::max();
   double maximum_shrink_factor = std::numeric_limits<double>::max();
   size_t vertex_degree_sampling_threshold = std::numeric_limits<size_t>::max();
+  size_t num_sub_rounds_deterministic = 16;
 
   // Those will be determined dynamically
   HypernodeWeight max_allowed_node_weight = 0;
@@ -159,10 +159,8 @@ std::ostream& operator<<(std::ostream& out, const NLevelGlobalFMParameters& para
 
 struct DeterministicRefinementParameters {
   size_t num_sub_rounds_sync_lp = 5;
-  HyperedgeID edge_size_threshold_for_coloring = std::numeric_limits<HyperedgeID>::max();
-  bool use_gain_recalculation = false;
-  bool feistel_shuffling = false;
-  bool apply_moves_by_maximal_prefix_in_block_pairs = false;
+  bool use_active_node_set = false;
+  bool recalculate_gains_on_second_apply = false;
 };
 
 std::ostream& operator<<(std::ostream& out, const DeterministicRefinementParameters& params);

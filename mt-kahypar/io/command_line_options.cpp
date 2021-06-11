@@ -52,8 +52,8 @@ namespace mt_kahypar {
     options.add_options()
             ("help", "show help message")
             ("deterministic", po::value<bool>(&context.partition.deterministic)->value_name("<bool>")->default_value(false),
-             "Shortcut to enables deterministic partitioning mode, where results are reproducible across runs. "
-             "If set, the specific deterministic subroutines don't need to be set manually.")
+             "Enables determinism in preprocessing in initial partitioning. "
+             "Coarsening and refinement routines must still be set to the deterministic versions.")
             ("verbose,v", po::value<bool>(&context.partition.verbose_output)->value_name("<bool>")->default_value(true),
              "Verbose main partitioning output")
             ("write-partition-file",
@@ -156,7 +156,11 @@ namespace mt_kahypar {
             ("p-vertex-degree-sampling-threshold",
              po::value<size_t>(&context.preprocessing.community_detection.vertex_degree_sampling_threshold)->value_name(
                      "<size_t>")->default_value(std::numeric_limits<size_t>::max()),
-             "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.");
+             "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.")
+            ("p-num-sub-rounds",
+             po::value<size_t>(&context.preprocessing.community_detection.num_sub_rounds_deterministic)->value_name(
+                     "<size_t>")->default_value(16),
+             "Number of sub-rounds used for deterministic community detection in preprocessing.");
     return options;
   }
 
@@ -236,7 +240,11 @@ namespace mt_kahypar {
             ("c-vertex-degree-sampling-threshold",
              po::value<size_t>(&context.coarsening.vertex_degree_sampling_threshold)->value_name(
                      "<size_t>")->default_value(std::numeric_limits<size_t>::max()),
-             "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.");
+             "If set, then neighbors of a vertex are sampled during rating if its degree is greater than this threshold.")
+            ("c-num-sub-rounds",
+             po::value<size_t>(&context.coarsening.num_sub_rounds_deterministic)->value_name(
+                     "<size_t>")->default_value(16),
+             "Number of sub-rounds used for deterministic coarsening.");
     return options;
   }
 
@@ -272,12 +280,28 @@ namespace mt_kahypar {
              "Label Propagation Algorithm:\n"
              "- label_propagation_km1\n"
              "- label_propagation_cut\n"
+             "- deterministic\n"
              "- do_nothing")
             ((initial_partitioning ? "i-r-lp-maximum-iterations" : "r-lp-maximum-iterations"),
              po::value<size_t>((!initial_partitioning ? &context.refinement.label_propagation.maximum_iterations :
                                 &context.initial_partitioning.refinement.label_propagation.maximum_iterations))->value_name(
                      "<size_t>")->default_value(5),
              "Maximum number of label propagation rounds")
+            ((initial_partitioning ? "i-r-sync-lp-sub-rounds" : "r-sync-lp-sub-rounds"),
+             po::value<size_t>((!initial_partitioning ? &context.refinement.deterministic_refinement.num_sub_rounds_sync_lp :
+                                &context.initial_partitioning.refinement.deterministic_refinement.num_sub_rounds_sync_lp))->value_name(
+                     "<size_t>")->default_value(5),
+             "Number of sub-rounds for deterministic synchronous label propagation")
+            ((initial_partitioning ? "i-r-sync-lp-active-nodeset" : "r-sync-lp-active-nodeset"),
+             po::value<bool>((!initial_partitioning ? &context.refinement.deterministic_refinement.use_active_node_set :
+                                &context.initial_partitioning.refinement.deterministic_refinement.use_active_node_set))->value_name(
+                     "<bool>")->default_value(true),
+             "Use active nodeset in synchronous label propagation")
+            ((initial_partitioning ? "i-r-sync-lp-recalculate-gains-on-second-apply" : "r-sync-lp-recalculate-gains-on-second-apply"),
+             po::value<bool>((!initial_partitioning ? &context.refinement.deterministic_refinement.recalculate_gains_on_second_apply :
+                              &context.initial_partitioning.refinement.deterministic_refinement.recalculate_gains_on_second_apply))->value_name(
+                     "<bool>")->default_value(false),
+             "Recalculate gains for second attempt at applying moves in synchronous label propagation")
             ((initial_partitioning ? "i-r-lp-rebalancing" : "r-lp-rebalancing"),
              po::value<bool>((!initial_partitioning ? &context.refinement.label_propagation.rebalancing :
                               &context.initial_partitioning.refinement.label_propagation.rebalancing))->value_name(

@@ -123,8 +123,8 @@ size_t ParallelLocalMovingModularity::synchronousParallelRound(const Graph& grap
   size_t seed = prng();
   permutation.random_grouping(graph.numNodes(), _context.shared_memory.static_balancing_work_packages, seed);
   size_t num_moved_nodes = 0;
-  constexpr size_t num_sub_rounds = 16;
   constexpr size_t num_buckets = utils::ParallelPermutation<HypernodeID>::num_buckets;
+  const size_t num_sub_rounds = _context.preprocessing.community_detection.num_sub_rounds_deterministic;
   size_t num_buckets_per_sub_round = parallel::chunking::idiv_ceil(num_buckets, num_sub_rounds);
 
   size_t max_round_size = 0;
@@ -133,7 +133,8 @@ size_t ParallelLocalMovingModularity::synchronousParallelRound(const Graph& grap
     max_round_size = std::max(max_round_size,
                               size_t(permutation.bucket_bounds[last_bucket] - permutation.bucket_bounds[first_bucket]));
   }
-  volume_updates.adapt_capacity(2 * max_round_size);    // factor 2 for from and to
+  volume_updates_to.adapt_capacity(max_round_size);
+  volume_updates_from.adapt_capacity(max_round_size);
 
   for (size_t sub_round = 0; sub_round < num_sub_rounds; ++sub_round) {
     auto [first_bucket, last_bucket] = parallel::chunking::bounds(sub_round, num_buckets, num_buckets_per_sub_round);
@@ -146,41 +147,51 @@ size_t ParallelLocalMovingModularity::synchronousParallelRound(const Graph& grap
       HypernodeID u = permutation.at(pos);
       PartitionID best_cluster = computeMaxGainCluster(graph, communities, u);
       if (best_cluster != communities[u]) {
-        // TODO this probably needs to be tuned
-        volume_updates.push_back_buffered({ communities[u], u, false });
-        volume_updates.push_back_buffered({ best_cluster, u, true });
+        volume_updates_from.push_back_buffered({ communities[u], u });
+        volume_updates_to.push_back_buffered({best_cluster, u });
         num_moved_local.local() += 1;
       }
     });
 
     size_t num_moved_sub_round = num_moved_local.combine(std::plus<>());
     num_moved_nodes += num_moved_sub_round;
-    volume_updates.finalize();
 
-    /*
-     * We can't do atomic adds of the volumes since they're not commutative and thus lead to non-deterministic decisions
-     * Instead we sort the updates, and for each cluster let one thread sum up the updates.
-     */
-    const size_t sz = volume_updates.size();
-    // TODO this probably needs to be tuned
-    tbb::parallel_sort(volume_updates.begin(), volume_updates.end());
-    tbb::parallel_for(0UL, sz, [&](size_t pos) {
-      PartitionID c = volume_updates[pos].cluster;
-      if (pos == 0 || volume_updates[pos - 1].cluster != c) {
+    // We can't do atomic adds of the volumes since they're not commutative and thus lead to non-deterministic decisions
+    // Instead we sort the updates, and for each cluster let one thread sum up the updates.
+    tbb::parallel_invoke([&] {
+      volume_updates_to.finalize();
+      tbb::parallel_sort(volume_updates_to.begin(), volume_updates_to.end());
+    }, [&] {
+      volume_updates_from.finalize();
+      tbb::parallel_sort(volume_updates_from.begin(), volume_updates_from.end());
+    });
+
+    const size_t sz_to = volume_updates_to.size();
+    tbb::parallel_for(0UL, sz_to, [&](size_t pos) {
+      PartitionID c = volume_updates_to[pos].cluster;
+      if (pos == 0 || volume_updates_to[pos - 1].cluster != c) {
         ArcWeight vol_delta = 0.0;
-        for ( ; pos < sz && volume_updates[pos].cluster == c; ++pos) {
-          if (volume_updates[pos].to) {
-            vol_delta += graph.nodeVolume(volume_updates[pos].node);
-            communities[volume_updates[pos].node] = c;
-          } else {
-            vol_delta -= graph.nodeVolume(volume_updates[pos].node);
-          }
+        for ( ; pos < sz_to && volume_updates_to[pos].cluster == c; ++pos) {
+          vol_delta += graph.nodeVolume(volume_updates_to[pos].node);
+          communities[volume_updates_to[pos].node] = c;
         }
         _cluster_volumes[c].store(_cluster_volumes[c].load(std::memory_order_relaxed) + vol_delta, std::memory_order_relaxed);
       }
     });
+    volume_updates_to.clear();
 
-    volume_updates.clear();
+    const size_t sz_from = volume_updates_from.size();
+    tbb::parallel_for(0UL, sz_from, [&](size_t pos) {
+      PartitionID c = volume_updates_from[pos].cluster;
+      if (pos == 0 || volume_updates_from[pos - 1].cluster != c) {
+        ArcWeight vol_delta = 0.0;
+        for ( ; pos < sz_from && volume_updates_from[pos].cluster == c; ++pos) {
+          vol_delta -= graph.nodeVolume(volume_updates_from[pos].node);
+        }
+        _cluster_volumes[c].store(_cluster_volumes[c].load(std::memory_order_relaxed) + vol_delta, std::memory_order_relaxed);
+      }
+    });
+    volume_updates_from.clear();
   }
 
   return num_moved_nodes;
@@ -236,19 +247,19 @@ size_t ParallelLocalMovingModularity::parallelNonDeterministicRound(const Graph&
 }
 
 
-template<typename Map>
-bool ParallelLocalMovingModularity::verifyGain(const Graph& graph,
-                ds::Clustering& communities,
-                const NodeID u,
-                const PartitionID to,
-                double gain,
-                const Map& icw) {
+bool ParallelLocalMovingModularity::verifyGain(const Graph& graph, const ds::Clustering& communities, const NodeID u,
+                                               const PartitionID to, double gain, double weight_from, double weight_to) {
+  if (_context.partition.deterministic) {
+    // the check is omitted, since changing the cluster volumes breaks determinism
+    return true;
+  }
+
   const PartitionID from = communities[u];
 
-  long double adjustedGain = adjustAdvancedModGain(gain, icw.get(from), _cluster_volumes[from], graph.nodeVolume(u));
+  long double adjustedGain = adjustAdvancedModGain(gain, weight_from, _cluster_volumes[from], graph.nodeVolume(u));
   const double volMultiplier = _vol_multiplier_div_by_node_vol * graph.nodeVolume(u);
-  double modGain = modularityGain(icw.get(to), _cluster_volumes[to], volMultiplier);
-  long double adjustedGainRecomputed = adjustAdvancedModGain(modGain, icw.get(from), _cluster_volumes[from], graph.nodeVolume(u));
+  double modGain = modularityGain(weight_to, _cluster_volumes[to], volMultiplier);
+  long double adjustedGainRecomputed = adjustAdvancedModGain(modGain, weight_from, _cluster_volumes[from], graph.nodeVolume(u));
   unused(adjustedGainRecomputed);
 
   if (from == to) {
@@ -266,11 +277,12 @@ bool ParallelLocalMovingModularity::verifyGain(const Graph& graph,
   long double modBeforeMove = coverageBeforeMove - expectedCoverageBeforeMove;
 
   // apply move
-  communities[u] = to;
+  ds::Clustering communities_after_move = communities;
+  communities_after_move[u] = to;
   _cluster_volumes[to] += graph.nodeVolume(u);
   _cluster_volumes[from] -= graph.nodeVolume(u);
 
-  auto accAfterMove = intraClusterWeightsAndSumOfSquaredClusterVolumes(graph, communities);
+  auto accAfterMove = intraClusterWeightsAndSumOfSquaredClusterVolumes(graph, communities_after_move);
   long double coverageAfterMove = static_cast<long double>(accAfterMove.first) / graph.totalVolume();
   long double expectedCoverageAfterMove = accAfterMove.second / dTotalVolumeSquared;
   long double modAfterMove = coverageAfterMove - expectedCoverageAfterMove;
@@ -281,8 +293,6 @@ bool ParallelLocalMovingModularity::verifyGain(const Graph& graph,
                                          << V(coverageBeforeMove) << V(expectedCoverageBeforeMove) << V(modBeforeMove)
                                          << V(coverageAfterMove) << V(expectedCoverageAfterMove) << V(modAfterMove));
 
-  // revert move
-  communities[u] = from;
   _cluster_volumes[to] -= graph.nodeVolume(u);
   _cluster_volumes[from] += graph.nodeVolume(u);
 
@@ -325,6 +335,7 @@ void ParallelLocalMovingModularity::initializeClusterVolumes(const Graph& graph,
 }
 
 ParallelLocalMovingModularity::~ParallelLocalMovingModularity() {
+/*
   tbb::parallel_invoke([&] {
     parallel::parallel_free_thread_local_internal_data(
             _local_small_incident_cluster_weight, [&](CacheEfficientIncidentClusterWeights& data) {
@@ -336,8 +347,9 @@ ParallelLocalMovingModularity::~ParallelLocalMovingModularity() {
               data.freeInternalData();
             });
   }, [&] {
-    parallel::free(_cluster_volumes);
+     parallel::free(_cluster_volumes);
   });
+*/
 }
 
 
