@@ -134,6 +134,7 @@ namespace mt_kahypar::ds {
             auto& contained = local_maps.local();
             for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
 
+            // TODO can integrate size here
             for (size_t j = pos + 1; j < permutation.size() && hash == permutation[j].hash; ++j) {
               auto& cand = permutation[j];
               const auto& cand_pins = coarse_pin_lists[cand.he];
