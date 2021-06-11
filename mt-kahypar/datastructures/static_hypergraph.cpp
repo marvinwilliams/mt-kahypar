@@ -27,6 +27,7 @@
 #include "mt-kahypar/utils/memory_tree.h"
 
 #include <tbb/parallel_reduce.h>
+#include <tbb/parallel_sort.h>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -44,8 +45,8 @@ namespace mt_kahypar::ds {
     size_t hash = kEdgeHashSeed;
     size_t size = std::numeric_limits<size_t>::max();
     bool valid = false;
-    
-    bool operator<(const ContractedHyperedgeInformation& o) {
+
+    bool operator<(const ContractedHyperedgeInformation& o) const {
       return std::tie(hash, size, he) < std::tie(o.hash, o.size, o.he);
     }
   };
@@ -73,10 +74,12 @@ namespace mt_kahypar::ds {
     auto cs2 = [](const size_t x) { return x * x; };
 
     vec<vec<HypernodeID>> coarse_pin_lists(initialNumEdges());    // can be replaced later by contraction buffers :)
+    vec<ContractedHyperedgeInformation> permutation(initialNumEdges());
 
-    // TODO why is this not just a vector with hyperedge IDs that gets sorted by (hash, edge size, edge ID)
-    ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
-    net_map.reserve_for_estimated_number_of_insertions(_num_hyperedges);
+    // currently replaced with vector sorted by (hash, edge size, edge ID)
+    // ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
+    // net_map.reserve_for_estimated_number_of_insertions(_num_hyperedges);
+
 
     tbb::enumerable_thread_specific<boost::dynamic_bitset<>> local_maps(num_coarse_nodes);
 
@@ -103,19 +106,60 @@ namespace mt_kahypar::ds {
       //  pin_list.pop_back();
       if (pin_list.size() > 1) {
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
-        net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
+        permutation[he] = ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true };
+        // net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
       } else {
         pin_list.clear();   // globally mark net as removed
+        permutation[he] = ContractedHyperedgeInformation{ he, std::numeric_limits<size_t>::max(), 0, false };
       }
     });
 
     timer.stop_timer("generate pinlists");
     timer.start_timer("identical net detection","identical net detection");
 
+    tbb::parallel_sort(permutation.begin(), permutation.end());
+
     vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
     HypernodeID num_coarse_nets = 0;
     size_t num_coarse_pins = 0;
 
+    // identical net detection
+    doParallelForAllEdges([&](HyperedgeID pos) {
+      if ((pos == 0 || permutation[pos].hash != permutation[pos - 1].hash) && permutation[pos].valid ) {
+        size_t num_local_nets = 0, num_local_pins = 0;
+        size_t hash = permutation[pos].hash;
+
+        for ( ; pos < permutation.size() && hash == permutation[pos].hash; ++pos) {
+          const auto& rep = permutation[pos];
+          HyperedgeWeight rep_weight = edgeWeight(rep.he);
+          if (rep.valid) {
+            auto& contained = local_maps.local();
+            for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
+
+            for (size_t j = pos + 1; j < permutation.size() && hash == permutation[j].hash; ++j) {
+              auto& cand = permutation[j];
+              const auto& cand_pins = coarse_pin_lists[cand.he];
+              if (cand.valid && coarse_pin_lists[rep.he].size() == cand_pins.size()
+                  && std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v];})) {
+                cand.valid = false;
+                rep_weight += edgeWeight(cand.he);
+                coarse_pin_lists[cand.he].clear();    // globally mark net as removed
+              }
+            }
+            coarse_edge_weights[rep.he] = rep_weight;
+            num_local_nets++;
+            num_local_pins += coarse_pin_lists[rep.he].size();
+            for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.reset(v); }
+          }
+
+        }
+
+        __atomic_fetch_add(&num_coarse_nets, num_local_nets, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&num_coarse_pins, num_local_pins, __ATOMIC_RELAXED);
+      }
+    });
+
+    /*
     // identical net detection
     tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
       size_t num_local_nets = 0, num_local_pins = 0;
@@ -149,6 +193,8 @@ namespace mt_kahypar::ds {
       __atomic_fetch_add(&num_coarse_nets, num_local_nets, __ATOMIC_RELAXED);
       __atomic_fetch_add(&num_coarse_pins, num_local_pins, __ATOMIC_RELAXED);
     });
+
+    */
 
     timer.stop_timer("identical net detection");
     timer.start_timer("allocs","allocs");
