@@ -259,33 +259,35 @@ class MultilevelCoarsener : public ICoarsener,
                     _context.shared_memory.num_threads;
                 }
               } else {
-                // TODO check again if we're still unmatched! only set _matching_partner with spinlock
+                uint8_t unmatched = STATE(MatchingState::UNMATCHED);
+                uint8_t changing_state = STATE(RatingState::NO_TARGET);
+                if ( _matching_state[u].compare_exchange_strong(unmatched, changing_state) ) {
 
-                CornerCaseCounter& c = counter.local();
-                //std::string out = "";
-                switch (rating.state) {
-                  case RatingState::VERTEX_TOO_BIG:
-                    c.vertexTooBig++;
-                    break;
-                  case RatingState::EDGE_TOO_BIG:
-                    c.edgeTooBig++;
-                    break;
-                  case RatingState::NO_NEIGHBOURS:
-                    c.degreeZero++;
-                    break;
-                  case RatingState::DIFFERENT_COMMUNITY:
-                    c.notInCommunity++;
-                    break;
-                  default:
-                    break;
-                }
-                _matching_state[u] = STATE(rating.state);
-                if ( rating.state == RatingState::VERTEX_TOO_BIG
-                      || rating.state == RatingState::DIFFERENT_COMMUNITY ) {
-                  // Store preferred cluster for all nodes that don't get matched, because their target is too big,
-                  // so they can be used for two hop matching
-                  // or in a different community, so they can be matched ignoring the community detection
-                  _matching_partner[u] = rating.target;
+                  CornerCaseCounter &c = counter.local();
+                  switch (rating.state) {
+                    case RatingState::VERTEX_TOO_BIG:
+                      c.vertexTooBig++;
+                      break;
+                    case RatingState::EDGE_TOO_BIG:
+                      c.edgeTooBig++;
+                      break;
+                    case RatingState::NO_NEIGHBOURS:
+                      c.degreeZero++;
+                      break;
+                    case RatingState::DIFFERENT_COMMUNITY:
+                      c.notInCommunity++;
+                      break;
+                    default:
+                      break;
+                  }
+                  _matching_state[u] = STATE(rating.state);
+                  if (rating.state == RatingState::VERTEX_TOO_BIG
+                      || rating.state == RatingState::DIFFERENT_COMMUNITY) {
+                    // Store preferred cluster for all nodes that don't get matched, because their target is too big,
+                    // so they can be used for two hop matching
+                    // or in a different community, so they can be matched ignoring the community detection
+                    _matching_partner[u] = rating.target;
+                  }
                 }
               }
             }
@@ -349,12 +351,6 @@ class MultilevelCoarsener : public ICoarsener,
             static_cast<double>(num_hns_before_pass) /
             static_cast<double>(current_num_nodes);
         if ( reduction_vertices_percentage <= _context.coarsening.minimum_shrink_factor ) {
-          //TODO remove debug output
-          std::cout << "Contraction limit not reached" << std::endl;
-          std::cout << "num_hns_before_pass: " << num_hns_before_pass << std::endl;
-          std::cout << "current_num_nodes: " << current_num_nodes << std::endl;
-          std::cout << "contraction_limit: " << _context.coarsening.contraction_limit << std::endl;
-          std::cout << "current_num_nodes/context.coarsening.contraction_limit: " << ((1.0*(current_num_nodes))/(_context.coarsening.contraction_limit)) << std::endl;
           break;
         }
       }
@@ -420,6 +416,7 @@ class MultilevelCoarsener : public ICoarsener,
     ASSERT(v < hypergraph.initialNumNodes());
     uint8_t unmatched = STATE(MatchingState::UNMATCHED);
     uint8_t match_in_progress = STATE(MatchingState::MATCHING_IN_PROGRESS);
+    uint8_t invalidMatchingState = STATE(10);
 
     // Indicates that u wants to join the cluster of v.
     // Will be important later for conflict resolution.
@@ -436,7 +433,7 @@ class MultilevelCoarsener : public ICoarsener,
         uint8_t matching_state_v = _matching_state[v].load();
         // If vertex v hasn't found a matching target, but we have a vertex u that wants to match with v,
         // then we don't need the corner case handling for vertex v.
-        if (matching_state_v >= 10) {   // TODO give this thing a name
+        if (matching_state_v >= invalidMatchingState) {
           _matching_state[v].store(unmatched);
         }
         if ( matching_state_v == STATE(MatchingState::MATCHED) ) {
@@ -560,7 +557,6 @@ class MultilevelCoarsener : public ICoarsener,
         parallel::scalable_vector<HypernodeID>& cluster_ids,
         Hypergraph& current_hg) {
 
-    //TODO remove debug output
     HypernodeID contracted_hns = 0;
 
     tbb::enumerable_thread_specific < std::vector < std::pair < uint32_t, HypernodeID>>> thread_edge_targets;
@@ -591,10 +587,6 @@ class MultilevelCoarsener : public ICoarsener,
     if (_use_two_hop_matching) {
       HypernodeID twoHopContractions = performTwoHopMatching(corner_cases, thread_opt_targets, cluster_ids,current_hg);
       contracted_hns += twoHopContractions;
-      //debug
-      std::string two_hop = "Two hop contractions: " +
-          std::to_string(twoHopContractions) + "\n";
-      std::cout << two_hop;
     }
 
     // Contract vertices that don't have a contraction target, but are both pins of the same edge that is too big
@@ -602,29 +594,18 @@ class MultilevelCoarsener : public ICoarsener,
     if (_use_large_edge_matching) {
       HypernodeID largeEdgeContractions = performLargeEdgeMatching(corner_cases, thread_edge_targets, cluster_ids, current_hg);
       contracted_hns += largeEdgeContractions;
-      //debug
-      std::string edge =
-        "Edge contractions: " + std::to_string(largeEdgeContractions) + "\n";
-      std::cout << edge;
     }
 
     //Collect all degree zero vertices so they can be removed
     if (_remove_degree_zero_hns) {
       collectDegreeZeroNodes(corner_cases, thread_degree_zero_hns, degree_zero_hns);
       contracted_hns += degree_zero_hns.size();
-      //debug
-      std::string degree_zero = "Degree zero hns: " + std::to_string(degree_zero_hns.size()) + "\n";
-      std::cout << degree_zero;
     }
 
     // Contract vertices which want to join a cluster that is in a different community
     if (_use_matching_without_community_detection) {
       HypernodeID communityContractions = performMatchingWithoutCommunityDetection(corner_cases,thread_community_targets,cluster_ids,current_hg);
       contracted_hns += communityContractions;
-      //debug
-      std::string community = "Contractions with different Communities: " +
-                              std::to_string(communityContractions) + "\n";
-      std::cout << community;
     }
     return contracted_hns;
   }
