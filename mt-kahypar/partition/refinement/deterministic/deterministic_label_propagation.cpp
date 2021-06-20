@@ -303,7 +303,6 @@ namespace mt_kahypar {
 
     // swap_prefix[index(p1,p2)] stores the first position of moves to revert out of the sequence of moves from p1 to p2
     vec<size_t> swap_prefix(max_key, 0);
-
     tbb::parallel_for(0UL, relevant_block_pairs.size(), [&](size_t bp_index) {
       // sort both directions by gain (alternative: gain / weight?)
       auto sort_by_gain_and_prefix_sum_node_weights = [&](PartitionID p1, PartitionID p2) {
@@ -319,19 +318,18 @@ namespace mt_kahypar {
                             cumulative_node_weights.begin() + begin, std::plus<>(), 0);
       };
 
-      const auto [p1, p2] = relevant_block_pairs[bp_index];
+      PartitionID p1, p2;
+      std::tie(p1, p2) = relevant_block_pairs[bp_index];
       tbb::parallel_invoke([&] {
         sort_by_gain_and_prefix_sum_node_weights(p1, p2);
       }, [&] {
         sort_by_gain_and_prefix_sum_node_weights(p2, p1);
       });
 
-
       HypernodeWeight  budget_p1 = context.partition.max_part_weights[p1] - phg.partWeight(p1),
                        budget_p2 = context.partition.max_part_weights[p2] - phg.partWeight(p2);
-      HypernodeWeight  lb_p1 = budget_p1 / std::max(1UL, involvements[p1]),
+      HypernodeWeight  lb_p1 = -(budget_p1 /std::max(1UL, involvements[p1])),
                        ub_p2 = budget_p2 / std::max(1UL, involvements[p2]);
-
 
       size_t  p1_begin = positions[index(p1, p2)], p1_end = positions[index(p1, p2) + 1],
               p2_begin = positions[index(p2, p1)], p2_end = positions[index(p2, p1) + 1];
@@ -348,7 +346,6 @@ namespace mt_kahypar {
       }
       swap_prefix[index(p1, p2)] = best_prefix.first;
       swap_prefix[index(p2, p1)] = best_prefix.second;
-      
     });
 
     moves.clear();
