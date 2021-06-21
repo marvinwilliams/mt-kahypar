@@ -103,7 +103,7 @@ namespace mt_kahypar::ds {
     timer.stop_timer("generate pinlists");
     timer.start_timer("identical net detection","identical net detection");
 
-    tbb::parallel_sort(permutation.begin(), permutation.end());
+    tbb::parallel_sort(permutation.begin(), permutation.begin() + initialNumEdges());
 
     vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
     HypernodeID num_coarse_nets = 0;
@@ -307,6 +307,7 @@ namespace mt_kahypar::ds {
     timer.stop_timer("hypergraph_contraction");
 
     chg._tmp_contraction_buffer = _tmp_contraction_buffer;
+    _tmp_contraction_buffer = nullptr;
     return chg;
   }
 
