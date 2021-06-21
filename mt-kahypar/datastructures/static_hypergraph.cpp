@@ -101,7 +101,12 @@ namespace mt_kahypar::ds {
     timer.stop_timer("generate pinlists");
     timer.start_timer("identical net detection","identical net detection");
 
+    timer.start_timer("sort", "sort");
+
     tbb::parallel_sort(permutation.begin(), permutation.begin() + initialNumEdges());
+
+    timer.stop_timer("sort");
+    timer.start_timer("detect deduplicates", "detect deduplicates");
 
     auto& coarse_edge_weights = _tmp_contraction_buffer->coarse_edge_weights;
     HypernodeID num_coarse_nets = 0;
@@ -149,6 +154,8 @@ namespace mt_kahypar::ds {
         __atomic_fetch_add(&num_coarse_pins, num_local_pins, __ATOMIC_RELAXED);
       }
     });
+
+    timer.stop_timer("detect duplicates");
 
     /*
     // identical net detection
