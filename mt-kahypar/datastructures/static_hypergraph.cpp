@@ -61,9 +61,7 @@ namespace mt_kahypar::ds {
     auto cs2 = [](const size_t x) { return x * x; };
 
     auto& coarse_pin_lists = _tmp_contraction_buffer->coarse_pin_lists;
-    // auto& permutation = _tmp_contraction_buffer->permutation;
     tbb::enumerable_thread_specific<boost::dynamic_bitset<>>& local_maps = _tmp_contraction_buffer->local_maps;
-
 
     ds::ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
     net_map.reserve_for_estimated_number_of_insertions(initialNumEdges());
@@ -73,7 +71,6 @@ namespace mt_kahypar::ds {
       vec<HypernodeID>& pin_list = coarse_pin_lists[he];
       pin_list.clear();
       if (!edgeIsEnabled(he)) {
-        // permutation[he] = { std::numeric_limits<size_t>::max(), 0, he,false };
         return;
       }
       boost::dynamic_bitset<>& contained = local_maps.local();
@@ -101,11 +98,9 @@ namespace mt_kahypar::ds {
           std::sort(pin_list.begin(), pin_list.end());
         }
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
-        // permutation[he] = { edge_hash, pin_list.size(), he, true };
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he,true });
       } else {
         pin_list.clear();   // globally mark net as removed
-        // permutation[he] = { std::numeric_limits<size_t>::max(), 0, he, false };
       }
     });
 
@@ -116,54 +111,6 @@ namespace mt_kahypar::ds {
     size_t num_coarse_pins = 0;
     auto& coarse_edge_weights = _tmp_contraction_buffer->coarse_edge_weights;
 
-    /*
-    timer.start_timer("sort", "sort");
-    tbb::parallel_sort(permutation.begin(), permutation.begin() + initialNumEdges());
-    timer.stop_timer("sort");
-    timer.start_timer("detect deduplicates", "detect deduplicates");
-    // identical net detection
-    doParallelForAllEdges([&](HyperedgeID pos) {
-      if ((pos == 0 || permutation[pos].hash != permutation[pos - 1].hash) && permutation[pos].valid) {
-        size_t num_local_nets = 0, num_local_pins = 0;
-        size_t hash = permutation[pos].hash;
-
-        for ( ; pos < permutation.size() && hash == permutation[pos].hash; ++pos) {
-          const auto& rep = permutation[pos];
-          HyperedgeWeight rep_weight = edgeWeight(rep.he);
-          if (rep.valid) {
-            auto& contained = local_maps.local();
-            for (HypernodeID v : coarse_pin_lists[rep.he]) {
-              contained.set(v);
-            }
-
-            for (size_t j = pos + 1; j < permutation.size() && hash == permutation[j].hash; ++j) {
-              auto& cand = permutation[j];
-              const auto& cand_pins = coarse_pin_lists[cand.he];
-              if (cand.valid && cand_pins.size() == rep.size &&
-                  std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v]; })) {
-                cand.valid = false;
-                rep_weight += edgeWeight(cand.he);
-                coarse_pin_lists[cand.he].clear();    // globally mark net as removed
-              }
-            }
-
-            coarse_edge_weights[rep.he] = rep_weight;
-            num_local_nets++;
-            num_local_pins += coarse_pin_lists[rep.he].size();
-
-            for (HypernodeID v : coarse_pin_lists[rep.he]) {
-              contained.reset(v);
-            }
-          }
-
-        }
-
-        __atomic_fetch_add(&num_coarse_nets, num_local_nets, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&num_coarse_pins, num_local_pins, __ATOMIC_RELAXED);
-      }
-    });
-    timer.stop_timer("detect duplicates");
-*/
     tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
       size_t num_local_nets = 0, num_local_pins = 0;
       auto& bucket = net_map.getBucket(bucket_id);

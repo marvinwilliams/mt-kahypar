@@ -361,7 +361,6 @@ class StaticHypergraph {
       coarse_pin_lists.resize(initial_edges);
       coarse_edge_weights.resize("Coarsening", "edge_weights",initial_edges);
       offsets_for_fine_nets.resize("Coarsening", "offsets",initial_edges);
-      permutation.resize("Coarsening", "permutation",initial_edges);
       mapping.resize("Coarsening", "mapping", initial_nodes);
     }
 
@@ -370,7 +369,6 @@ class StaticHypergraph {
     vec<vec<HypernodeID>> coarse_pin_lists;
     ds::Array<HyperedgeWeight> coarse_edge_weights;
     ds::Array<size_t> offsets_for_fine_nets;
-    ds::Array<ContractedHyperedgeInformation> permutation;
     ds::Array<HypernodeID> mapping;
   };
 
