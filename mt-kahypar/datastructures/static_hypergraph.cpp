@@ -44,6 +44,7 @@ namespace mt_kahypar::ds {
     tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) { mapping[clusters[u]] = 1; });
     parallel_prefix_sum(mapping.begin(), mapping.begin() + initialNumNodes(), mapping.begin(), std::plus<>(), 0);
     HypernodeID num_coarse_nodes = mapping[initialNumNodes() - 1];
+    _tmp_contraction_buffer->num_coarse_nodes = num_coarse_nodes;
     // apply mapping to cluster IDs. subtract one because prefix sum is inclusive
     tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) {
       clusters[u] = nodeIsEnabled(u) ? mapping[clusters[u]] - 1 : kInvalidHypernode;
