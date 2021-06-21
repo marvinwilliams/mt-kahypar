@@ -371,21 +371,10 @@ class StaticHypergraph {
     }
 
     ~TmpContractionBuffer() {
-      tbb::parallel_invoke(
-              [&] {
-                tbb::parallel_for(0UL, coarse_pin_lists.size(), [&](size_t i) {
-                  coarse_pin_lists[i].clear();
-                  coarse_pin_lists[i].shrink_to_fit();
-                  // coarse_pin_lists[i].~vec<HypernodeID>();
-                });
-                coarse_pin_lists.~vec<vec<HypernodeID>>();
-              }, [&] {
-                coarse_edge_weights.~vec<HyperedgeWeight>();
-              }, [&] {
-                offsets_for_fine_nets.~vec<size_t>();
-              }, [&] {
-                mapping.~vec<HypernodeID>();
-              });
+      tbb::parallel_for(0UL, coarse_pin_lists.size(), [&](size_t i) {
+        coarse_pin_lists[i].clear();
+        coarse_pin_lists[i].shrink_to_fit();
+      });
     }
 
     size_t num_coarse_nodes = 0;
