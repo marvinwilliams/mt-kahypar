@@ -306,6 +306,7 @@ namespace mt_kahypar::ds {
     timer.stop_timer("aggregate node weights");
     timer.stop_timer("hypergraph_contraction");
 
+    chg._tmp_contraction_buffer = _tmp_contraction_buffer;
     return chg;
   }
 
