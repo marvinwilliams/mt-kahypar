@@ -107,16 +107,15 @@ namespace mt_kahypar::ds {
       auto& contained = local_maps.local();
       for (size_t i = 0; i < bucket.size(); ++i) {
         const auto& rep = bucket[i];
-        const auto& rep_pins = coarse_pin_lists[rep.he];
         if (rep.valid) {
           HyperedgeWeight rep_weight = edgeWeight(rep.he);
           for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
 
-          for (size_t j = i+1; j < bucket.size(); ++j) {
+          for (size_t j = i + 1; j < bucket.size(); ++j) {
             auto& cand = bucket[j];
-            if (cand.hash != rep.hash) { break; }
+            if (cand.hash != rep.hash || cand.size != rep.size) { break; }
             const auto& cand_pins = coarse_pin_lists[cand.he];
-            if (cand.valid && rep.size == cand_pins.size()
+            if (cand.valid
                 && std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v];})) {
               cand.valid = false;
               rep_weight += edgeWeight(cand.he);
