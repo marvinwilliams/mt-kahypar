@@ -36,9 +36,7 @@ namespace mt_kahypar::ds {
 
 
     if (!_tmp_contraction_buffer) {
-      timer.start_timer("alloc buffer", "alloc buffer");
       allocateTmpContractionBuffer();
-      timer.stop_timer("alloc buffer");
     }
 
     timer.start_timer("compactify","compactify");
@@ -69,7 +67,7 @@ namespace mt_kahypar::ds {
       vec<HypernodeID>& pin_list = coarse_pin_lists[he];
       pin_list.clear();
       if (!edgeIsEnabled(he)) {
-        permutation[he] = ContractedHyperedgeInformation{ std::numeric_limits<size_t>::max(), 0,  he,false };
+        permutation[he] = { std::numeric_limits<size_t>::max(), 0, he,false };
         return;
       }
       boost::dynamic_bitset<>& contained = local_maps.local();
@@ -92,11 +90,11 @@ namespace mt_kahypar::ds {
       //  pin_list.pop_back();
       if (pin_list.size() > 1) {
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
-        permutation[he] = ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he, true };
+        permutation[he] = { edge_hash, pin_list.size(), he, true };
         // net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
       } else {
         pin_list.clear();   // globally mark net as removed
-        permutation[he] = ContractedHyperedgeInformation{ std::numeric_limits<size_t>::max(), 0, he, false };
+        permutation[he] = { std::numeric_limits<size_t>::max(), 0, he, false };
       }
     });
 

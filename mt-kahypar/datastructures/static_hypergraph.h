@@ -348,6 +348,7 @@ class StaticHypergraph {
       return std::tie(hash, size, he) < std::tie(o.hash, o.size, o.he);
     }
   };
+  static_assert(sizeof(ContractedHyperedgeInformation) == 24);
 
 
   // ! Contains buffers that are needed during multilevel contractions.
@@ -357,11 +358,11 @@ class StaticHypergraph {
     TmpContractionBuffer(size_t initial_nodes, size_t initial_edges) :
       local_maps([&] { return boost::dynamic_bitset<>(num_coarse_nodes); })
     {
-        coarse_pin_lists.resize("Coarsening", "pin_lists",initial_edges);
-        coarse_edge_weights.resize("Coarsening", "edge_weights",initial_edges);
-        offsets_for_fine_nets.resize("Coarsening", "offsets",initial_edges);
-        permutation.resize("Coarsening", "permutation",initial_edges);
-        mapping.resize("Coarsening", "mapping", initial_nodes);
+      coarse_pin_lists.resize("Coarsening", "pin_lists",initial_edges);
+      coarse_edge_weights.resize("Coarsening", "edge_weights",initial_edges);
+      offsets_for_fine_nets.resize("Coarsening", "offsets",initial_edges);
+      permutation.resize("Coarsening", "permutation",initial_edges);
+      mapping.resize("Coarsening", "mapping", initial_nodes);
     }
 
     size_t num_coarse_nodes = 0;
@@ -423,7 +424,7 @@ class StaticHypergraph {
     _hyperedges(std::move(other._hyperedges)),
     _incidence_array(std::move(other._incidence_array)),
     _community_ids(std::move(other._community_ids)),
-    _tmp_contraction_buffer(std::move(other._tmp_contraction_buffer)) {
+    _tmp_contraction_buffer(other._tmp_contraction_buffer) {
     other._tmp_contraction_buffer = nullptr;
   }
 
@@ -442,7 +443,7 @@ class StaticHypergraph {
     _hyperedges = std::move(other._hyperedges);
     _incidence_array = std::move(other._incidence_array);
     _community_ids = std::move(other._community_ids),
-    _tmp_contraction_buffer = std::move(other._tmp_contraction_buffer);
+    _tmp_contraction_buffer = other._tmp_contraction_buffer;
     other._tmp_contraction_buffer = nullptr;
     return *this;
   }
