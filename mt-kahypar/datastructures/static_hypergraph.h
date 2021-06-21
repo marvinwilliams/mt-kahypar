@@ -358,7 +358,8 @@ class StaticHypergraph {
     TmpContractionBuffer(size_t initial_nodes, size_t initial_edges) :
       local_maps([&] { return boost::dynamic_bitset<>(num_coarse_nodes); })
     {
-      coarse_pin_lists.resize("Coarsening", "pin_lists",initial_edges);
+      // coarse_pin_lists.resize("Coarsening", "pin_lists",initial_edges);
+      coarse_pin_lists.resize(initial_edges);
       coarse_edge_weights.resize("Coarsening", "edge_weights",initial_edges);
       offsets_for_fine_nets.resize("Coarsening", "offsets",initial_edges);
       permutation.resize("Coarsening", "permutation",initial_edges);
@@ -367,7 +368,7 @@ class StaticHypergraph {
 
     size_t num_coarse_nodes = 0;
     tbb::enumerable_thread_specific<boost::dynamic_bitset<>> local_maps;
-    ds::Array<vec<HypernodeID>> coarse_pin_lists;
+    vec<vec<HypernodeID>> coarse_pin_lists;
     ds::Array<HyperedgeWeight> coarse_edge_weights;
     ds::Array<size_t> offsets_for_fine_nets;
     ds::Array<ContractedHyperedgeInformation> permutation;
@@ -820,6 +821,12 @@ class StaticHypergraph {
     }
   }
 
+  void allocateTmpContractionBuffer() {
+    if (!_tmp_contraction_buffer) {
+      _tmp_contraction_buffer = new TmpContractionBuffer(_num_hypernodes, _num_hyperedges);
+    }
+  }
+
   void memoryConsumption(utils::MemoryTreeNode* parent) const;
 
     // ! Only for testing
@@ -911,13 +918,6 @@ class StaticHypergraph {
     ASSERT(incident_nets_pos < incident_nets_end);
     swap(_incident_nets[incident_nets_start], _incident_nets[incident_nets_pos]);
     hn.setSize(hn.size() + 1);
-  }
-
-  // ! Allocate the temporary contraction buffer
-  void allocateTmpContractionBuffer() {
-    if (!_tmp_contraction_buffer) {
-      _tmp_contraction_buffer = new TmpContractionBuffer(_num_hypernodes, _num_hyperedges);
-    }
   }
 
   // ! Number of hypernodes
