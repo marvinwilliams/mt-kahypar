@@ -284,8 +284,13 @@ namespace mt_kahypar::ds {
     tbb::parallel_for(0U, num_coarse_nodes, [&](HypernodeID u) {
       chg._hypernodes[u]._weight = 0;
       chg._hypernodes[u]._begin -= chg._hypernodes[u].size();
-      std::sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
-                chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
+      if (chg._hypernodes[u].size() > 100000) {
+        tbb::parallel_sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
+                           chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
+      } else {
+        std::sort(chg._incident_nets.begin() + chg._hypernodes[u].firstEntry(),
+                  chg._incident_nets.begin() + chg._hypernodes[u].firstInvalidEntry());
+      }
     });
 
     timer.stop_timer("write incident nets");
