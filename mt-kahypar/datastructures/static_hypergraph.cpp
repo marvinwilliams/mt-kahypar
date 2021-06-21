@@ -61,15 +61,19 @@ namespace mt_kahypar::ds {
     auto cs2 = [](const size_t x) { return x * x; };
 
     auto& coarse_pin_lists = _tmp_contraction_buffer->coarse_pin_lists;
-    auto& permutation = _tmp_contraction_buffer->permutation;
+    // auto& permutation = _tmp_contraction_buffer->permutation;
     tbb::enumerable_thread_specific<boost::dynamic_bitset<>>& local_maps = _tmp_contraction_buffer->local_maps;
+
+
+    ds::ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
+    net_map.reserve_for_estimated_number_of_insertions(initialNumEdges());
 
     // map coarse pin lists and insert into hash map for work distribution
     tbb::parallel_for(0U, initialNumEdges(), [&](HyperedgeID he) {
       vec<HypernodeID>& pin_list = coarse_pin_lists[he];
       pin_list.clear();
       if (!edgeIsEnabled(he)) {
-        permutation[he] = { std::numeric_limits<size_t>::max(), 0, he,false };
+        // permutation[he] = { std::numeric_limits<size_t>::max(), 0, he,false };
         return;
       }
       boost::dynamic_bitset<>& contained = local_maps.local();
@@ -92,11 +96,11 @@ namespace mt_kahypar::ds {
       //  pin_list.pop_back();
       if (pin_list.size() > 1) {
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
-        permutation[he] = { edge_hash, pin_list.size(), he, true };
-        // net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
+        // permutation[he] = { edge_hash, pin_list.size(), he, true };
+        net_map.insert(edge_hash, ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he,true });
       } else {
         pin_list.clear();   // globally mark net as removed
-        permutation[he] = { std::numeric_limits<size_t>::max(), 0, he, false };
+        // permutation[he] = { std::numeric_limits<size_t>::max(), 0, he, false };
       }
     });
 
@@ -155,8 +159,6 @@ namespace mt_kahypar::ds {
     });
     timer.stop_timer("detect duplicates");
 */
-    ds::ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
-    net_map.reserve_for_estimated_number_of_insertions(initialNumEdges());
     tbb::parallel_for(0UL, net_map.numBuckets(), [&](const size_t bucket_id) {
       size_t num_local_nets = 0, num_local_pins = 0;
       auto& bucket = net_map.getBucket(bucket_id);
