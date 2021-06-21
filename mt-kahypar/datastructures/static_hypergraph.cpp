@@ -73,30 +73,28 @@ namespace mt_kahypar::ds {
       if (!edgeIsEnabled(he)) {
         return;
       }
-      boost::dynamic_bitset<>& contained = local_maps.local();
+      // boost::dynamic_bitset<>& contained = local_maps.local();
       pin_list.reserve(edgeSize(he) / 2);
       for (HypernodeID v : pins(he)) {
         const HypernodeID cv = get_cluster(v);
-        if (cv != kInvalidHypernode && !contained[cv]) {
-          contained.set(cv);
-          pin_list.push_back(cv);
-        }
-        // pin_list.push_back(cv);
-      }
-      for (HypernodeID v : pin_list) {
-        contained.reset(v);
+        //if (cv != kInvalidHypernode && !contained[cv]) {
+        //  contained.set(cv);
+        //  pin_list.push_back(cv);
+        //}
+         pin_list.push_back(cv);
       }
 
-      // std::sort(pin_list.begin(), pin_list.end());
-      // pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
-      //if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
-      //  pin_list.pop_back();
+      // for (HypernodeID v : pin_list) { contained.reset(v); }
+
+      if (pin_list.size() > 150000) {
+        tbb::parallel_sort(pin_list.begin(), pin_list.end());
+      } else {
+        std::sort(pin_list.begin(), pin_list.end());
+      }
+      pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
+      if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
+        pin_list.pop_back();
       if (pin_list.size() > 1) {
-        if (pin_list.size() > 100000) {
-          tbb::parallel_sort(pin_list.begin(), pin_list.end());
-        } else {
-          std::sort(pin_list.begin(), pin_list.end());
-        }
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he,true });
       } else {
