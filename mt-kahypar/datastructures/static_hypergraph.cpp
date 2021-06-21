@@ -95,6 +95,7 @@ namespace mt_kahypar::ds {
       //if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
       //  pin_list.pop_back();
       if (pin_list.size() > 1) {
+        std::sort(pin_list.begin(), pin_list.end());
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
         // permutation[he] = { edge_hash, pin_list.size(), he, true };
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he,true });
@@ -163,19 +164,21 @@ namespace mt_kahypar::ds {
       size_t num_local_nets = 0, num_local_pins = 0;
       auto& bucket = net_map.getBucket(bucket_id);
       std::sort(bucket.begin(), bucket.end());
+      // auto& contained = local_maps.local();
       for (size_t i = 0; i < bucket.size(); ++i) {
         const auto& rep = bucket[i];
+        const auto& rep_pins = coarse_pin_lists[rep.he];
         if (rep.valid) {
           HyperedgeWeight rep_weight = edgeWeight(rep.he);
-          auto& contained = local_maps.local();
-          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
+          // for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
 
           for (size_t j = i+1; j < bucket.size(); ++j) {
             auto& cand = bucket[j];
             if (cand.hash != rep.hash) { break; }
             const auto& cand_pins = coarse_pin_lists[cand.he];
-            if (cand.valid && coarse_pin_lists[rep.he].size() == cand_pins.size()
-                && std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v];})) {
+            if (cand.valid && rep.size == cand_pins.size()
+                && cand_pins == rep_pins) {
+               // && std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v];})) {
               cand.valid = false;
               rep_weight += edgeWeight(cand.he);
               coarse_pin_lists[cand.he].clear();    // globally mark net as removed
@@ -183,8 +186,8 @@ namespace mt_kahypar::ds {
           }
           coarse_edge_weights[rep.he] = rep_weight;
           num_local_nets++;
-          num_local_pins += coarse_pin_lists[rep.he].size();
-          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.reset(v); }
+          num_local_pins += rep.size;
+          // for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.reset(v); }
         }
       }
       net_map.free(bucket_id);
