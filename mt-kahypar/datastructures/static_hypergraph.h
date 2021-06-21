@@ -32,6 +32,10 @@
 #include "mt-kahypar/utils/memory_tree.h"
 #include "mt-kahypar/utils/range.h"
 
+#include <boost/dynamic_bitset.hpp>
+#include <boost/dynamic_bitset.hpp>
+#include <tbb/enumerable_thread_specific.h>
+
 namespace mt_kahypar {
 namespace ds {
 
@@ -330,43 +334,51 @@ class StaticHypergraph {
   using IncidenceArray = Array<HypernodeID>;
   using IncidentNets = Array<HyperedgeID>;
 
+  /*!
+  * This struct is used during multilevel coarsening to efficiently
+  * detect parallel hyperedges.
+  */
+  struct ContractedHyperedgeInformation {
+    HyperedgeID he = kInvalidHyperedge;
+    size_t hash = kEdgeHashSeed;
+    size_t size = std::numeric_limits<size_t>::max();
+    bool valid = false;
+
+    bool operator<(const ContractedHyperedgeInformation& o) const {
+      return std::tie(hash, size, he) < std::tie(o.hash, o.size, o.he);
+    }
+  };
+
+
   // ! Contains buffers that are needed during multilevel contractions.
   // ! Struct is allocated on top level hypergraph and passed to each contracted
   // ! hypergraph such that memory can be reused in consecutive contractions.
   struct TmpContractionBuffer {
-    explicit TmpContractionBuffer(const HypernodeID num_hypernodes,
-                                  const HyperedgeID num_hyperedges,
-                                  const HyperedgeID num_pins) {
+    TmpContractionBuffer(size_t initial_nodes, size_t initial_edges) :
+    // TODO hoping that when this lambda is stored, it takes num_coarse_nodes by reference and thus takes the right value when maps are constructed for the first time
+    // verify!
+      local_maps([&] { return boost::dynamic_bitset<>(num_coarse_nodes); })
+    {
       tbb::parallel_invoke([&] {
-        mapping.resize("Coarsening", "mapping", num_hypernodes);
+        coarse_pin_lists.resize(initial_edges);
       }, [&] {
-        tmp_hypernodes.resize("Coarsening", "tmp_hypernodes", num_hypernodes);
+        coarse_edge_weights.resize(initial_edges);
       }, [&] {
-        tmp_incident_nets.resize("Coarsening", "tmp_incident_nets", num_pins);
+        offsets_for_fine_nets.resize(initial_edges);
       }, [&] {
-        tmp_num_incident_nets.resize("Coarsening", "tmp_num_incident_nets", num_hypernodes);
+        permutation.resize(initial_edges);
       }, [&] {
-        hn_weights.resize("Coarsening", "hn_weights", num_hypernodes);
-      }, [&] {
-        tmp_hyperedges.resize("Coarsening", "tmp_hyperedges", num_hyperedges);
-      }, [&] {
-        tmp_incidence_array.resize("Coarsening", "tmp_incidence_array", num_pins);
-      }, [&] {
-        he_sizes.resize("Coarsening", "he_sizes", num_hyperedges);
-      }, [&] {
-        valid_hyperedges.resize("Coarsening", "valid_hyperedges", num_hyperedges);
+        mapping.resize(initial_nodes, 0);
       });
     }
 
-    Array<size_t> mapping;
-    Array<Hypernode> tmp_hypernodes;
-    IncidentNets tmp_incident_nets;
-    Array<parallel::IntegralAtomicWrapper<size_t>> tmp_num_incident_nets;
-    Array<parallel::IntegralAtomicWrapper<HypernodeWeight>> hn_weights;
-    Array<Hyperedge> tmp_hyperedges;
-    IncidenceArray tmp_incidence_array;
-    Array<size_t> he_sizes;
-    Array<size_t> valid_hyperedges;
+    size_t num_coarse_nodes = 0;
+    tbb::enumerable_thread_specific<boost::dynamic_bitset<>> local_maps;
+    vec<vec<HypernodeID>> coarse_pin_lists;
+    vec<HyperedgeWeight> coarse_edge_weights;
+    vec<size_t> offsets_for_fine_nets;
+    vec<ContractedHyperedgeInformation> permutation;
+    vec<HypernodeID> mapping;
   };
 
  public:
@@ -685,12 +697,9 @@ class StaticHypergraph {
    * community label (given in 'communities') to a vertex in the coarse hypergraph.
    *
    * \param communities Community structure that should be contracted
-   * \param task_group_id Task Group ID
    */
   StaticHypergraph contract(parallel::scalable_vector<HypernodeID>& communities);
 
-
-  StaticHypergraph contract_v2(vec<HypernodeID>& clusters);
 
   bool registerContraction(const HypernodeID, const HypernodeID) {
     ERROR("registerContraction(u, v) is not supported in static hypergraph");
@@ -913,9 +922,8 @@ class StaticHypergraph {
 
   // ! Allocate the temporary contraction buffer
   void allocateTmpContractionBuffer() {
-    if ( !_tmp_contraction_buffer ) {
-      _tmp_contraction_buffer = new TmpContractionBuffer(
-        _num_hypernodes, _num_hyperedges, _num_pins);
+    if (!_tmp_contraction_buffer) {
+      _tmp_contraction_buffer = new TmpContractionBuffer(_num_hypernodes, _num_hyperedges);
     }
   }
 
