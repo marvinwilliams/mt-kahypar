@@ -105,7 +105,7 @@ namespace mt_kahypar::ds {
 
     tbb::parallel_sort(permutation.begin(), permutation.begin() + initialNumEdges());
 
-    vec<HyperedgeWeight> coarse_edge_weights(initialNumEdges());
+    vec<HyperedgeWeight>& coarse_edge_weights = _tmp_contraction_buffer->coarse_edge_weights;
     HypernodeID num_coarse_nets = 0;
     size_t num_coarse_pins = 0;
 
