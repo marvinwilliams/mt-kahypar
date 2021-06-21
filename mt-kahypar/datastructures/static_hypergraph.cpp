@@ -74,11 +74,6 @@ namespace mt_kahypar::ds {
     vec<vec<HypernodeID>> coarse_pin_lists(initialNumEdges());    // can be replaced later by contraction buffers :)
     vec<ContractedHyperedgeInformation> permutation(initialNumEdges());
 
-    // currently replaced with vector sorted by (hash, edge size, edge ID)
-    // ConcurrentBucketMap<ContractedHyperedgeInformation> net_map;
-    // net_map.reserve_for_estimated_number_of_insertions(_num_hyperedges);
-
-
     tbb::enumerable_thread_specific<boost::dynamic_bitset<>> local_maps(num_coarse_nodes);
 
     // map coarse pin lists and insert into hash map for work distribution
@@ -134,12 +129,12 @@ namespace mt_kahypar::ds {
             auto& contained = local_maps.local();
             for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
 
-            // TODO can integrate size here
-            for (size_t j = pos + 1; j < permutation.size() && hash == permutation[j].hash; ++j) {
+            for (size_t j = pos + 1; j < permutation.size() && hash == permutation[j].hash &&
+                                      rep.size == permutation[j].size; ++j) {
               auto& cand = permutation[j];
               const auto& cand_pins = coarse_pin_lists[cand.he];
-              if (cand.valid && coarse_pin_lists[rep.he].size() == cand_pins.size()
-                  && std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v];})) {
+              if (cand.valid &&
+                  std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v]; })) {
                 cand.valid = false;
                 rep_weight += edgeWeight(cand.he);
                 coarse_pin_lists[cand.he].clear();    // globally mark net as removed
@@ -255,11 +250,10 @@ namespace mt_kahypar::ds {
       if (!coarse_pin_lists[he].empty()) {
         size_t pos = offsets_for_fine_nets[he];
         for (HypernodeID v : coarse_pin_lists[he]) {
-          chg._incidence_array[pos++] = v;                                        // copy pin list TODO call to std::copy faster?
+          chg._incidence_array[pos++] = v;                                        // copy pin list
           __atomic_fetch_add(&chg._hypernodes[v]._size, 1, __ATOMIC_RELAXED);     // increment pin's degree
         }
       }
-      // TODO can clear and shrink_to_fit coarse_pin_lists[he]
     });
 
     timer.stop_timer("write pin lists");
@@ -331,7 +325,7 @@ namespace mt_kahypar::ds {
 
   StaticHypergraph StaticHypergraph::contract(parallel::scalable_vector<HypernodeID>& communities) {
     return contract_v2(communities);
-    
+
     ASSERT(communities.size() == _num_hypernodes);
 
     if ( !_tmp_contraction_buffer ) {
