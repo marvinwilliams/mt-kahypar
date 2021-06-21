@@ -127,11 +127,10 @@ namespace mt_kahypar::ds {
               contained.set(v);
             }
 
-            for (size_t j = pos + 1; j < permutation.size() && hash == permutation[j].hash &&
-                                      rep.size == permutation[j].size; ++j) {
+            for (size_t j = pos + 1; j < permutation.size() && hash == permutation[j].hash; ++j) {
               auto& cand = permutation[j];
               const auto& cand_pins = coarse_pin_lists[cand.he];
-              if (cand.valid &&
+              if (cand.valid && cand_pins.size() == rep.size &&
                   std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v]; })) {
                 cand.valid = false;
                 rep_weight += edgeWeight(cand.he);
