@@ -33,13 +33,17 @@ namespace mt_kahypar::ds {
   StaticHypergraph StaticHypergraph::contract(vec<HypernodeID>& clusters) {
     auto& timer = utils::Timer::instance();
     timer.start_timer("hypergraph_contraction","Contraction");
-    timer.start_timer("compactify","compactify");
+
 
     if (!_tmp_contraction_buffer) {
+      timer.start_timer("alloc buffer", "alloc buffer");
       allocateTmpContractionBuffer();
+      timer.stop_timer("alloc buffer");
     }
 
-    vec<HypernodeID>& mapping = _tmp_contraction_buffer->mapping;
+    timer.start_timer("compactify","compactify");
+
+    auto& mapping = _tmp_contraction_buffer->mapping;
     tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) { mapping[u] = 0;});
     tbb::parallel_for(0U, initialNumNodes(), [&](HypernodeID u) { mapping[clusters[u]] = 1; });
     parallel_prefix_sum(mapping.begin(), mapping.begin() + initialNumNodes(), mapping.begin(), std::plus<>(), 0);
@@ -56,8 +60,8 @@ namespace mt_kahypar::ds {
     auto get_cluster = [&](HypernodeID u) { assert(u < clusters.size()); return clusters[u]; };
     auto cs2 = [](const size_t x) { return x * x; };
 
-    vec<vec<HypernodeID>>& coarse_pin_lists = _tmp_contraction_buffer->coarse_pin_lists;
-    vec<ContractedHyperedgeInformation>& permutation = _tmp_contraction_buffer->permutation;
+    auto& coarse_pin_lists = _tmp_contraction_buffer->coarse_pin_lists;
+    auto& permutation = _tmp_contraction_buffer->permutation;
     tbb::enumerable_thread_specific<boost::dynamic_bitset<>>& local_maps = _tmp_contraction_buffer->local_maps;
 
     // map coarse pin lists and insert into hash map for work distribution
@@ -65,14 +69,10 @@ namespace mt_kahypar::ds {
       vec<HypernodeID>& pin_list = coarse_pin_lists[he];
       pin_list.clear();
       if (!edgeIsEnabled(he)) {
-        permutation[he] = ContractedHyperedgeInformation{ he, std::numeric_limits<size_t>::max(), 0, false };
+        permutation[he] = ContractedHyperedgeInformation{ std::numeric_limits<size_t>::max(), 0,  he,false };
         return;
       }
       boost::dynamic_bitset<>& contained = local_maps.local();
-      if (he == 0) {
-        LOG << V(contained.size()) << V(num_coarse_nodes);
-        if (contained.size() < num_coarse_nodes) { std::exit(0); }
-      }
       pin_list.reserve(edgeSize(he) / 2);
       for (HypernodeID v : pins(he)) {
         const HypernodeID cv = get_cluster(v);
@@ -92,11 +92,11 @@ namespace mt_kahypar::ds {
       //  pin_list.pop_back();
       if (pin_list.size() > 1) {
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
-        permutation[he] = ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true };
+        permutation[he] = ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he, true };
         // net_map.insert(edge_hash, ContractedHyperedgeInformation{ he, edge_hash, pin_list.size(), true });
       } else {
         pin_list.clear();   // globally mark net as removed
-        permutation[he] = ContractedHyperedgeInformation{ he, std::numeric_limits<size_t>::max(), 0, false };
+        permutation[he] = ContractedHyperedgeInformation{ std::numeric_limits<size_t>::max(), 0, he, false };
       }
     });
 
@@ -105,7 +105,7 @@ namespace mt_kahypar::ds {
 
     tbb::parallel_sort(permutation.begin(), permutation.begin() + initialNumEdges());
 
-    vec<HyperedgeWeight>& coarse_edge_weights = _tmp_contraction_buffer->coarse_edge_weights;
+    auto& coarse_edge_weights = _tmp_contraction_buffer->coarse_edge_weights;
     HypernodeID num_coarse_nets = 0;
     size_t num_coarse_pins = 0;
 
@@ -214,7 +214,7 @@ namespace mt_kahypar::ds {
     timer.stop_timer("allocs");
     timer.start_timer("write pin lists", "write pin lists and coutn degrees");
 
-    vec<size_t>& offsets_for_fine_nets = _tmp_contraction_buffer->offsets_for_fine_nets;
+    auto& offsets_for_fine_nets = _tmp_contraction_buffer->offsets_for_fine_nets;
 
     auto net_size_prefix_sum = [&](const tbb::blocked_range<HyperedgeID>& r,
             std::pair<size_t, HyperedgeID> sums, bool is_final_scan) -> std::pair<size_t,HyperedgeID> {

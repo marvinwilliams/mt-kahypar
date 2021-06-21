@@ -339,9 +339,9 @@ class StaticHypergraph {
   * detect parallel hyperedges.
   */
   struct ContractedHyperedgeInformation {
-    HyperedgeID he = kInvalidHyperedge;
     size_t hash = kEdgeHashSeed;
     size_t size = std::numeric_limits<size_t>::max();
+    HyperedgeID he = kInvalidHyperedge;
     bool valid = false;
 
     bool operator<(const ContractedHyperedgeInformation& o) const {
@@ -355,30 +355,22 @@ class StaticHypergraph {
   // ! hypergraph such that memory can be reused in consecutive contractions.
   struct TmpContractionBuffer {
     TmpContractionBuffer(size_t initial_nodes, size_t initial_edges) :
-    // TODO hoping that when this lambda is stored, it takes num_coarse_nodes by reference and thus takes the right value when maps are constructed for the first time
-    // verify!
       local_maps([&] { return boost::dynamic_bitset<>(num_coarse_nodes); })
     {
-      tbb::parallel_invoke([&] {
-        coarse_pin_lists.resize(initial_edges);
-      }, [&] {
-        coarse_edge_weights.resize(initial_edges);
-      }, [&] {
-        offsets_for_fine_nets.resize(initial_edges);
-      }, [&] {
-        permutation.resize(initial_edges);
-      }, [&] {
-        mapping.resize(initial_nodes, 0);
-      });
+        coarse_pin_lists.resize("Coarsening", "pin_lists",initial_edges);
+        coarse_edge_weights.resize("Coarsening", "edge_weights",initial_edges);
+        offsets_for_fine_nets.resize("Coarsening", "offsets",initial_edges);
+        permutation.resize("Coarsening", "permutation",initial_edges);
+        mapping.resize("Coarsening", "mapping", initial_nodes);
     }
 
     size_t num_coarse_nodes = 0;
     tbb::enumerable_thread_specific<boost::dynamic_bitset<>> local_maps;
-    vec<vec<HypernodeID>> coarse_pin_lists;
-    vec<HyperedgeWeight> coarse_edge_weights;
-    vec<size_t> offsets_for_fine_nets;
-    vec<ContractedHyperedgeInformation> permutation;
-    vec<HypernodeID> mapping;
+    ds::Array<vec<HypernodeID>> coarse_pin_lists;
+    ds::Array<HyperedgeWeight> coarse_edge_weights;
+    ds::Array<size_t> offsets_for_fine_nets;
+    ds::Array<ContractedHyperedgeInformation> permutation;
+    ds::Array<HypernodeID> mapping;
   };
 
  public:
