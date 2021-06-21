@@ -95,7 +95,11 @@ namespace mt_kahypar::ds {
       //if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
       //  pin_list.pop_back();
       if (pin_list.size() > 1) {
-        std::sort(pin_list.begin(), pin_list.end());
+        if (pin_list.size() > 100000) {
+          tbb::parallel_sort(pin_list.begin(), pin_list.end());
+        } else {
+          std::sort(pin_list.begin(), pin_list.end());
+        }
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
         // permutation[he] = { edge_hash, pin_list.size(), he, true };
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he,true });
