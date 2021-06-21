@@ -73,27 +73,18 @@ namespace mt_kahypar::ds {
       if (!edgeIsEnabled(he)) {
         return;
       }
-      // boost::dynamic_bitset<>& contained = local_maps.local();
+      boost::dynamic_bitset<>& contained = local_maps.local();
       pin_list.reserve(edgeSize(he) / 2);
       for (HypernodeID v : pins(he)) {
         const HypernodeID cv = get_cluster(v);
-        //if (cv != kInvalidHypernode && !contained[cv]) {
-        //  contained.set(cv);
-        //  pin_list.push_back(cv);
-        //}
-         pin_list.push_back(cv);
+        if (cv != kInvalidHypernode && !contained[cv]) {
+          contained.set(cv);
+          pin_list.push_back(cv);
+        }
       }
 
-      // for (HypernodeID v : pin_list) { contained.reset(v); }
+      for (HypernodeID v : pin_list) { contained.reset(v); }
 
-      if (pin_list.size() > 150000) {
-        tbb::parallel_sort(pin_list.begin(), pin_list.end());
-      } else {
-        std::sort(pin_list.begin(), pin_list.end());
-      }
-      pin_list.erase(std::unique(pin_list.begin(), pin_list.end()), pin_list.end());
-      if (!pin_list.empty() && pin_list.back() == kInvalidHypernode)
-        pin_list.pop_back();
       if (pin_list.size() > 1) {
         size_t edge_hash = 420; for (const HypernodeID v : pin_list) { edge_hash += cs2(v); }
         net_map.insert(edge_hash, ContractedHyperedgeInformation{ edge_hash, pin_list.size(), he,true });
@@ -113,21 +104,20 @@ namespace mt_kahypar::ds {
       size_t num_local_nets = 0, num_local_pins = 0;
       auto& bucket = net_map.getBucket(bucket_id);
       std::sort(bucket.begin(), bucket.end());
-      // auto& contained = local_maps.local();
+      auto& contained = local_maps.local();
       for (size_t i = 0; i < bucket.size(); ++i) {
         const auto& rep = bucket[i];
         const auto& rep_pins = coarse_pin_lists[rep.he];
         if (rep.valid) {
           HyperedgeWeight rep_weight = edgeWeight(rep.he);
-          // for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
+          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.set(v); }
 
           for (size_t j = i+1; j < bucket.size(); ++j) {
             auto& cand = bucket[j];
             if (cand.hash != rep.hash) { break; }
             const auto& cand_pins = coarse_pin_lists[cand.he];
             if (cand.valid && rep.size == cand_pins.size()
-                && cand_pins == rep_pins) {
-               // && std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v];})) {
+                && std::all_of(cand_pins.begin(), cand_pins.end(), [&](HypernodeID v) { return contained[v];})) {
               cand.valid = false;
               rep_weight += edgeWeight(cand.he);
               coarse_pin_lists[cand.he].clear();    // globally mark net as removed
@@ -136,7 +126,7 @@ namespace mt_kahypar::ds {
           coarse_edge_weights[rep.he] = rep_weight;
           num_local_nets++;
           num_local_pins += rep.size;
-          // for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.reset(v); }
+          for (HypernodeID v : coarse_pin_lists[rep.he]) { contained.reset(v); }
         }
       }
       net_map.free(bucket_id);
