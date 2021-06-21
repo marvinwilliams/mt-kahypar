@@ -210,7 +210,7 @@ namespace mt_kahypar::ds {
     });
 
     timer.stop_timer("allocs");
-    timer.start_timer("write pin lists", "write pin lists and coutn degrees");
+    timer.start_timer("write pin lists", "write pin lists and count degrees");
 
     auto& offsets_for_fine_nets = _tmp_contraction_buffer->offsets_for_fine_nets;
 
