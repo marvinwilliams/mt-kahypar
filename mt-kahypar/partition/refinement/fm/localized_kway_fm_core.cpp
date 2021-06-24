@@ -150,6 +150,8 @@ namespace mt_kahypar {
         if (!fm_strategy.findNextMove(phg, move)) break;
       }
 
+      if (context.refinement.fm.greedy && move.gain < 0) break;
+
       sharedData.nodeTracker.deactivateNode(move.node, thisSearch);
       MoveID move_id = std::numeric_limits<MoveID>::max();
       bool moved = false;

@@ -144,6 +144,7 @@ struct FMParameters {
   bool shuffle = true;
   mutable bool obey_minimal_parallelism = false;
   bool release_nodes = true;
+  bool greedy = false;
 };
 
 std::ostream& operator<<(std::ostream& out, const FMParameters& params);
