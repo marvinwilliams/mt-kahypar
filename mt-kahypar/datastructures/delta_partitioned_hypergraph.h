@@ -28,6 +28,7 @@
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/datastructures/sparse_map.h"
+#include "mt-kahypar/datastructures/em_hash_map.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
 
 namespace mt_kahypar {
@@ -346,19 +347,19 @@ class DeltaPartitionedHypergraph {
   vec< HypernodeWeight > _part_weights_delta;
 
   // ! Stores for each locally moved node, its new block id
-  DynamicFlatMap<HypernodeID, PartitionID> _part_ids_delta;
+  EmHashMap<HypernodeID, PartitionID> _part_ids_delta;
 
   // ! Stores the delta of each locally touched pin count entry
   // ! relative to the _pins_in_part member in '_phg'
-  DynamicFlatMap<size_t, int32_t> _pins_in_part_delta;
+  EmHashMap<size_t, int32_t> _pins_in_part_delta;
 
   // ! Stores the delta of each locally touched move to penalty entry
   // ! relative to the _move_to_penalty member in '_phg'
-  DynamicFlatMap<size_t, HyperedgeWeight> _move_to_penalty_delta;
+  EmHashMap<size_t, HyperedgeWeight> _move_to_penalty_delta;
 
   // ! Stores the delta of each locally touched move from benefit entry
   // ! relative to the _move_from_benefit member in '_phg'
-  DynamicFlatMap<HypernodeID, HyperedgeWeight> _move_from_benefit_delta;
+  EmHashMap<HypernodeID, HyperedgeWeight> _move_from_benefit_delta;
 };
 
 } // namespace ds
