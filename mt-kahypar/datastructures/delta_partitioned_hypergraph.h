@@ -70,7 +70,13 @@ class DeltaPartitionedHypergraph {
     _part_ids_delta(),
     _pins_in_part_delta(),
     _move_to_penalty_delta(),
-    _move_from_benefit_delta() { }
+    _move_from_benefit_delta() {
+      const bool allocate_large = k > 2;
+      _part_ids_delta.initialize(false);
+      _pins_in_part_delta.initialize(allocate_large);
+      _move_from_benefit_delta.initialize(allocate_large);
+      _move_to_penalty_delta.initialize(allocate_large);
+    }
 
   DeltaPartitionedHypergraph(const DeltaPartitionedHypergraph&) = delete;
   DeltaPartitionedHypergraph & operator= (const DeltaPartitionedHypergraph &) = delete;
@@ -347,19 +353,19 @@ class DeltaPartitionedHypergraph {
   vec< HypernodeWeight > _part_weights_delta;
 
   // ! Stores for each locally moved node, its new block id
-  EmHashMap<HypernodeID, PartitionID> _part_ids_delta;
+  DynamicFlatMap<HypernodeID, PartitionID> _part_ids_delta;
 
   // ! Stores the delta of each locally touched pin count entry
   // ! relative to the _pins_in_part member in '_phg'
-  EmHashMap<size_t, int32_t> _pins_in_part_delta;
+  DynamicFlatMap<size_t, int32_t> _pins_in_part_delta;
 
   // ! Stores the delta of each locally touched move to penalty entry
   // ! relative to the _move_to_penalty member in '_phg'
-  EmHashMap<size_t, HyperedgeWeight> _move_to_penalty_delta;
+  DynamicFlatMap<size_t, HyperedgeWeight> _move_to_penalty_delta;
 
   // ! Stores the delta of each locally touched move from benefit entry
   // ! relative to the _move_from_benefit member in '_phg'
-  EmHashMap<HypernodeID, HyperedgeWeight> _move_from_benefit_delta;
+  DynamicFlatMap<HypernodeID, HyperedgeWeight> _move_from_benefit_delta;
 };
 
 } // namespace ds

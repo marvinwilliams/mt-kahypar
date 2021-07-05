@@ -443,6 +443,7 @@ class DynamicSparseMap {
  public:
 
   static constexpr size_t MAP_SIZE = 32768; // Size of sparse map is approx. 1 MB
+  static constexpr size_t MAP_SIZE_SMALL = 256; // Size of sparse map is approx. 1 MB
 
   static_assert(MAP_SIZE && ((MAP_SIZE & (MAP_SIZE - 1)) == 0UL), "Size of map is not a power of two!");
 
@@ -454,7 +455,6 @@ class DynamicSparseMap {
     _timestamp(1),
     _sparse(nullptr),
     _dense(nullptr) {
-    allocate(MAP_SIZE);
   }
 
   DynamicSparseMap(const DynamicSparseMap&) = delete;
@@ -497,6 +497,14 @@ class DynamicSparseMap {
 
   MapElement* end() {
     return _dense + _size;
+  }
+
+  void initialize(bool allocate_large = true) {
+    if (allocate_large) {
+      allocate(MAP_SIZE);
+    } else {
+      allocate(MAP_SIZE_SMALL);
+    }
   }
 
   bool contains(const Key key) const {
@@ -652,15 +660,15 @@ class DynamicFlatMap {
  public:
 
   static constexpr size_t MAP_SIZE = 32768; // Size of sparse map is approx. 1 MB
+  static constexpr size_t MAP_SIZE_SMALL = 256;
 
   static_assert(MAP_SIZE && ((MAP_SIZE & (MAP_SIZE - 1)) == 0UL), "Size of map is not a power of two!");
 
-  explicit DynamicFlatMap(const size_t capacity = MAP_SIZE) :
+  explicit DynamicFlatMap() :
     _data(nullptr),
     _size(0),
     _capacity(0),
     _timestamp(1) {
-    allocate(align_to_next_power_of_two(capacity));
   }
 
   DynamicFlatMap(const DynamicFlatMap&) = delete;
@@ -684,6 +692,14 @@ class DynamicFlatMap {
 
   size_t size() const {
     return _size;
+  }
+
+  void initialize(bool allocate_large = true) {
+    if (allocate_large) {
+      allocate(MAP_SIZE);
+    } else {
+      allocate(MAP_SIZE_SMALL);
+    }
   }
 
   bool contains(const Key key) const {
