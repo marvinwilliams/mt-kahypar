@@ -53,10 +53,10 @@ namespace ds {
 template <typename PartitionedHypergraph = Mandatory>
 class DeltaPartitionedHypergraph {
  private:
-  static constexpr size_t MAP_SIZE_LARGE = 32768;
-  static constexpr size_t MAP_SIZE_PINS_IN_PART = 32768;
-  static constexpr size_t MAP_SIZE_MOVE_DELTA = 16384;
-  static constexpr size_t MAP_SIZE_SMALL = 256;
+  static constexpr size_t MAP_SIZE_LARGE = 32768 / 2;
+  static constexpr size_t MAP_SIZE_PINS_IN_PART = 32768 / 2;
+  static constexpr size_t MAP_SIZE_MOVE_DELTA = 16384 / 2;
+  static constexpr size_t MAP_SIZE_SMALL = 256 / 2;
 
   using HypernodeIterator = typename PartitionedHypergraph::HypernodeIterator;
   using HyperedgeIterator = typename PartitionedHypergraph::HyperedgeIterator;
