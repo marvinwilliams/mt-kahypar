@@ -53,6 +53,10 @@ namespace ds {
 template <typename PartitionedHypergraph = Mandatory>
 class DeltaPartitionedHypergraph {
  private:
+  static constexpr size_t MAP_SIZE_LARGE = 32768;
+  static constexpr size_t MAP_SIZE_PINS_IN_PART = 32768;
+  static constexpr size_t MAP_SIZE_MOVE_DELTA = 16384;
+  static constexpr size_t MAP_SIZE_SMALL = 256;
 
   using HypernodeIterator = typename PartitionedHypergraph::HypernodeIterator;
   using HyperedgeIterator = typename PartitionedHypergraph::HyperedgeIterator;
@@ -72,10 +76,10 @@ class DeltaPartitionedHypergraph {
     _move_to_penalty_delta(),
     _move_from_benefit_delta() {
       const bool allocate_large = k > 2;
-      _part_ids_delta.initialize(false);
-      _pins_in_part_delta.initialize(allocate_large);
-      _move_from_benefit_delta.initialize(allocate_large);
-      _move_to_penalty_delta.initialize(allocate_large);
+      _part_ids_delta.initialize(MAP_SIZE_SMALL);
+      _pins_in_part_delta.initialize(allocate_large ? MAP_SIZE_LARGE : MAP_SIZE_PINS_IN_PART);
+      _move_from_benefit_delta.initialize(allocate_large ? MAP_SIZE_LARGE : MAP_SIZE_MOVE_DELTA);
+      _move_to_penalty_delta.initialize(allocate_large ? MAP_SIZE_LARGE : MAP_SIZE_MOVE_DELTA);
     }
 
   DeltaPartitionedHypergraph(const DeltaPartitionedHypergraph&) = delete;
