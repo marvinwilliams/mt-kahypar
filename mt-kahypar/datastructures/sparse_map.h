@@ -688,6 +688,13 @@ class DynamicFlatMap {
   }
 
   Value& operator[] (const Key key) {
+    return get_or_insert(key, []() {
+      return Value();
+    });
+  }
+
+  template<typename ProviderFunc>
+  Value& get_or_insert(const Key key, ProviderFunc&& provider_func) {
     MapElement* s = find(key);
     if (containsValidElement(key, s)) {
       return s->value;
@@ -696,7 +703,7 @@ class DynamicFlatMap {
         grow();
         s = find(key);
       }
-      *s = MapElement { key, Value(), _timestamp };
+      *s = MapElement { key, provider_func(), _timestamp };
       _size++;
       return s->value;
     }
