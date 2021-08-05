@@ -107,6 +107,7 @@ namespace mt_kahypar {
   void LocalizedKWayFM<FMStrategy>::internalFindMoves(PartitionedHypergraph& phg) {
     StopRule stopRule(phg.initialNumNodes());
     Move move;
+    size_t consecutive_moves_with_too_little_improvement = 0;
 
     auto delta_func = [&](const HyperedgeID he,
                           const HyperedgeWeight edge_weight,
@@ -186,10 +187,25 @@ namespace mt_kahypar {
           bestImprovementIndex = localMoves.size();
 
           if constexpr (use_delta) {
-            applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, true /* apply all moves */);
+            Gain attributed_gain = 0;
+            std::tie(attributed_gain, std::ignore) = applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, true /* apply all moves */);
+            size_t deg_sum = 0;
+            for(auto& m : localMoves) {
+              deg_sum += deltaPhg.nodeDegree(m.first.node);
+            }
+            double gain_ratio = 1.0 * attributed_gain / (deg_sum * localMoves.size());
+            double min_ratio = context.refinement.fm.min_improvement_ratio;
+            if (localMoves.size() > (0.1 / min_ratio) && gain_ratio < min_ratio) {
+              consecutive_moves_with_too_little_improvement++;
+              LOG << V(localMoves.size()) << V(attributed_gain) << V(gain_ratio) << V(consecutive_moves_with_too_little_improvement);
+            }
             bestImprovementIndex = 0;
             localMoves.clear();
             deltaPhg.clear();   // clear hashtables, save memory :)
+            if (consecutive_moves_with_too_little_improvement >= context.refinement.fm.min_improvement_tries) {
+              LOG << "Early abort";
+              break;
+            }
           }
         }
 

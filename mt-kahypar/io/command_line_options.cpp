@@ -377,6 +377,14 @@ namespace mt_kahypar {
              "If the FM time exceeds time_limit := k * factor * coarsening_time, than the FM config is switched into a light version."
              "If the FM refiner exceeds 2 * time_limit, than the current multitry FM run is aborted and the algorithm proceeds to"
              "the next finer level.")
+            ((initial_partitioning ? "i-r-fm-min-improvement-ratio" : "r-fm-min-improvement-ratio"),
+             po::value<double>((initial_partitioning ? &context.initial_partitioning.refinement.fm.min_improvement_ratio :
+                                &context.refinement.fm.min_improvement_ratio))->value_name("<double>")->default_value(0.01),
+             "Min improvement ratio for FM local moving")
+            ((initial_partitioning ? "i-r-fm-min-improvement-tries" : "r-fm-min-improvement-tries"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.refinement.fm.min_improvement_tries :
+                                &context.refinement.fm.min_improvement_tries))->value_name("<size_t>")->default_value(3),
+             "Min improvement tries for FM local moving")
             #ifdef USE_STRONG_PARTITIONER
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :
