@@ -84,6 +84,15 @@ namespace mt_kahypar {
       tg.wait();
       timer.stop_timer("find_moves");
 
+      vec<std::pair<Gain, vec<MoveID>>> moves_by_search;
+      for (auto& fm : ets_fm) {
+        auto& move_ids = fm.getMoveIDs();
+        moves_by_search.insert(moves_by_search.end(), move_ids.begin(), move_ids.end());
+        fm.clearMoveIDs();
+      }
+
+      std::sort(moves_by_search.rbegin(), moves_by_search.rend());
+
       timer.start_timer("rollback", "Rollback to Best Solution");
       HyperedgeWeight improvement = globalRollback.revertToBestPrefix
               <FMStrategy::maintain_gain_cache_between_rounds>(phg, sharedData, initialPartWeights);

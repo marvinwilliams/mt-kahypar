@@ -50,6 +50,15 @@ public:
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const ;
 
+  /* TODO: flatten by adding gain + index vector <17-08-21, @noahares> */
+  vec<std::pair<Gain, vec<MoveID>>>& getMoveIDs() {
+    return move_ids;
+  }
+
+  void clearMoveIDs() {
+    move_ids.clear();
+  }
+
   FMStats stats;
 
 private:
@@ -108,6 +117,8 @@ private:
   FMStrategy fm_strategy;
 
   FMSharedData& sharedData;
+
+  vec<std::pair<Gain, vec<MoveID>>> move_ids;
 
 };
 

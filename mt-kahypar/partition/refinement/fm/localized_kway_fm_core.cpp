@@ -140,6 +140,9 @@ namespace mt_kahypar {
 
     HypernodeWeight heaviestPartWeight = 0;
     HypernodeWeight fromWeight = 0, toWeight = 0;
+    if (move_ids.empty() || !move_ids.back().second.empty()) {
+      move_ids.emplace_back(0, vec<MoveID>());
+    }
 
     while (!stopRule.searchShouldStop()
            && sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit) {
@@ -212,6 +215,11 @@ namespace mt_kahypar {
     runStats.estimated_improvement = bestImprovement;
     fm_strategy.clearPQs(bestImprovementIndex);
     runStats.merge(stats);
+    if (move_ids.back().second.empty()) {
+      move_ids.pop_back();
+    } else {
+      move_ids.back().first = bestImprovement;
+    }
   }
 
 
@@ -254,6 +262,7 @@ namespace mt_kahypar {
                            [&] { move_id = sharedData.moveTracker.insertMove(local_move); },
                            delta_gain_func);
       }
+      move_ids.back().second.push_back(move_id);
 
       attributed_gain = -attributed_gain; // delta func yields negative sum of improvements, i.e. negative values mean improvements
       improvement_from_attributed_gains += attributed_gain;
