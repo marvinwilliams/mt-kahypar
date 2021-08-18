@@ -84,31 +84,33 @@ namespace mt_kahypar {
       tg.wait();
       timer.stop_timer("find_moves");
 
-      vec<std::pair<Gain, vec<MoveID>>> moves_by_search;
-      for (auto& fm : ets_fm) {
-        auto& move_ids = fm.getMoveIDs();
-        moves_by_search.insert(moves_by_search.end(), move_ids.begin(), move_ids.end());
-        fm.clearMoveIDs();
-      }
-
-/*
-      for (size_t i = 0; i < sharedData.moveTracker.numPerformedMoves(); ++i) {
-        LOG << sharedData.moveTracker.moveOrder[i].node;
-      }
-*/
-      std::sort(moves_by_search.rbegin(), moves_by_search.rend());
-      vec<Move> new_move_order;
-      new_move_order.reserve(sharedData.moveTracker.numPerformedMoves());
-      for (auto& move : moves_by_search) {
-        for (auto move_id : move.second) {
-          Move& m = sharedData.moveTracker.getMove(move_id);
-          new_move_order.emplace_back(m);
-          /*LOG << m.node;*/
-          sharedData.moveTracker.moveOfNode[m.node] = new_move_order.size() + sharedData.moveTracker.firstMoveID - 1;
+      if (context.refinement.fm.rollback_apply_by_gain) {
+        vec<std::pair<Gain, vec<MoveID>>> moves_by_search;
+        for (auto& fm : ets_fm) {
+          auto& move_ids = fm.getMoveIDs();
+          moves_by_search.insert(moves_by_search.end(), move_ids.begin(), move_ids.end());
+          fm.clearMoveIDs();
         }
-      }
-      for (size_t i = 0; i < new_move_order.size(); ++i) {
-        sharedData.moveTracker.moveOrder[i] = new_move_order[i];
+
+        /*
+           for (size_t i = 0; i < sharedData.moveTracker.numPerformedMoves(); ++i) {
+           LOG << sharedData.moveTracker.moveOrder[i].node;
+           }
+           */
+        std::sort(moves_by_search.rbegin(), moves_by_search.rend());
+        vec<Move> new_move_order;
+        new_move_order.reserve(sharedData.moveTracker.numPerformedMoves());
+        for (auto& move : moves_by_search) {
+          for (auto move_id : move.second) {
+            Move& m = sharedData.moveTracker.getMove(move_id);
+            new_move_order.emplace_back(m);
+            /*LOG << m.node;*/
+            sharedData.moveTracker.moveOfNode[m.node] = new_move_order.size() + sharedData.moveTracker.firstMoveID - 1;
+          }
+        }
+        for (size_t i = 0; i < new_move_order.size(); ++i) {
+          sharedData.moveTracker.moveOrder[i] = new_move_order[i];
+        }
       }
 
       timer.start_timer("rollback", "Rollback to Best Solution");

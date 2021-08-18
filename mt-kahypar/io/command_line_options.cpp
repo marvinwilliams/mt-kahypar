@@ -377,6 +377,11 @@ namespace mt_kahypar {
              "If the FM time exceeds time_limit := k * factor * coarsening_time, than the FM config is switched into a light version."
              "If the FM refiner exceeds 2 * time_limit, than the current multitry FM run is aborted and the algorithm proceeds to"
              "the next finer level.")
+            ((initial_partitioning ? "i-r-fm-rollback-apply-by-gain" : "r-fm-rollback-apply-by-gain"),
+             po::value<bool>(
+                     (initial_partitioning ? &context.initial_partitioning.refinement.fm.rollback_apply_by_gain :
+                      &context.refinement.fm.rollback_apply_by_gain))->value_name("<bool>")->default_value(false),
+             "If true, reorder moves before global rollback in order of the gain of their searches.")
             #ifdef USE_STRONG_PARTITIONER
             ((initial_partitioning ? "i-r-use-global-fm" : "r-use-global-fm"),
              po::value<bool>((!initial_partitioning ? &context.refinement.global_fm.use_global_fm :

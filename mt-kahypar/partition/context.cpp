@@ -125,6 +125,7 @@ namespace mt_kahypar {
       out << "    Minimum Improvement Factor:       " << params.min_improvement << std::endl;
       out << "    Release Nodes:                    " << std::boolalpha << params.release_nodes << std::endl;
       out << "    Time Limit Factor:                " << params.time_limit_factor << std::endl;
+      out << "    Rollback Apply By Gain:           " << params.rollback_apply_by_gain << std::endl;
     }
     out << std::flush;
     return out;
