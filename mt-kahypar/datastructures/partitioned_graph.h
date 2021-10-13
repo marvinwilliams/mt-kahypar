@@ -152,7 +152,7 @@ private:
                          PartitionID> {
    public:
     /*!
-     * Constructs a connectivity iterator based on a pin iterator 
+     * Constructs a connectivity iterator based on a pin iterator
      */
     ConnectivityIterator(PartitionID first, PartitionID second, unsigned int count) :
       _first(first),
@@ -199,7 +199,7 @@ private:
       return _first == rhs._first && _second == rhs._second &&
              _iteration_count == rhs._iteration_count;
     }
-    
+
 
    private:
     PartitionID _first = 0;
@@ -607,7 +607,7 @@ private:
     for (HyperedgeID e : incidentEdges(u)) {
       penalty_aggregator[partID(edgeTarget(e))] += edgeWeight(e);
     }
-    
+
     for (PartitionID i = 0; i < _k; ++i) {
       _incident_weight_in_part[incident_weight_index(u, i)].store(
         penalty_aggregator[i], std::memory_order_relaxed);
@@ -698,17 +698,21 @@ private:
 
   // ! Only for testing
   HyperedgeWeight moveFromBenefitRecomputed(const HypernodeID u) const {
-    return 0;
+    const PartitionID p = partID(u);
+    HyperedgeWeight w = 0;
+    for (HyperedgeID e : incidentEdges(u)) {
+      if (partID(edgeTarget(e)) == p) {
+        w -= edgeWeight(e);
+      }
+    }
+    return w;
   }
 
   // ! Only for testing
   HyperedgeWeight moveToPenaltyRecomputed(const HypernodeID u, PartitionID p) const {
-    PartitionID part_id = partID(u);
     HyperedgeWeight w = 0;
     for (HyperedgeID e : incidentEdges(u)) {
-      if (edgeTarget(e) == part_id) {
-        w += edgeWeight(e);
-      } else if (edgeTarget(e) == p) {
+      if (partID(edgeTarget(e)) == p) {
         w -= edgeWeight(e);
       }
     }
@@ -761,7 +765,7 @@ private:
   }
 
   // ####################### Memory Consumption #######################
-  
+
   void memoryConsumption(utils::MemoryTreeNode* parent) const {
     ASSERT(parent);
 
