@@ -886,7 +886,7 @@ private:
     ASSERT(partID(u) == from);
     ASSERT(from != to);
     const HypernodeWeight weight = nodeWeight(u);
-    const HypernodeWeight to_weight_after = _part_weights[to].fetch_add(weight, std::memory_order_relaxed);
+    const HypernodeWeight to_weight_after = _part_weights[to].add_fetch(weight, std::memory_order_relaxed);
     const HypernodeWeight from_weight_after = _part_weights[from].fetch_sub(weight, std::memory_order_relaxed);
     if (to_weight_after <= max_weight_to && from_weight_after > 0) {
       report_success();

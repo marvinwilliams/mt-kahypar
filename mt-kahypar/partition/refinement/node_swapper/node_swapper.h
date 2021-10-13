@@ -30,16 +30,23 @@ namespace mt_kahypar {
 
 class NodeSwapper {
  private:
-
   static constexpr bool debug = false;
   static constexpr bool enable_heavy_assert = false;
 
 public:
+  struct VertexMove {
+    HypernodeID hn;
+    PartitionID from;
+    PartitionID to;
+    Gain gain;
+  };
+
   explicit NodeSwapper(PartitionedHypergraph& hypergraph, const Context& context) :
     _hg(hypergraph),
     _context(context),
     _nodes(hypergraph.initialNumNodes()),
-    _in_queue(hypergraph.initialNumNodes()) {
+    _in_queue(hypergraph.initialNumNodes()),
+    _local_moves() {
     tbb::parallel_for(ID(0), hypergraph.initialNumNodes(),
       [&](const HypernodeID& hn) { _nodes[hn] = hn; });
   }
@@ -53,9 +60,14 @@ public:
   HyperedgeWeight refine();
 
 private:
+  HyperedgeWeight optimisitcHighDegreeNodeMoving(const HyperedgeWeight current_km1);
+
+  HyperedgeWeight nodeSwappingRound(const bool collect_moves = false, const bool reset_queue = true);
+
   PartitionedHypergraph& _hg;
   const Context& _context;
   vec<HypernodeID> _nodes;
   kahypar::ds::FastResetFlagArray<> _in_queue;
+  tbb::enumerable_thread_specific<vec<VertexMove>> _local_moves;
 };
 }  // namespace kahypar
