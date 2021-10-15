@@ -67,6 +67,10 @@ namespace mt_kahypar {
     if (params.use_community_detection) {
       str << std::endl << params.community_detection;
     }
+    str << "  Use Low Degree HN Removal:          " << std::boolalpha << params.use_low_degree_hn_removal << std::endl;
+    if ( params.use_low_degree_hn_removal ) {
+      str << "  High-Degree HN Threshold:           " << params.high_degree_hn_threshold << std::endl;
+    }
     return str;
   }
 

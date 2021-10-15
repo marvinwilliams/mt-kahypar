@@ -25,6 +25,7 @@
 #include "mt-kahypar/partition/multilevel.h"
 #include "mt-kahypar/partition/preprocessing/sparsification/degree_zero_hn_remover.h"
 #include "mt-kahypar/partition/preprocessing/sparsification/large_he_remover.h"
+#include "mt-kahypar/partition/preprocessing/sparsification/low_degree_hn_remover.h"
 #include "mt-kahypar/partition/preprocessing/community_detection/parallel_louvain.h"
 #include "mt-kahypar/utils/hypergraph_statistics.h"
 #include "mt-kahypar/utils/stats.h"
@@ -73,7 +74,8 @@ namespace mt_kahypar {
 
   void sanitize(Hypergraph& hypergraph, Context& context,
                 DegreeZeroHypernodeRemover& degree_zero_hn_remover,
-                LargeHyperedgeRemover& large_he_remover) {
+                LargeHyperedgeRemover& large_he_remover,
+                LowDegreeHypernodeRemover& low_degree_hn_remover) {
 
     utils::Timer::instance().start_timer("degree_zero_hypernode_removal", "Degree Zero Hypernode Removal");
     const HypernodeID num_removed_degree_zero_hypernodes =
@@ -85,11 +87,20 @@ namespace mt_kahypar {
             large_he_remover.removeLargeHyperedges(hypergraph);
     utils::Timer::instance().stop_timer("large_hyperedge_removal");
 
+    HypernodeID num_removed_low_degree_hypernodes = 0;
+    if ( context.preprocessing.use_low_degree_hn_removal ) {
+      utils::Timer::instance().start_timer("low_degree_hypernode_removal", "Low Degree Hypernode Removal");
+      num_removed_low_degree_hypernodes =
+              low_degree_hn_remover.removeLowDegreeHypernodes(hypergraph);
+      utils::Timer::instance().stop_timer("low_degree_hypernode_removal");
+    }
+
     const HyperedgeID num_removed_single_node_hes = hypergraph.numRemovedHyperedges();
     if (context.partition.verbose_output &&
         ( num_removed_single_node_hes > 0 ||
           num_removed_degree_zero_hypernodes > 0 ||
-          num_removed_large_hyperedges > 0 )) {
+          num_removed_large_hyperedges > 0 ||
+          num_removed_low_degree_hypernodes > 0 )) {
       LOG << "Performed single-node/large HE removal and degree-zero HN contractions:";
       LOG << "\033[1m\033[31m" << " # removed"
           << num_removed_single_node_hes << "single-pin hyperedges during hypergraph file parsing"
@@ -98,6 +109,9 @@ namespace mt_kahypar {
           << num_removed_large_hyperedges << "large hyperedges with |e| >" << large_he_remover.largeHyperedgeThreshold() << "\033[0m";
       LOG << "\033[1m\033[31m" << " # contracted"
           << num_removed_degree_zero_hypernodes << "hypernodes with d(v) = 0 and w(v) = 1"
+          << "\033[0m";
+      LOG << "\033[1m\033[31m" << " # removed"
+          << num_removed_low_degree_hypernodes << "hypernodes only adjacent to high-degree vertices"
           << "\033[0m";
       io::printStripe();
     }
@@ -209,7 +223,9 @@ namespace mt_kahypar {
 
     DegreeZeroHypernodeRemover degree_zero_hn_remover(context);
     LargeHyperedgeRemover large_he_remover(context);
-    sanitize(hypergraph, context, degree_zero_hn_remover, large_he_remover);
+    LowDegreeHypernodeRemover low_degree_hn_remover(context);
+    sanitize(hypergraph, context, degree_zero_hn_remover,
+      large_he_remover, low_degree_hn_remover);
     utils::Timer::instance().stop_timer("preprocessing");
 
     // ################## MULTILEVEL ##################
@@ -224,6 +240,7 @@ namespace mt_kahypar {
 
     // ################## POSTPROCESSING ##################
     utils::Timer::instance().start_timer("postprocessing", "Postprocessing");
+    low_degree_hn_remover.restoreLowDegreeHypernodes(partitioned_hypergraph);
     large_he_remover.restoreLargeHyperedges(partitioned_hypergraph);
     degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hypergraph);
     utils::Timer::instance().stop_timer("postprocessing");

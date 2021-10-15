@@ -130,6 +130,12 @@ namespace mt_kahypar {
             ("p-enable-community-detection",
              po::value<bool>(&context.preprocessing.use_community_detection)->value_name("<bool>")->default_value(true),
              "If true, community detection is used as preprocessing step to restrict contractions to densely coupled regions in coarsening phase")
+            ("p-enable-low-degree-hn-removal",
+             po::value<bool>(&context.preprocessing.use_low_degree_hn_removal)->value_name("<bool>")->default_value(false),
+             "If true, hypernodes that are only adjacent to high degree nodes are removed before partitioning.")
+            ("p-high-degree-node-threshold",
+             po::value<double>(&context.preprocessing.high_degree_hn_threshold)->value_name("<double>")->default_value(1.01),
+             "Nodes with degree greater than high_degree_node_threshold * num_nodes are considered as high-degree nodes.")
             #ifdef USE_GRAPH_PARTITIONER
             ("p-disable-community-detection-on-mesh-graphs",
              po::value<bool>(&context.preprocessing.disable_community_detection_for_mesh_graphs)->value_name("<bool>")->default_value(true),

@@ -59,6 +59,8 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
         << " total_graph_weight=" << hypergraph.totalWeight()
         << " use_community_detection=" << std::boolalpha << context.preprocessing.use_community_detection
         << " disable_community_detection_for_mesh_graphs=" << std::boolalpha << context.preprocessing.disable_community_detection_for_mesh_graphs
+        << " use_low_degree_hn_removal=" << std::boolalpha << context.preprocessing.use_low_degree_hn_removal
+        << " high_degree_hn_threshold=" << context.preprocessing.high_degree_hn_threshold
         << " community_edge_weight_function=" << context.preprocessing.community_detection.edge_weight_function
         << " community_max_pass_iterations=" << context.preprocessing.community_detection.max_pass_iterations
         << " community_min_vertex_move_fraction=" << context.preprocessing.community_detection.min_vertex_move_fraction

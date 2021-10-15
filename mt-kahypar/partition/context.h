@@ -84,6 +84,8 @@ struct PreprocessingParameters {
   bool stable_construction_of_incident_edges = false;
   bool use_community_detection = false;
   bool disable_community_detection_for_mesh_graphs = true;
+  bool use_low_degree_hn_removal = false;
+  double high_degree_hn_threshold = 1.01;
   CommunityDetectionParameters community_detection = { };
 };
 
