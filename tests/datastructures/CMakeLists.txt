@@ -12,6 +12,7 @@ target_sources(mt_kahypar_fast_tests PRIVATE
         array_test.cc
         sparse_map_test.cc
         pin_count_in_part_test.cc
+        perfect_hash_table_test.cc
 )
 
 target_sources(mt_kahypar_strong_tests PRIVATE
