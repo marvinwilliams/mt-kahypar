@@ -27,28 +27,6 @@
 
 namespace mt_kahypar {
 
-void FlowRefinementScheduler::RefinementStats::update_global_stats() {
-  utils::Stats& global_stats = utils::Stats::instance();
-  global_stats.update_stat("num_flow_refinements",
-    num_refinements.load(std::memory_order_relaxed));
-  global_stats.update_stat("num_flow_improvement",
-    num_improvements.load(std::memory_order_relaxed));
-  global_stats.update_stat("num_time_limits",
-    num_time_limits.load(std::memory_order_relaxed));
-  global_stats.update_stat("correct_expected_improvement",
-    correct_expected_improvement.load(std::memory_order_relaxed));
-  global_stats.update_stat("zero_gain_improvement",
-    zero_gain_improvement.load(std::memory_order_relaxed));
-  global_stats.update_stat("failed_updates_due_to_conflicting_moves",
-    failed_updates_due_to_conflicting_moves.load(std::memory_order_relaxed));
-  global_stats.update_stat("failed_updates_due_to_conflicting_moves_without_rollback",
-    failed_updates_due_to_conflicting_moves_without_rollback.load(std::memory_order_relaxed));
-  global_stats.update_stat("failed_updates_due_to_balance_constraint",
-    failed_updates_due_to_balance_constraint.load(std::memory_order_relaxed));
-  global_stats.update_stat("total_flow_refinement_improvement",
-    total_improvement.load(std::memory_order_relaxed));
-}
-
 namespace {
 
   static constexpr size_t PROGRESS_BAR_SIZE = 50;
@@ -66,39 +44,6 @@ namespace {
   }
 }
 
-inline std::ostream & operator<< (std::ostream& str, const FlowRefinementScheduler::RefinementStats& stats) {
-  str << "\n";
-  str << "Total Improvement                   = " << stats.total_improvement << "\n";
-  str << "Number of Flow-Based Refinements    = " << stats.num_refinements << "\n";
-  str << "+ No Improvements                   = "
-      << progress_bar(stats.num_refinements - stats.num_improvements, stats.num_refinements,
-          [&](const double percentage) { return percentage > 0.9 ? RED : percentage > 0.75 ? YELLOW : GREEN; }) << "\n";
-  str << "+ Number of Improvements            = "
-      << progress_bar(stats.num_improvements, stats.num_refinements,
-          [&](const double percentage) { return percentage < 0.05 ? RED : percentage < 0.15 ? YELLOW : GREEN; }) << "\n";
-  str << "  + Correct Expected Improvements   = "
-      << progress_bar(stats.correct_expected_improvement, stats.num_improvements,
-          [&](const double percentage) { return percentage > 0.9 ? GREEN : percentage > 0.75 ? YELLOW : RED; }) << "\n";
-  str << "  + Incorrect Expected Improvements = "
-      << progress_bar(stats.num_improvements - stats.correct_expected_improvement, stats.num_improvements,
-          [&](const double percentage) { return percentage < 0.1 ? GREEN : percentage < 0.25 ? YELLOW : RED; }) << "\n";
-  str << "  + Zero-Gain Improvements          = "
-      << progress_bar(stats.zero_gain_improvement, stats.num_improvements,
-          [&](const double) { return WHITE; }) << "\n";
-  str << "+ Failed due to Balance Constraint  = "
-      << progress_bar(stats.failed_updates_due_to_balance_constraint, stats.num_refinements,
-          [&](const double percentage) { return percentage < 0.01 ? GREEN : percentage < 0.05 ? YELLOW : RED; }) << "\n";
-  str << "+ Failed due to Conflicting Moves   = "
-      << progress_bar(stats.failed_updates_due_to_conflicting_moves, stats.num_refinements,
-          [&](const double percentage) { return percentage < 0.01 ? GREEN : percentage < 0.05 ? YELLOW : RED; }) << "\n";
-  str << "+ Time Limits                       = "
-      << progress_bar(stats.num_time_limits, stats.num_refinements,
-          [&](const double percentage) { return percentage < 0.0025 ? GREEN : percentage < 0.01 ? YELLOW : RED; }) << "\n";
-  str << "---------------------------------------------------------------";
-  return str;
-}
-
-
 bool FlowRefinementScheduler::refineImpl(
                 PartitionedHypergraph& phg,
                 const parallel::scalable_vector<HypernodeID>&,
@@ -108,6 +53,7 @@ bool FlowRefinementScheduler::refineImpl(
   ASSERT(_phg == &phg);
   _quotient_graph.setObjective(best_metrics.getMetric(
     Mode::direct, _context.partition.objective));
+  _flow_stats = &utils::RefinementStats::instance().currentSearch().flow_stats;
 
   std::atomic<HyperedgeWeight> overall_delta(0);
   tbb::parallel_for(0UL, _refiner.numAvailableRefiner(), [&](const size_t i) {
@@ -128,7 +74,7 @@ bool FlowRefinementScheduler::refineImpl(
         HyperedgeWeight delta = 0;
         bool improved_solution = false;
         if ( sub_hg.numNodes() > 0 ) {
-          ++_stats.num_refinements;
+          ++_flow_stats->at(tbb::this_task_arena::current_thread_index()).stats.num_searches;
           MoveSequence sequence = _refiner.refine(search_id, phg, sub_hg);
 
           if ( !sequence.moves.empty() ) {
@@ -138,7 +84,7 @@ bool FlowRefinementScheduler::refineImpl(
             improved_solution = sequence.state == MoveSequenceState::SUCCESS && delta > 0;
             utils::Timer::instance().stop_timer("apply_moves");
           } else if ( sequence.state == MoveSequenceState::TIME_LIMIT ) {
-            ++_stats.num_time_limits;
+            ++_flow_stats->at(tbb::this_task_arena::current_thread_index()).num_time_limits;
             DBG << RED << "Search" << search_id << "reaches the time limit ( Time Limit ="
                 << _refiner.timeLimit() << "s )" << END;
           }
@@ -156,8 +102,6 @@ bool FlowRefinementScheduler::refineImpl(
     _refiner.terminateRefiner();
     DBG << RED << "Refiner" << i << "terminates!" << END;
   });
-
-  DBG << _stats;
 
   ASSERT([&]() {
     for ( PartitionID i = 0; i < _context.partition.k; ++i ) {
@@ -179,7 +123,6 @@ bool FlowRefinementScheduler::refineImpl(
   best_metrics.updateMetric(current_metric + overall_delta,
     Mode::direct, _context.partition.objective);
   best_metrics.imbalance = metrics::imbalance(phg, _context);
-  _stats.update_global_stats();
 
   // Update Gain Cache
   if ( ( _context.partition.paradigm == Paradigm::nlevel ||
@@ -195,6 +138,8 @@ bool FlowRefinementScheduler::refineImpl(
 
   HEAVY_REFINEMENT_ASSERT(phg.checkTrackedPartitionInformation());
   _phg = nullptr;
+
+  _flow_stats->at(tbb::this_task_arena::current_thread_index()).improvement -= overall_delta.load();
   return overall_delta.load(std::memory_order_relaxed) < 0;
 }
 
@@ -208,7 +153,6 @@ void FlowRefinementScheduler::initializeImpl(PartitionedHypergraph& phg)  {
       phg.partWeight(i), _context.partition.max_part_weights[i]);
   }
 
-  _stats.reset();
   utils::Timer::instance().start_timer("initialize_quotient_graph", "Initialize Quotient Graph");
   _quotient_graph.initialize(phg);
   utils::Timer::instance().stop_timer("initialize_quotient_graph");
@@ -295,6 +239,7 @@ HyperedgeWeight FlowRefinementScheduler::applyMoves(const SearchID search_id,
                                                         MoveSequence& sequence) {
   unused(search_id);
   ASSERT(_phg);
+  utils::FlowStats& flow_stats = _flow_stats->at(tbb::this_task_arena::current_thread_index());
 
   // TODO: currently we lock the applyMoves method
   // => find something smarter here
@@ -351,11 +296,10 @@ HyperedgeWeight FlowRefinementScheduler::applyMoves(const SearchID search_id,
             << ", Real Improvement =" << improvement
             << ", Search ID =" << search_id << ")" << END;
         revertMoveSequence(*_phg, sequence, delta_func, gain_cache_update);
-        ++_stats.failed_updates_due_to_conflicting_moves;
+        ++flow_stats.stats.conflicts;
         sequence.state = MoveSequenceState::WORSEN_SOLUTION_QUALITY;
       } else {
         // Rollback would violate balance constraint => Worst Case
-        ++_stats.failed_updates_due_to_conflicting_moves_without_rollback;
         sequence.state = MoveSequenceState::WORSEN_SOLUTION_QUALITY_WITHOUT_ROLLBACK;
         DBG << RED << "Rollback of move sequence violated balance constraint ( Moved Nodes ="
             << sequence.moves.size()
@@ -364,9 +308,11 @@ HyperedgeWeight FlowRefinementScheduler::applyMoves(const SearchID search_id,
             << ", Search ID =" << search_id << ")" << END;
       }
     } else {
-      ++_stats.num_improvements;
-      _stats.correct_expected_improvement += (improvement == sequence.expected_improvement);
-      _stats.zero_gain_improvement += (improvement == 0);
+      ++flow_stats.stats.num_improvements;
+      flow_stats.stats.correct_gains += (improvement == sequence.expected_improvement);
+      flow_stats.stats.zero_gain_improvements += (improvement == 0);
+      flow_stats.stats.positive_gain_improvements += (improvement > 0);
+      flow_stats.stats.moved_nodes += sequence.moves.size();
       sequence.state = MoveSequenceState::SUCCESS;
       DBG << ( improvement > 0 ? GREEN : "" ) << "SUCCESS -"
           << "Moved Nodes =" << sequence.moves.size()
@@ -375,7 +321,7 @@ HyperedgeWeight FlowRefinementScheduler::applyMoves(const SearchID search_id,
           << ", Search ID =" << search_id << ( improvement > 0 ? END : "" );
     }
   } else {
-    ++_stats.failed_updates_due_to_balance_constraint;
+    ++flow_stats.stats.balance_violations;
     sequence.state = MoveSequenceState::VIOLATES_BALANCE_CONSTRAINT;
     DBG << RED << "Move sequence violated balance constraint ( Moved Nodes ="
         << sequence.moves.size()
@@ -387,7 +333,6 @@ HyperedgeWeight FlowRefinementScheduler::applyMoves(const SearchID search_id,
 
   if ( sequence.state == MoveSequenceState::SUCCESS && improvement > 0 ) {
     addCutHyperedgesToQuotientGraph(_quotient_graph, new_cut_hes);
-    _stats.total_improvement += improvement;
   }
 
   return improvement;

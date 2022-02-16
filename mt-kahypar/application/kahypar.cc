@@ -29,7 +29,7 @@
 #include "mt-kahypar/io/csv_output.h"
 #include "mt-kahypar/io/partitioning_output.h"
 #include "mt-kahypar/partition/partitioner.h"
-
+#include "mt-kahypar/utils/refinement_stats.h"
 #include "mt-kahypar/utils/randomize.h"
 
 int main(int argc, char* argv[]) {
@@ -84,6 +84,10 @@ int main(int argc, char* argv[]) {
 
   if ( context.partition.sp_process_output ) {
     std::cout << mt_kahypar::io::serializer::serialize(partitioned_hypergraph, context, elapsed_seconds) << std::endl;
+  }
+
+  if ( context.partition.print_refinement_stats ) {
+    std::cout << mt_kahypar::utils::RefinementStats::instance() << std::endl;
   }
 
   if ( context.partition.csv_output ) {

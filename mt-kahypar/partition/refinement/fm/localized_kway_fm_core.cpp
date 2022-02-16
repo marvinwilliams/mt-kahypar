@@ -25,6 +25,8 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   bool LocalizedKWayFM<FMStrategy>::findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds) {
+    fm_stats = &utils::RefinementStats::instance().currentSearch().fm_stats;
+    ++fm_stats->at(tbb::this_task_arena::current_thread_index()).stats.num_searches;
     localMoves.clear();
     thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
@@ -136,6 +138,7 @@ namespace mt_kahypar {
 
     size_t bestImprovementIndex = 0;
     Gain estimatedImprovement = 0;
+    Gain expectedImprovement = 0;
     Gain bestImprovement = 0;
 
     HypernodeWeight heaviestPartWeight = 0;
@@ -191,6 +194,7 @@ namespace mt_kahypar {
       if (moved) {
         runStats.moves++;
         estimatedImprovement += move.gain;
+        expectedImprovement += move.gain;
         localMoves.emplace_back(move, move_id);
         stopRule.update(move.gain);
         bool improved_km1 = estimatedImprovement > bestImprovement;
@@ -204,8 +208,9 @@ namespace mt_kahypar {
           bestImprovementIndex = localMoves.size();
 
           if constexpr (use_delta) {
-            applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, true /* apply all moves */);
+            applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, expectedImprovement, true /* apply all moves */);
             bestImprovementIndex = 0;
+            expectedImprovement = 0;
             localMoves.clear();
             deltaPhg.clear();   // clear hashtables, save memory :)
           }
@@ -229,7 +234,7 @@ namespace mt_kahypar {
 
     if constexpr (use_delta) {
       std::tie(bestImprovement, bestImprovementIndex) =
-              applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, false);
+              applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, expectedImprovement, false);
     } else {
       revertToBestLocalPrefix(phg, bestImprovementIndex);
     }
@@ -245,8 +250,10 @@ namespace mt_kahypar {
           PartitionedHypergraph& phg,
           const size_t best_index_locally_observed,
           const Gain best_improvement_locally_observed,
+          const Gain expected_improvement,
           bool apply_all_moves) {
 
+    const int thread_index = tbb::this_task_arena::current_thread_index();
     Gain improvement_from_attributed_gains = 0;
     Gain attributed_gain = 0;
 
@@ -294,9 +301,25 @@ namespace mt_kahypar {
       runStats.best_prefix_mismatch++;
     }
 
+    utils::FMStats& fm = fm_stats->at(thread_index);
+    if ( best_index_locally_observed > 0 ) {
+      ++fm.applied_move_sequences;
+      fm.stats.correct_gains += expected_improvement == improvement_from_attributed_gains;
+      fm.stats.zero_gain_improvements += improvement_from_attributed_gains == 0;
+      fm.stats.positive_gain_improvements += improvement_from_attributed_gains > 0;
+      fm.stats.num_improvements += improvement_from_attributed_gains >= 0;
+      fm.stats.conflicts += improvement_from_attributed_gains < 0;
+      bool balance_violation = false;
+      for ( PartitionID i = 0; i < context.partition.k; ++i ) {
+        balance_violation |= (phg.partWeight(i) > context.partition.max_part_weights[i]);
+      }
+      fm.stats.balance_violations += balance_violation;
+    }
+
     // kind of double rollback, if attributed gains say we overall made things worse
     if (!apply_all_moves && improvement_from_attributed_gains < 0) {
       // always using the if-branch gave similar results
+      fm.stats.moved_nodes += best_index_from_attributed_gains + 1;
       runStats.local_reverts += best_index_locally_observed - best_index_from_attributed_gains + 1;
       for (size_t i = best_index_from_attributed_gains + 1; i < best_index_locally_observed; ++i) {
         Move& m = sharedData.moveTracker.getMove(localMoves[i].second);
@@ -311,6 +334,7 @@ namespace mt_kahypar {
       }
       return std::make_pair(best_improvement_from_attributed_gains, best_index_from_attributed_gains);
     } else {
+      fm.stats.moved_nodes += best_index_locally_observed;
       return std::make_pair(best_improvement_locally_observed, best_index_locally_observed);
     }
   }

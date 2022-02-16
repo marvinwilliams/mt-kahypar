@@ -59,6 +59,7 @@ struct PartitioningParameters {
   bool show_advanced_cut_analysis = false;
   bool enable_progress_bar = false;
   bool sp_process_output = false;
+  bool print_refinement_stats = false;
   bool csv_output = false;
   bool write_partition_file = false;
   bool deterministic = false;

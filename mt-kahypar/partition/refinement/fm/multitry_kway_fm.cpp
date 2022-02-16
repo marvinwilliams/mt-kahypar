@@ -24,6 +24,7 @@
 #include "mt-kahypar/utils/timer.h"
 #include "kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/memory_tree.h"
+#include "mt-kahypar/utils/refinement_stats.h"
 
 namespace mt_kahypar {
 
@@ -142,6 +143,7 @@ namespace mt_kahypar {
     #endif
 
     metrics.km1 -= overall_improvement;
+    utils::RefinementStats::instance().currentSearch().fm_stats[0].improvement += overall_improvement;
     metrics.imbalance = metrics::imbalance(phg, context);
     ASSERT(metrics.km1 == metrics::km1(phg), V(metrics.km1) << V(metrics::km1(phg)));
     return overall_improvement > 0;

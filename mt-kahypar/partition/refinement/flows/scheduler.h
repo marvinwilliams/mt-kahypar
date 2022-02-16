@@ -27,6 +27,7 @@
 #include "mt-kahypar/partition/refinement/flows/refiner_adapter.h"
 #include "mt-kahypar/partition/refinement/flows/problem_construction.h"
 #include "mt-kahypar/parallel/atomic_wrapper.h"
+#include "mt-kahypar/utils/refinement_stats.h"
 
 namespace mt_kahypar {
 
@@ -35,50 +36,11 @@ class FlowRefinementScheduler final : public IRefiner {
   static constexpr bool debug = false;
   static constexpr bool enable_heavy_assert = false;
 
-  struct RefinementStats {
-    RefinementStats() :
-      num_refinements(0),
-      num_improvements(0),
-      num_time_limits(0),
-      correct_expected_improvement(0),
-      zero_gain_improvement(0),
-      failed_updates_due_to_conflicting_moves(0),
-      failed_updates_due_to_conflicting_moves_without_rollback(0),
-      failed_updates_due_to_balance_constraint(0),
-      total_improvement(0) { }
-
-    void reset() {
-      num_refinements.store(0);
-      num_improvements.store(0);
-      num_time_limits.store(0);
-      correct_expected_improvement.store(0);
-      zero_gain_improvement.store(0);
-      failed_updates_due_to_conflicting_moves.store(0);
-      failed_updates_due_to_conflicting_moves_without_rollback.store(0);
-      failed_updates_due_to_balance_constraint.store(0);
-      total_improvement.store(0);
-    }
-
-    void update_global_stats();
-
-    CAtomic<int64_t> num_refinements;
-    CAtomic<int64_t> num_improvements;
-    CAtomic<int64_t> num_time_limits;
-    CAtomic<int64_t> correct_expected_improvement;
-    CAtomic<int64_t> zero_gain_improvement;
-    CAtomic<int64_t> failed_updates_due_to_conflicting_moves;
-    CAtomic<int64_t> failed_updates_due_to_conflicting_moves_without_rollback;
-    CAtomic<int64_t> failed_updates_due_to_balance_constraint;
-    CAtomic<HyperedgeWeight> total_improvement;
-  };
-
   struct PartWeightUpdateResult {
     bool is_balanced = true;
     PartitionID overloaded_block = kInvalidPartition;
     HypernodeWeight overload_weight = 0;
   };
-
-  friend std::ostream & operator<< (std::ostream& str, const RefinementStats& stats);
 
 public:
   explicit FlowRefinementScheduler(const Hypergraph& hg,
@@ -92,8 +54,8 @@ public:
     _part_weights_lock(),
     _part_weights(context.partition.k, 0),
     _max_part_weights(context.partition.k, 0),
-    _stats(),
-    _apply_moves_lock() { }
+    _apply_moves_lock(),
+    _flow_stats(nullptr) { }
 
   FlowRefinementScheduler(const FlowRefinementScheduler&) = delete;
   FlowRefinementScheduler(FlowRefinementScheduler&&) = delete;
@@ -162,10 +124,9 @@ private:
   vec<HypernodeWeight> _part_weights;
   vec<HypernodeWeight> _max_part_weights;
 
-  // ! Contains refinement statistics
-  RefinementStats _stats;
-
   SpinLock _apply_moves_lock;
+
+  vec<utils::FlowStats>* _flow_stats;
 };
 
 }  // namespace kahypar

@@ -133,6 +133,9 @@ namespace mt_kahypar {
              po::value<bool>(&context.partition.sp_process_output)->value_name("<bool>")->default_value(false),
              "Summarize partitioning results in RESULT line compatible with sqlplottools "
              "(https://github.com/bingmann/sqlplottools)")
+            ("print-refinement-stats",
+             po::value<bool>(&context.partition.print_refinement_stats)->value_name("<bool>")->default_value(false),
+             "Print refinement stats")
             ("csv", po::value<bool>(&context.partition.csv_output)->value_name("<bool>")->default_value(false),
              "Summarize results in CSV format")
             ("algorithm-name",

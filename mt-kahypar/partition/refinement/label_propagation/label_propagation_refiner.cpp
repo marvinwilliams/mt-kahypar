@@ -38,6 +38,9 @@ namespace mt_kahypar {
                   const double)  {
     _gain.reset();
     _next_active.reset();
+    _stats = &utils::RefinementStats::instance().currentSearch().lp_stats;
+    utils::RefinementStats::instance().currentSearch().setMaxLPRounds(
+      _context.refinement.label_propagation.maximum_iterations);
 
     // Initialize set of active vertices
     initializeActiveNodes(hypergraph, refinement_nodes);
@@ -64,6 +67,7 @@ namespace mt_kahypar {
 
     best_metrics.updateMetric(current_metric + delta, Mode::direct, _context.partition.objective);
     utils::Stats::instance().update_stat("lp_improvement", std::abs(delta));
+    utils::RefinementStats::instance().currentSearch().lp_stats[0].improvement += std::abs(delta);
     return delta < 0;
   }
 
@@ -99,6 +103,8 @@ namespace mt_kahypar {
 
     _visited_he.reset();
     _next_active.reset();
+    utils::RefinementStats::instance().currentSearch().newLPRound(_context.type == kahypar::ContextType::main);
+    utils::RefinementStats::instance().currentSearch().lp_stats[0].currentRound().active_nodes = _active_nodes.size();
     // This function is passed as lambda to the changeNodePart function and used
     // to calculate the "real" delta of a move (in terms of the used objective function).
     auto objective_delta = [&](const HyperedgeID he,

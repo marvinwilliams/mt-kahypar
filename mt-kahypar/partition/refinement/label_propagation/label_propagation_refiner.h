@@ -29,6 +29,7 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/refinement/i_refiner.h"
 #include "mt-kahypar/partition/refinement/policies/gain_policy.h"
+#include "mt-kahypar/utils/refinement_stats.h"
 
 
 namespace mt_kahypar {
@@ -52,7 +53,8 @@ class LabelPropagationRefiner final : public IRefiner {
     _active_nodes(),
     _active_node_was_moved(hypergraph.initialNumNodes(), uint8_t(false)),
     _next_active(hypergraph.initialNumNodes()),
-    _visited_he(hypergraph.initialNumEdges()) { }
+    _visited_he(hypergraph.initialNumEdges()),
+    _stats(nullptr) { }
 
   LabelPropagationRefiner(const LabelPropagationRefiner&) = delete;
   LabelPropagationRefiner(LabelPropagationRefiner&&) = delete;
@@ -81,6 +83,8 @@ class LabelPropagationRefiner final : public IRefiner {
     if ( hypergraph.isBorderNode(hn) ) {
       ASSERT(hypergraph.nodeIsEnabled(hn));
 
+      const int thread_index = tbb::this_task_arena::current_thread_index();
+      ++_stats->at(thread_index).stats.num_searches;
       Move best_move = _gain.computeMaxGainMove(hypergraph, hn);
       // We perform a move if it either improves the solution quality or, in case of a
       // zero gain move, the balance of the solution.
@@ -96,6 +100,7 @@ class LabelPropagationRefiner final : public IRefiner {
         PartitionID from = best_move.from;
         PartitionID to = best_move.to;
 
+        ++_stats->at(thread_index).stats.moved_nodes;
         Gain delta_before = _gain.localDelta();
         bool changed_part = changeNodePart(hypergraph, hn, from, to, objective_delta);
         if (changed_part) {
@@ -107,6 +112,12 @@ class LabelPropagationRefiner final : public IRefiner {
           if (accept_move) {
             DBG << "Move hypernode" << hn << "from block" << from << "to block" << to
                 << "with gain" << best_move.gain << "( Real Gain: " << move_delta << ")";
+
+            _stats->at(thread_index).stats.zero_gain_improvements += move_delta == 0;
+            _stats->at(thread_index).stats.positive_gain_improvements += move_delta < 0;
+            _stats->at(thread_index).stats.correct_gains += move_delta == best_move.gain;
+            ++_stats->at(thread_index).currentRound().moved_nodes;
+            _stats->at(thread_index).currentRound().improvement += -move_delta;
 
             // Set all neighbors of the vertex to active
             for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
@@ -133,7 +144,10 @@ class LabelPropagationRefiner final : public IRefiner {
             // worsen the solution quality we revert the move.
             ASSERT(hypergraph.partID(hn) == to);
             changeNodePart(hypergraph, hn, to, from, objective_delta);
+            ++_stats->at(thread_index).stats.conflicts;
           }
+        } else {
+          ++_stats->at(thread_index).stats.balance_violations;
         }
       }
     }
@@ -171,6 +185,7 @@ class LabelPropagationRefiner final : public IRefiner {
   parallel::scalable_vector<uint8_t> _active_node_was_moved;
   ds::ThreadSafeFastResetFlagArray<> _next_active;
   kahypar::ds::FastResetFlagArray<> _visited_he;
+  vec<utils::LabelPropagationStats>* _stats;
 };
 
 using LabelPropagationKm1Refiner = LabelPropagationRefiner<Km1Policy>;

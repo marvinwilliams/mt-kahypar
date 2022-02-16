@@ -29,6 +29,7 @@
 #include "mt-kahypar/partition/refinement/rebalancing/rebalancer.h"
 #include "mt-kahypar/utils/progress_bar.h"
 #include "mt-kahypar/utils/stats.h"
+#include "mt-kahypar/utils/refinement_stats.h"
 
 namespace mt_kahypar {
 
@@ -40,6 +41,15 @@ namespace mt_kahypar {
 
     if (_context.type == kahypar::ContextType::main) {
       _context.initial_km1 = current_metrics.km1;
+      utils::RefinementStats& stats = utils::RefinementStats::instance();
+      stats.clear();
+      stats._graph = _context.partition.graph_filename.substr(
+        _context.partition.graph_filename.find_last_of('/') + 1);
+      stats._k = _context.partition.k;
+      stats._epsilon = _context.partition.epsilon;
+      stats._num_threads = _context.shared_memory.num_threads;
+      stats._seed = _context.partition.seed;
+      stats._initial_km1 = current_metrics.km1;
     }
 
     utils::ProgressBar uncontraction_progress(_hg.initialNumNodes(),
@@ -167,6 +177,9 @@ namespace mt_kahypar {
       improvement_found = false;
       const HyperedgeWeight metric_before = current_metrics.getMetric(
         Mode::direct, _context.partition.objective);
+      utils::RefinementStats::instance().newSearch(
+        partitioned_hypergraph.initialNumNodes(), partitioned_hypergraph.initialNumEdges(),
+        partitioned_hypergraph.initialNumPins(), _context.type == kahypar::ContextType::main);
 
       if ( label_propagation && _context.refinement.label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
         utils::Timer::instance().start_timer("initialize_lp_refiner", "Initialize LP Refiner");

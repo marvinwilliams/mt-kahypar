@@ -23,6 +23,7 @@
 #include "tbb/parallel_scan.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/timer.h"
+#include "mt-kahypar/utils/refinement_stats.h"
 
 namespace mt_kahypar {
 
@@ -183,6 +184,7 @@ namespace mt_kahypar {
     tbb::parallel_scan(tbb::blocked_range<MoveID>(0, numMoves), s);
     BalanceAndBestIndexScan::Prefix b = s.finalize(partWeights);
 
+    utils::RefinementStats::instance().currentSearch().fm_stats[0].global_rollback_triggered = (numMoves - b.best_index) > 0;
     tbb::parallel_for(b.best_index, numMoves, [&](const MoveID moveID) {
       const Move& m = move_order[moveID];
       if (m.isValid()) {

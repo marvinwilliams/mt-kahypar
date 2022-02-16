@@ -29,6 +29,7 @@
 #include "mt-kahypar/datastructures/sparse_map.h"
 #include "mt-kahypar/partition/refinement/fm/fm_commons.h"
 #include "mt-kahypar/partition/refinement/fm/stop_rule.h"
+#include "mt-kahypar/utils/refinement_stats.h"
 
 namespace mt_kahypar {
 
@@ -43,7 +44,8 @@ public:
           deltaPhg(context),
           neighborDeduplicator(numNodes, 0),
           fm_strategy(context, numNodes, sharedData, runStats),
-          sharedData(sharedData)
+          sharedData(sharedData),
+          fm_stats(nullptr)
           { }
 
 
@@ -73,6 +75,7 @@ private:
   std::pair<Gain, size_t> applyBestLocalPrefixToSharedPartition(PartitionedHypergraph& phg,
                                                                 const size_t best_index_locally_observed,
                                                                 const Gain best_improvement_locally_observed,
+                                                                const Gain expected_improvement,
                                                                 bool apply_all_moves);
 
   // ! Rollback to the best improvement found during local search in case we applied moves
@@ -109,6 +112,8 @@ private:
   FMStrategy fm_strategy;
 
   FMSharedData& sharedData;
+
+  vec<utils::FMStats>* fm_stats;
 
 };
 
