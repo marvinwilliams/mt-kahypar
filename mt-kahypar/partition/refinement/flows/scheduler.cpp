@@ -240,6 +240,7 @@ HyperedgeWeight FlowRefinementScheduler::applyMoves(const SearchID search_id,
   unused(search_id);
   ASSERT(_phg);
   utils::FlowStats& flow_stats = _flow_stats->at(tbb::this_task_arena::current_thread_index());
+  ++flow_stats.stats.expected_improvements;
 
   // TODO: currently we lock the applyMoves method
   // => find something smarter here
@@ -308,7 +309,6 @@ HyperedgeWeight FlowRefinementScheduler::applyMoves(const SearchID search_id,
             << ", Search ID =" << search_id << ")" << END;
       }
     } else {
-      ++flow_stats.stats.num_improvements;
       flow_stats.stats.correct_gains += (improvement == sequence.expected_improvement);
       flow_stats.stats.zero_gain_improvements += (improvement == 0);
       flow_stats.stats.positive_gain_improvements += (improvement > 0);

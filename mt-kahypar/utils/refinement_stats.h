@@ -40,7 +40,7 @@ struct SearchStats {
     algorithm(algo),
     moved_nodes(0),
     num_searches(0),
-    num_improvements(0),
+    expected_improvements(0),
     conflicts(0),
     balance_violations(0),
     zero_gain_improvements(0),
@@ -50,7 +50,7 @@ struct SearchStats {
   void operator+=(const SearchStats& other) {
     moved_nodes += other.moved_nodes;
     num_searches += other.num_searches;
-    num_improvements += other.num_improvements;
+    expected_improvements += other.expected_improvements;
     conflicts += other.conflicts;
     balance_violations += other.balance_violations;
     zero_gain_improvements += other.zero_gain_improvements;
@@ -61,7 +61,7 @@ struct SearchStats {
   std::string algorithm;
   size_t moved_nodes;
   size_t num_searches;
-  size_t num_improvements;
+  size_t expected_improvements;
   size_t conflicts;
   size_t balance_violations;
   size_t zero_gain_improvements;
@@ -71,7 +71,7 @@ struct SearchStats {
 
 inline std::ostream & operator<< (std::ostream& str, const SearchStats& stats) {
   str << stats.algorithm << "_num_searches=" << stats.num_searches
-      << " " << stats.algorithm << "_num_improvements=" << stats.num_improvements
+      << " " << stats.algorithm << "_expected_improvements=" << stats.expected_improvements
       << " " << stats.algorithm << "_moved_nodes=" << stats.moved_nodes
       << " " << stats.algorithm << "_conflicts=" << stats.conflicts
       << " " << stats.algorithm << "_balance_violations=" << stats.balance_violations
@@ -136,25 +136,21 @@ inline std::ostream & operator<< (std::ostream& str, const LabelPropagationStats
 struct FMStats {
   explicit FMStats() :
     stats("fm"),
-    applied_move_sequences(0),
     global_rollback_triggered(false),
     improvement(0) { }
 
   void operator+=(const FMStats& other) {
     stats += other.stats;
-    applied_move_sequences += other.applied_move_sequences;
     improvement += other.improvement;
   }
 
   SearchStats stats;
-  size_t applied_move_sequences;
   bool global_rollback_triggered;
   HyperedgeWeight improvement;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const FMStats& fm) {
   str << fm.stats
-      << " fm_applied_move_sequences=" << fm.applied_move_sequences
       << " fm_global_rollback_triggered=" << fm.global_rollback_triggered
       << " fm_improvement=" << fm.improvement;
   return str;

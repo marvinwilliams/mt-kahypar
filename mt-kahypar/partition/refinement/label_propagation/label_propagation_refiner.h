@@ -100,7 +100,7 @@ class LabelPropagationRefiner final : public IRefiner {
         PartitionID from = best_move.from;
         PartitionID to = best_move.to;
 
-        ++_stats->at(thread_index).stats.moved_nodes;
+        ++_stats->at(thread_index).stats.expected_improvements;
         Gain delta_before = _gain.localDelta();
         bool changed_part = changeNodePart(hypergraph, hn, from, to, objective_delta);
         if (changed_part) {
@@ -113,6 +113,7 @@ class LabelPropagationRefiner final : public IRefiner {
             DBG << "Move hypernode" << hn << "from block" << from << "to block" << to
                 << "with gain" << best_move.gain << "( Real Gain: " << move_delta << ")";
 
+            ++_stats->at(thread_index).stats.moved_nodes;
             _stats->at(thread_index).stats.zero_gain_improvements += move_delta == 0;
             _stats->at(thread_index).stats.positive_gain_improvements += move_delta < 0;
             _stats->at(thread_index).stats.correct_gains += move_delta == best_move.gain;

@@ -45,7 +45,8 @@ public:
           neighborDeduplicator(numNodes, 0),
           fm_strategy(context, numNodes, sharedData, runStats),
           sharedData(sharedData),
-          fm_stats(nullptr)
+          fm_stats(nullptr),
+          block_weights_snapshot(context.partition.k,0)
           { }
 
 
@@ -75,7 +76,7 @@ private:
   std::pair<Gain, size_t> applyBestLocalPrefixToSharedPartition(PartitionedHypergraph& phg,
                                                                 const size_t best_index_locally_observed,
                                                                 const Gain best_improvement_locally_observed,
-                                                                const Gain expected_improvement,
+                                                                Gain& actual_improvement,
                                                                 bool apply_all_moves);
 
   // ! Rollback to the best improvement found during local search in case we applied moves
@@ -114,6 +115,8 @@ private:
   FMSharedData& sharedData;
 
   vec<utils::FMStats>* fm_stats;
+
+  vec<HypernodeWeight> block_weights_snapshot;
 
 };
 
