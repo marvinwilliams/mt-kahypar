@@ -29,6 +29,12 @@
 namespace mt_kahypar {
 namespace utils {
 
+namespace {
+  double improvement_share(const HyperedgeWeight improvement, const HyperedgeWeight total) {
+    return total > 0 ? static_cast<double>(improvement) / total : 0;
+  }
+}
+
 struct SearchStats {
   explicit SearchStats(const std::string& algo) :
     algorithm(algo),
@@ -259,9 +265,9 @@ inline std::ostream & operator<< (std::ostream& str, const Search& search) {
       << " num_edges=" << search.num_edges
       << " num_pins=" << search.num_pins
       << " total_improvement=" << total_improvement
-      << " lp_share_improvement=" << (static_cast<double>(lp.improvement) / total_improvement)
-      << " fm_share_improvement=" << (static_cast<double>(fm.improvement) / total_improvement)
-      << " flows_share_improvement=" << (static_cast<double>(flows.improvement) / total_improvement)
+      << " lp_share_improvement=" << improvement_share(lp.improvement, total_improvement)
+      << " fm_share_improvement=" << improvement_share(fm.improvement, total_improvement)
+      << " flows_share_improvement=" << improvement_share(flows.improvement, total_improvement)
       << " num_lp_rounds=" << search.max_lp_rounds
       << " " << lp;
   vec<LabelPropagationRoundStats> lp_rounds;
@@ -274,7 +280,7 @@ inline std::ostream & operator<< (std::ostream& str, const Search& search) {
   for ( const LabelPropagationRoundStats& lp_round : lp_rounds ) {
     str << " " << lp_round
         << " lp_round_" << lp_round.cur_round << "_share_improvement="
-        << static_cast<double>(lp_round.improvement) / lp.improvement;
+        << improvement_share(lp_round.improvement, lp.improvement);
   }
   str << " " << fm
       << " " << flows;
@@ -367,12 +373,12 @@ inline std::ostream & operator<< (std::ostream& str, const RefinementStats& stat
       << " lp_improvement=" << lp_improvement
       << " fm_improvement=" << fm_improvement
       << " flows_improvement=" << flows_improvement
-      << " lp_share_improvement=" << (static_cast<double>(lp_improvement) / total_improvement)
-      << " fm_share_improvement=" << (static_cast<double>(fm_improvement) / total_improvement)
-      << " flows_share_improvement=" << (static_cast<double>(flows_improvement) / total_improvement)
-      << " relative_lp_improvement=" << (static_cast<double>(stats._initial_km1) / (stats._initial_km1 - lp_improvement))
-      << " relative_fm_improvement=" << (static_cast<double>(stats._initial_km1) / (stats._initial_km1 - fm_improvement))
-      << " relative_flows_improvement=" << (static_cast<double>(stats._initial_km1) / (stats._initial_km1 - flows_improvement));
+      << " lp_share_improvement=" << improvement_share(lp_improvement, total_improvement)
+      << " fm_share_improvement=" << improvement_share(fm_improvement, total_improvement)
+      << " flows_share_improvement=" << improvement_share(flows_improvement, total_improvement)
+      << " relative_lp_improvement=" << improvement_share(stats._initial_km1, stats._initial_km1 - lp_improvement)
+      << " relative_fm_improvement=" << improvement_share(stats._initial_km1, stats._initial_km1 - fm_improvement)
+      << " relative_flows_improvement=" << improvement_share(stats._initial_km1, stats._initial_km1 - flows_improvement);
   return str;
 }
 
