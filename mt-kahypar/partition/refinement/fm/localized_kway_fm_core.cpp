@@ -136,7 +136,7 @@ namespace mt_kahypar {
 
     size_t bestImprovementIndex = 0;
     Gain estimatedImprovement = 0;
-    Gain bestImprovement = 0;
+    Gain bestImprovement = 0, totalImprovement = 0; /* they differ because bestImprovement gets reset on flushes */
 
     HypernodeWeight heaviestPartWeight = 0;
     HypernodeWeight fromWeight = 0, toWeight = 0;
@@ -204,8 +204,10 @@ namespace mt_kahypar {
           bestImprovementIndex = localMoves.size();
 
           if constexpr (use_delta) {
-            applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, true /* apply all moves */);
+            totalImprovement += applyBestLocalPrefixToSharedPartition(phg).first;
             bestImprovementIndex = 0;
+            estimatedImprovement = 0;
+            bestImprovement = 0;
             localMoves.clear();
             deltaPhg.clear();   // clear hashtables, save memory :)
           }
@@ -227,10 +229,8 @@ namespace mt_kahypar {
 
     }
 
-    if constexpr (use_delta) {
-      std::tie(bestImprovement, bestImprovementIndex) =
-              applyBestLocalPrefixToSharedPartition(phg, bestImprovementIndex, bestImprovement, false);
-    } else {
+    if (!use_delta) {
+      totalImprovement = bestImprovement;
       revertToBestLocalPrefix(phg, bestImprovementIndex);
     }
 
@@ -242,10 +242,7 @@ namespace mt_kahypar {
 
   template<typename FMStrategy>
   std::pair<Gain, size_t> LocalizedKWayFM<FMStrategy>::applyBestLocalPrefixToSharedPartition(
-          PartitionedHypergraph& phg,
-          const size_t best_index_locally_observed,
-          const Gain best_improvement_locally_observed,
-          bool apply_all_moves) {
+          PartitionedHypergraph& phg) {
 
     Gain improvement_from_attributed_gains = 0;
     Gain attributed_gain = 0;
@@ -261,9 +258,8 @@ namespace mt_kahypar {
 
     // Apply move sequence to original hypergraph and update gain values
     Gain best_improvement_from_attributed_gains = 0;
-    size_t best_index_from_attributed_gains = 0;
-    for (size_t i = 0; i < best_index_locally_observed; ++i) {
-      assert(i < localMoves.size());
+    int64_t best_index_from_attributed_gains = -1;
+    for (size_t i = 0; i < localMoves.size(); ++i) {
       Move& local_move = localMoves[i].first;
       MoveID& move_id = localMoves[i].second;
       attributed_gain = 0;
@@ -289,30 +285,20 @@ namespace mt_kahypar {
       }
     }
 
-    runStats.local_reverts += localMoves.size() - best_index_locally_observed;
-    if (!apply_all_moves && best_index_from_attributed_gains != best_index_locally_observed) {
-      runStats.best_prefix_mismatch++;
-    }
-
     // kind of double rollback, if attributed gains say we overall made things worse
-    if (!apply_all_moves && improvement_from_attributed_gains < 0) {
-      // always using the if-branch gave similar results
-      runStats.local_reverts += best_index_locally_observed - best_index_from_attributed_gains + 1;
-      for (size_t i = best_index_from_attributed_gains + 1; i < best_index_locally_observed; ++i) {
-        Move& m = sharedData.moveTracker.getMove(localMoves[i].second);
+    runStats.local_reverts += localMoves.size() - best_index_from_attributed_gains + 1;
+    for (int64_t i = best_index_from_attributed_gains + 1; i < int64_t(localMoves.size()); ++i) {
+      Move& m = sharedData.moveTracker.getMove(localMoves[i].second);
 
-        if constexpr (FMStrategy::uses_gain_cache) {
-          phg.changeNodePartWithGainCacheUpdate(m.node, m.to, m.from);
-        } else {
-          phg.changeNodePart(m.node, m.to, m.from);
-        }
-
-        m.invalidate();
+      if constexpr (FMStrategy::uses_gain_cache) {
+        phg.changeNodePartWithGainCacheUpdate(m.node, m.to, m.from);
+      } else {
+        phg.changeNodePart(m.node, m.to, m.from);
       }
-      return std::make_pair(best_improvement_from_attributed_gains, best_index_from_attributed_gains);
-    } else {
-      return std::make_pair(best_improvement_locally_observed, best_index_locally_observed);
+
+      m.invalidate();
     }
+    return std::make_pair(best_improvement_from_attributed_gains, best_index_from_attributed_gains);
   }
 
   template<typename FMStrategy>
