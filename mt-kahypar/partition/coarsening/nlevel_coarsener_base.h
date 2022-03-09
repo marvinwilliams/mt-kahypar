@@ -48,6 +48,7 @@ class NLevelCoarsenerBase {
   using RegionComparator = ds::NodeRegionComparator<Hypergraph>;
   using TreeGroupPool = ds::ConcurrentQueueGroupPool<ds::UncontractionGroupTree, RegionComparator>;
   using VersionedPoolVector = parallel::scalable_vector<std::unique_ptr<TreeGroupPool>>;
+  using pq_type = TreeGroupPool::pq_type;
 
  public:
   NLevelCoarsenerBase(Hypergraph& hypergraph,
@@ -103,7 +104,7 @@ class NLevelCoarsenerBase {
   PartitionedHypergraph&& doAsynchronousUncoarsen(std::unique_ptr<IRefiner>& global_fm);
 
   void
-  uncoarsenAsyncTask(TreeGroupPool *pool, metrics::ThreadSafeMetrics &current_metrics,
+  uncoarsenAsyncTask(TreeGroupPool *pool, pq_type &pq, metrics::ThreadSafeMetrics &current_metrics,
                      IAsyncRefiner *async_lp_refiner, IAsyncRefiner *async_fm_refiner,
                      HypernodeID &uncontraction_counter,
                      utils::ProgressBar &uncontraction_progress,

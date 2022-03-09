@@ -509,7 +509,7 @@ namespace mt_kahypar {
              "After uncontracting a group, either the representative or any of the contracted nodes is not enabled or not assigned a partition!");
   }
 
-  void NLevelCoarsenerBase::uncoarsenAsyncTask(TreeGroupPool *pool, metrics::ThreadSafeMetrics &current_metrics,
+  void NLevelCoarsenerBase::uncoarsenAsyncTask(TreeGroupPool *pool, pq_type& pq, metrics::ThreadSafeMetrics &current_metrics,
                                                IAsyncRefiner *async_lp_refiner, IAsyncRefiner *async_fm_refiner,
                                                HypernodeID &uncontraction_counter,
                                                utils::ProgressBar &uncontraction_progress,
@@ -519,7 +519,7 @@ namespace mt_kahypar {
                                                const bool alwaysInsertIntoPQ, size_t &local_calls_to_localized_refine,
                                                size_t &local_iterations_in_localized_refine) {
 
-      if (pool->taskFinished(task_id)) return;
+      if (pool->taskFinished()) return;
 
       ds::ContractionGroupID groupID = ds::invalidGroupID;
       bool pick_new_group = true;
@@ -532,11 +532,17 @@ namespace mt_kahypar {
       auto num_edges_activated_per_refinement_node = ds::NoDownsizeIntegralTypeVector<HyperedgeID>(2 * min_seed_nodes, kInvalidHyperedge);
       bool reached_min_seeds_once = false;
 
+      auto handle = pq.get_handle();
+      if (task_id == 0) {
+        for (const auto& root : pool->getPtrToHierarchyForQueries()->roots()) {
+          pool->activate(root, handle);
+        }
+      }
       while (true) {
 
         // Attempt to pick a group from the pool. Stop if pool is completed.
-        while (pick_new_group && !pool->tryToPickActiveID(groupID, task_id)) {
-          if (pool->taskFinished(task_id)) return;
+        while (pick_new_group && !pool->tryToPickActiveID(groupID, task_id, handle)) {
+          if (pool->taskFinished()) return;
         }
 
           ASSERT(groupID != ds::invalidGroupID);
@@ -551,7 +557,7 @@ namespace mt_kahypar {
           bool acquired = _lock_manager_for_async->tryToAcquireLock(group.getRepresentative(), groupID);
           if (!acquired) {
 
-            pool->activate(groupID, task_id);
+            pool->activate(groupID, handle);
             pick_new_group = true;
             continue;
           }
@@ -669,14 +675,14 @@ namespace mt_kahypar {
                 // Insert all successors into the PQ and pick a new group for the next iteration.
                 for (auto it = suc_begin; it < suc_end; ++it) {
                   num_succ++;
-                  pool->activate(*it, task_id);
+                  pool->activate(*it, handle);
                 }
                 pick_new_group = true;
               } else {
                 // Insert all but one successor into the PQ and work on the remaining successor. Do not pick a new group next iteration.
                 groupID = *suc_begin;
                 for (auto it = suc_begin + 1; it < suc_end; ++it) {
-                  pool->activate(*it, task_id);
+                  pool->activate(*it, handle);
                 }
                 pick_new_group = false;
               }
@@ -784,7 +790,9 @@ namespace mt_kahypar {
 
     auto calls_to_localized_refine_per_task = std::vector<size_t>(num_threads, 0);
     auto iterations_of_localized_refine_per_task = std::vector<size_t>(num_threads, 0);
-
+    pq_type::param_type params{};
+    params.c = 8;
+    params.stickiness = 64;
       for (size_t inv_version = 0; inv_version < _group_pools_for_versions.size(); ++inv_version) {
 
         size_t version = _group_pools_for_versions.size() - inv_version - 1;
@@ -808,10 +816,11 @@ namespace mt_kahypar {
           for (auto& seed_deduplicator : seed_deduplicator_arrays) {
             seed_deduplicator.get()->reset(); // NOLINT(readability-redundant-smartptr-get)
           }
+          pq_type pq{_context.shared_memory.num_threads, params};
 
           auto uncoarsen_task = [&](const size_t task_id){
               // Setting alwaysInsertIntoPQ to true for Initial Partitioning as well cryptically does not work (spits out Seg faults only in release mode). I assume it's due to TBB internals.
-              uncoarsenAsyncTask(pool,
+              uncoarsenAsyncTask(pool, pq,
                                  current_metrics, async_lp_refiners[task_id].get(), async_fm_refiners[task_id].get(),
                                  async_uncontraction_counters[task_id],
                                  uncontraction_progress, fm_shared_data->nodeTracker, node_region_comparator,
