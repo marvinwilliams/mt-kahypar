@@ -7,18 +7,18 @@
 #include <queue>
 #include <functional>
 
-#define L1_CACHE_LINESIZE 64
-#define PAGESIZE 4096
+/* #define L1_CACHE_LINESIZE 64 */
+/* #define PAGESIZE 4096 */
+
+#include "utils/priority_queue_factory.hpp"
 
 //#include <tbb/concurrent_queue.h>
-#include <mt-kahypar/partition/context.h>
-#include <multiqueue/default_configuration.hpp>
-#include <multiqueue/factory.hpp>
+/* #include "mt-kahypar/definitions.h" */
+#include "mt-kahypar/partition/context.h"
 #include "uncontraction_group_tree.h"
 #include "mt-kahypar/datastructures/async/async_common.h"
 #include "depth_priority_queue.h"
 #include "node_region_comparator.h"
-#include "mt-kahypar/definitions.h"
 #include "mt-kahypar/parallel/parallel_prefix_sum.h"
 
 
@@ -31,14 +31,10 @@ namespace mt_kahypar::ds
         typename RegionComparator = Mandatory>
     class ConcurrentQueueGroupPool {
 
-        struct MQConfig : multiqueue::DefaultConfiguration {
-          using SelectionStrategy = multiqueue::selection_strategy::Swapping;
-        };
-
-
     public:
 
-        using pq_type = typename multiqueue::MultiqueueFactory<uint32_t, ContractionGroupID, std::less<>, MQConfig>::multiqueue_type;
+        using pq_type =
+          typename util::PriorityQueueFactory<unsigned long, unsigned long>::type;
 
         /**
          * Constructs new sequential contraction group pool. Passes ownership of the given group hierarchy to this pool.

@@ -19,9 +19,11 @@
  ******************************************************************************/
 #pragma once
 
+#include <algorithm>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "mt-kahypar/macros.h"
 

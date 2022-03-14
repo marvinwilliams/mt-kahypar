@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "mt-kahypar/definitions.h"
+#include "mt-kahypar/parallel/atomic_wrapper.h"
 #include <kahypar/partition/metrics.h>
 #include "mt-kahypar/partition/context.h"
 

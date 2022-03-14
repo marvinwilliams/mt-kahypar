@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "mt-kahypar/datastructures/sparse_map.h"
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/datastructures/async/iterable_bit_set.h"
 #include "mt-kahypar/datastructures/async/no_downsize_integral_type_vector.h"

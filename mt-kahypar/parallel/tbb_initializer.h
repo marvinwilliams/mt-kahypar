@@ -28,8 +28,8 @@
 
 #include "tbb/task_arena.h"
 #include "tbb/task_group.h"
-#include "tbb/task_scheduler_init.h"
-
+#include "oneapi/tbb/global_control.h"
+#include <oneapi/tbb/global_control.h>
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/parallel/thread_pinning_observer.h"
 
@@ -87,19 +87,15 @@ class TBBInitializer {
     if ( _global_observer ) {
       _global_observer->observe(false);
     }
-
-    if ( _init ) {
-      _init->terminate();
-    }
   }
 
  private:
   explicit TBBInitializer(const int num_threads) :
     _num_threads(num_threads),
-    _init(std::make_unique<tbb::task_scheduler_init>(num_threads)),
     _global_observer(nullptr),
     _cpus(),
     _numa_node_to_cpu_id() {
+    tbb::global_control global_limit(oneapi::tbb::global_control::max_allowed_parallelism, num_threads + 1);
     HwTopology& topology = HwTopology::instance();
     int num_numa_nodes = topology.num_numa_nodes();
     DBG << "Initialize TBB with" << num_threads << "threads";
@@ -137,7 +133,6 @@ class TBBInitializer {
   }
 
   int _num_threads;
-  std::unique_ptr<tbb::task_scheduler_init> _init;
   std::unique_ptr<ThreadPinningObserver> _global_observer;
   std::vector<int> _cpus;
   std::vector<std::vector<int>> _numa_node_to_cpu_id;

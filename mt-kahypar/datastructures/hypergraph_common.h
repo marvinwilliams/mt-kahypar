@@ -30,7 +30,7 @@ namespace mt_kahypar {
 
 struct parallel_tag_t { };
 using RatingType = double;
-#if KAHYPAR_USE_64_BIT_IDS
+#ifdef KAHYPAR_USE_64_BIT_IDS
 #define ID(X) static_cast<uint64_t>(X)
 using HypernodeID = uint64_t;
 using HyperedgeID = uint64_t;

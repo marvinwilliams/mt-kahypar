@@ -21,7 +21,7 @@
 #pragma once
 
 #include <mt-kahypar/datastructures/async/array_lock_manager.h>
-#include <tbb/parallel_do.h>
+#include <tbb/parallel_for_each.h>
 #include <mt-kahypar/partition/refinement/label_propagation/async_lp_refiner.h>
 #include <mt-kahypar/parallel/atomic_wrapper.h>
 #include <mt-kahypar/utils/progress_bar.h>

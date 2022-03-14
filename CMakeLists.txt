@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules)
 
 project(KaHyPar CXX C)
 set(PROJECT_VENDOR "Tobias Heuer")
@@ -232,9 +232,6 @@ ELSE ()
     SET(HWLOCK_FOUND FALSE)
     MESSAGE(STATUS "WARNING: hwlock library not found.")
 ENDIF ()
-
-# add multiqueue
-add_subdirectory(external_tools/multiqueue)
 
 # TODO: Add git revision
 

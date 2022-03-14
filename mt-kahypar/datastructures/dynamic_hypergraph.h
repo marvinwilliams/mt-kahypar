@@ -20,6 +20,7 @@
 
 #pragma once
 
+/* #error dh.h */
 #include <mutex>
 #include <queue>
 #include <mt-kahypar/datastructures/async/array_lock_manager.h>
@@ -48,7 +49,6 @@ template <typename Hypergraph,
           typename HypergraphFactory,
           typename GainCache>
 class PartitionedHypergraph;
-
 
 class DynamicHypergraph {
 

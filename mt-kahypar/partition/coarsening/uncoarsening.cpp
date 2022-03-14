@@ -790,9 +790,6 @@ namespace mt_kahypar {
 
     auto calls_to_localized_refine_per_task = std::vector<size_t>(num_threads, 0);
     auto iterations_of_localized_refine_per_task = std::vector<size_t>(num_threads, 0);
-    pq_type::param_type params{};
-    params.c = 8;
-    params.stickiness = 64;
       for (size_t inv_version = 0; inv_version < _group_pools_for_versions.size(); ++inv_version) {
 
         size_t version = _group_pools_for_versions.size() - inv_version - 1;
@@ -816,7 +813,16 @@ namespace mt_kahypar {
           for (auto& seed_deduplicator : seed_deduplicator_arrays) {
             seed_deduplicator.get()->reset(); // NOLINT(readability-redundant-smartptr-get)
           }
-          pq_type pq{_context.shared_memory.num_threads, params};
+#if defined PQ_MQ_RANDOM || defined PQ_MQ_STICKY || defined PQ_MQ_SWAPPING
+          auto params = pq_type::param_type{};
+          params.c = MQ_C;
+#ifndef PQ_MQ_RANDOM
+          params.stickiness = MQ_STICKINESS;
+#endif
+          auto pq = pq_type(1'000'000, _context.shared_memory.num_threads, params);
+#else
+          auto pq = pq_type(1'000'000, _context.shared_memory.num_threads);
+#endif
 
           auto uncoarsen_task = [&](const size_t task_id){
               // Setting alwaysInsertIntoPQ to true for Initial Partitioning as well cryptically does not work (spits out Seg faults only in release mode). I assume it's due to TBB internals.
