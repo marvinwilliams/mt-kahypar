@@ -55,6 +55,19 @@ namespace mt_kahypar::ds
                   _similarity_to_others_threshold(context.uncoarsening.node_region_similarity_threshold)
                 {
             ASSERT(_hierarchy);
+	    ASSERT(_group_pool_type == GroupPoolType::multiqueue);
+	    auto pq_params = util::PriorityQueueParameters{};
+#ifdef MQ_C
+	    pq_params.c = MQ_C;
+#endif
+#ifdef MQ_STICKINESS
+	    pq_params.stickiness = MQ_STICKINESS;
+#endif
+	    _pq = std::unique_ptr<pq_type>{new pq_type(util::create_pq<pq_type>(1'000'000, context.shared_memory.num_threads, pq_params))};
+	    for (auto root : _hierarchy->roots()) {
+		    _pq->push({_hierarchy->depth(root), root});
+	    }
+
         }
 
         ConcurrentQueueGroupPool(const ConcurrentQueueGroupPool& other) = delete;
@@ -340,6 +353,10 @@ namespace mt_kahypar::ds
           return numAcceptedUncontractions == totalNumUncontractions;
         }
 
+	pq_type::Handle getPQHandle() {
+		return _pq->get_handle();
+	}
+
     private:
 
         bool poolEmptyForTask(const size_t task_id) const {
@@ -418,6 +435,7 @@ namespace mt_kahypar::ds
 
         std::unique_ptr<GroupHierarchy> _hierarchy;
 
+	std::unique_ptr<pq_type> _pq;
         // todo: work stealing for thread local pools
         std::vector<std::unique_ptr<NoDownsizeIntegralTypeVector<ContractionGroupID>>> _pools_by_task;
 

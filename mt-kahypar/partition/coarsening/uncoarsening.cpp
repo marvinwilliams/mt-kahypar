@@ -509,7 +509,7 @@ namespace mt_kahypar {
              "After uncontracting a group, either the representative or any of the contracted nodes is not enabled or not assigned a partition!");
   }
 
-  void NLevelCoarsenerBase::uncoarsenAsyncTask(TreeGroupPool *pool, pq_type& pq, metrics::ThreadSafeMetrics &current_metrics,
+  void NLevelCoarsenerBase::uncoarsenAsyncTask(TreeGroupPool *pool, metrics::ThreadSafeMetrics &current_metrics,
                                                IAsyncRefiner *async_lp_refiner, IAsyncRefiner *async_fm_refiner,
                                                HypernodeID &uncontraction_counter,
                                                utils::ProgressBar &uncontraction_progress,
@@ -532,12 +532,7 @@ namespace mt_kahypar {
       auto num_edges_activated_per_refinement_node = ds::NoDownsizeIntegralTypeVector<HyperedgeID>(2 * min_seed_nodes, kInvalidHyperedge);
       bool reached_min_seeds_once = false;
 
-      auto handle = pq.get_handle();
-      if (task_id == 0) {
-        for (const auto& root : pool->getPtrToHierarchyForQueries()->roots()) {
-          pool->activate(root, handle);
-        }
-      }
+      auto handle = pool->getPQHandle();
       while (true) {
 
         // Attempt to pick a group from the pool. Stop if pool is completed.
@@ -813,20 +808,9 @@ namespace mt_kahypar {
           for (auto& seed_deduplicator : seed_deduplicator_arrays) {
             seed_deduplicator.get()->reset(); // NOLINT(readability-redundant-smartptr-get)
           }
-#if defined PQ_MQ_RANDOM || defined PQ_MQ_STICKY || defined PQ_MQ_SWAPPING
-          auto params = pq_type::param_type{};
-          params.c = MQ_C;
-#ifndef PQ_MQ_RANDOM
-          params.stickiness = MQ_STICKINESS;
-#endif
-          auto pq = pq_type(1'000'000, _context.shared_memory.num_threads, params);
-#else
-          auto pq = pq_type(1'000'000, _context.shared_memory.num_threads);
-#endif
-
           auto uncoarsen_task = [&](const size_t task_id){
               // Setting alwaysInsertIntoPQ to true for Initial Partitioning as well cryptically does not work (spits out Seg faults only in release mode). I assume it's due to TBB internals.
-              uncoarsenAsyncTask(pool, pq,
+              uncoarsenAsyncTask(pool, 
                                  current_metrics, async_lp_refiners[task_id].get(), async_fm_refiners[task_id].get(),
                                  async_uncontraction_counters[task_id],
                                  uncontraction_progress, fm_shared_data->nodeTracker, node_region_comparator,

@@ -19,6 +19,9 @@
  *
  ******************************************************************************/
 
+#include <numeric>
+#include <cmath>
+#include <algorithm>
 #include "context.h"
 
 namespace mt_kahypar {
@@ -248,7 +251,7 @@ namespace mt_kahypar {
       HypernodeWeight perfect_part_weights_sum = 0;
       partition.perfect_balance_part_weights.clear();
       for (const HyperedgeWeight& part_weight : partition.max_part_weights) {
-        const HypernodeWeight perfect_weight = ceil(weight_fraction * part_weight);
+        const HypernodeWeight perfect_weight = std::ceil(weight_fraction * part_weight);
         partition.perfect_balance_part_weights.push_back(perfect_weight);
         perfect_part_weights_sum += perfect_weight;
       }
@@ -264,7 +267,7 @@ namespace mt_kahypar {
       }
     } else {
       partition.perfect_balance_part_weights.clear();
-      partition.perfect_balance_part_weights.push_back(ceil(
+      partition.perfect_balance_part_weights.push_back(std::ceil(
               total_hypergraph_weight
               / static_cast<double>(partition.k)));
       for (PartitionID part = 1; part != partition.k; ++part) {
