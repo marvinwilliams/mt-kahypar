@@ -20,6 +20,7 @@
 
 #include <iostream>
 
+#include "utils/priority_queue_factory.hpp"
 
 #include "mt-kahypar/io/command_line_options.h"
 #include "mt-kahypar/partition/registries/register_memory_pool.h"
@@ -39,6 +40,19 @@ int main(int argc, char* argv[]) {
     mt_kahypar::io::printBanner();
   }
 
+  {
+	  using pq_type =
+		  typename util::PriorityQueueFactory<unsigned long, unsigned long>::type;
+	  auto pq_params = util::PriorityQueueParameters{};
+#ifdef MQ_C
+	  pq_params.c = MQ_C;
+#endif
+#ifdef MQ_STICKINESS
+	  pq_params.stickiness = MQ_STICKINESS;
+#endif
+	  auto pq = util::create_pq<pq_type>(0, context.shared_memory.num_threads, pq_params);
+	  std::cerr << pq.description() << '\n';
+  }
   mt_kahypar::utils::Randomize::instance().setSeed(context.partition.seed);
   if ( context.shared_memory.use_localized_random_shuffle ) {
     mt_kahypar::utils::Randomize::instance().enableLocalizedParallelShuffle(

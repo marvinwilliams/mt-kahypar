@@ -17,9 +17,63 @@ if(ENABLE_PROFILE MATCHES ON)
   target_link_libraries(MtKaHyParStrongAsync ${PROFILE_FLAGS})
 endif()
 
-add_executable(MtKaHyParMQRandomC4)
-target_link_libraries(MtKaHyParMQRandomC4 PRIVATE MtKaHyParStrongAsync mq_random benchmark_base)
-target_compile_definitions(MtKaHyParMQRandomC4 PRIVATE MQ_C=4)
-target_compile_features(knapsack_heap INTERFACE cxx_std_17)
+add_executable(MtKaHyParMqRandomC4)
+target_link_libraries(MtKaHyParMqRandomC4 PRIVATE MtKaHyParStrongAsync mq_random benchmark_base)
+target_compile_definitions(MtKaHyParMqRandomC4 PRIVATE MQ_C=4)
 
-set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParMQRandomC4 PARENT_SCOPE)
+add_executable(MtKaHyParMqStickyC4K4)
+target_link_libraries(MtKaHyParMqStickyC4K4 PRIVATE MtKaHyParStrongAsync mq_sticky benchmark_base)
+target_compile_definitions(MtKaHyParMqStickyC4K4 PRIVATE MQ_C=4 MQ_STICKINESS=4)
+
+add_executable(MtKaHyParMqStickyC8K8)
+target_link_libraries(MtKaHyParMqStickyC8K8 PRIVATE MtKaHyParStrongAsync mq_sticky benchmark_base)
+target_compile_definitions(MtKaHyParMqStickyC8K8 PRIVATE MQ_C=8 MQ_STICKINESS=8)
+
+add_executable(MtKaHyParMqSwappingC3K4)
+target_link_libraries(MtKaHyParMqSwappingC3K4 PRIVATE MtKaHyParStrongAsync mq_swapping benchmark_base)
+target_compile_definitions(MtKaHyParMqSwappingC3K4 PRIVATE MQ_C=3 MQ_STICKINESS=4)
+
+add_executable(MtKaHyParMqSwappingC3K16)
+target_link_libraries(MtKaHyParMqSwappingC3K16 PRIVATE MtKaHyParStrongAsync mq_swapping benchmark_base)
+target_compile_definitions(MtKaHyParMqSwappingC3K16 PRIVATE MQ_C=3 MQ_STICKINESS=16)
+
+add_executable(MtKaHyParCapq)
+target_link_libraries(MtKaHyParCapq PRIVATE MtKaHyParStrongAsync capq benchmark_base)
+target_compile_features(MtKaHyParCapq INTERFACE cxx_std_17)
+
+add_executable(MtKaHyParKlsm256)
+target_link_libraries(MtKaHyParKlsm256 PRIVATE MtKaHyParStrongAsync klsm256 benchmark_base)
+target_compile_features(MtKaHyParKlsm256 INTERFACE cxx_std_17)
+
+add_executable(MtKaHyParKlsm1024)
+target_link_libraries(MtKaHyParKlsm1024 PRIVATE MtKaHyParStrongAsync klsm1024 benchmark_base)
+target_compile_features(MtKaHyParKlsm1024 INTERFACE cxx_std_17)
+
+add_executable(MtKaHyParKlsm4096)
+target_link_libraries(MtKaHyParKlsm4096 PRIVATE MtKaHyParStrongAsync klsm4096 benchmark_base)
+target_compile_features(MtKaHyParKlsm4096 INTERFACE cxx_std_17)
+
+add_executable(MtKaHyParTbbPq)
+target_link_libraries(MtKaHyParTbbPq PRIVATE MtKaHyParStrongAsync tbb_pq benchmark_base)
+target_compile_features(MtKaHyParTbbPq INTERFACE cxx_std_17)
+
+add_executable(MtKaHyParLinden)
+target_link_libraries(MtKaHyParLinden PRIVATE MtKaHyParStrongAsync linden benchmark_base)
+target_compile_features(MtKaHyParLinden INTERFACE cxx_std_17)
+
+add_executable(MtKaHyParSpraylist)
+target_link_libraries(MtKaHyParSpraylist PRIVATE MtKaHyParStrongAsync spraylist benchmark_base)
+target_compile_features(MtKaHyParSpraylist INTERFACE cxx_std_17)
+
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParMqRandomC4 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParMqStickyC4K4 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParMqStickyC8K8 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParMqSwappingC3K4 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParMqSwappingC3K16 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParCapq PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParKlsm256 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParKlsm1024 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParKlsm4096 PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParTbbPq PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParLinden PARENT_SCOPE)
+set(TARGETS_WANTING_ALL_SOURCES ${TARGETS_WANTING_ALL_SOURCES} MtKaHyParSpraylist PARENT_SCOPE)
